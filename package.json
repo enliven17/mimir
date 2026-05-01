@@ -1,0 +1,48 @@
+{
+  "name": "mimir",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:clean": "rm -rf .next && next dev",
+    "clean": "rm -rf .next",
+    "build": "next build",
+    "start": "next start",
+    "oracle": "npx tsx agents/oracle/index.ts",
+    "oracle:challenge": "AUTO_CHALLENGE=1 npx tsx agents/oracle/index.ts",
+    "market-creator": "npx tsx agents/market-creator/index.ts",
+    "seed": "npx tsx scripts/seed-claims.ts",
+    "seed:dry": "DRY_RUN=1 npx tsx scripts/seed-claims.ts",
+    "deploy:contract": "npx tsx deploy/deploy.ts",
+    "test:smoke": "node --import tsx --test tests/node/api-validation.test.ts tests/node/challenge-opportunities.test.ts tests/node/claim-moderation-route.test.ts tests/node/claim-moderation-sanitize.test.ts tests/node/claim-quality.test.ts tests/node/db-index.test.ts tests/node/explore-filters.test.ts tests/node/vs-xmtp-eligibility.test.ts tests/node/xmtp-installation-limit-error.test.ts",
+    "warm:vs-index": "tsx scripts/warm-vs-index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@libsql/client": "^0.17.2",
+    "@tanstack/react-query": "^5.100.10",
+    "@wagmi/connectors": "^5.7.7",
+    "@xmtp/browser-sdk": "^7.0.0",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^0.383.0",
+    "next": "^16.2.1",
+    "next-intl": "^4.8.3",
+    "nextjs-toploader": "^3.9.17",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "server-only": "^0.0.1",
+    "sonner": "^1.7.0",
+    "viem": "^2.47.6",
+    "wagmi": "^3.6.15"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.0.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,89 @@
+# ========================
+# Dependencies
+# ========================
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# ========================
+# Next.js
+# ========================
+.next/
+out/
+build/
+dist/
+
+# ========================
+# Environment variables
+# ========================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# ========================
+# GenLayer / Blockchain
+# ========================
+# Private keys and sensitive deploy config — NUNCA commitear
+.env.genlayer
+deploy/.env
+deploy/keystore/
+*.key
+*.pem
+
+# ========================
+# Testing & coverage
+# ========================
+coverage/
+.nyc_output/
+*.lcov
+__pycache__/
+*.pyc
+
+# ========================
+# Logs
+# ========================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# ========================
+# OS & editor artifacts
+# ========================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ========================
+# TypeScript
+# ========================
+*.tsbuildinfo
+next-env.d.ts
+
+# ========================
+# Agent skills
+# ========================
+skills-lock.json
+codex-genlayer-skills-full/
+
+# ========================
+# Misc
+# ========================
+.cache/
+.temp/
+*.tmp
+\.claude/
+artifacts/
