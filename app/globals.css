@@ -1,0 +1,284 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Evita scroll horizontal en mobile (elementos 100vw, márgenes negativos, etc.).
+   * Aplicar en html + body es el patrón habitual; el contenido sigue scrolleando en Y.
+   */
+  html {
+    @apply antialiased overflow-x-hidden;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-pv-bg text-pv-text font-body overflow-x-hidden;
+    min-height: 100vh;
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Grain texture overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
+
+  /* Vignette effect */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      transparent 50%,
+      rgba(14, 14, 14, 0.45) 100%
+    );
+  }
+
+  ::selection {
+    background: rgba(78, 222, 163, 0.22);
+  }
+
+  /**
+   * Puntero tipo “mano” en botones nativos. El preflight de Tailwind no lo aplica por defecto,
+   * y sin esto el cursor suele quedar en flecha aunque el elemento sea clicable.
+   */
+  button:enabled {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer components {
+  /* ── Buttons ── */
+  .btn-primary {
+    @apply w-full py-4 px-6 rounded font-display font-bold text-base
+           bg-pv-emerald text-pv-bg
+           transition-[transform,box-shadow,filter] duration-200 ease-out
+           hover:-translate-y-px hover:brightness-[1.06]
+           hover:shadow-[0_6px_20px_-4px_rgba(78,222,163,0.32)]
+           active:translate-y-0 active:scale-[0.98] active:shadow-none
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply w-full py-4 px-6 rounded font-display font-bold text-base
+           bg-transparent text-pv-muted border border-white/[0.15]
+           transition-[transform,box-shadow,border-color,color,background-color] duration-200 ease-out
+           hover:-translate-y-px hover:border-white/[0.28] hover:text-pv-text
+           hover:shadow-[0_4px_18px_-6px_rgba(0,0,0,0.45)]
+           active:translate-y-0 active:scale-[0.98]
+           disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-cyan {
+    @apply w-full py-4 px-6 rounded font-display font-bold text-base
+           bg-transparent text-pv-cyan border border-pv-cyan/[0.3]
+           transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out
+           hover:-translate-y-px hover:bg-pv-cyan hover:text-pv-bg hover:border-pv-cyan
+           hover:shadow-[0_6px_20px_-4px_rgba(93,230,255,0.22)]
+           active:translate-y-0 active:scale-[0.98]
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-fuch {
+    @apply w-full py-4 px-6 rounded font-display font-bold text-base
+           bg-transparent text-pv-fuch border border-pv-fuch/[0.3]
+           transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out
+           hover:-translate-y-px hover:bg-pv-fuch hover:text-pv-bg hover:border-pv-fuch
+           hover:shadow-[0_6px_20px_-4px_rgba(248,172,255,0.2)]
+           active:translate-y-0 active:scale-[0.98]
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-emerald {
+    @apply w-full py-4 px-6 rounded font-display font-bold text-base
+           bg-pv-emerald text-pv-bg
+           transition-[transform,box-shadow,filter] duration-200 ease-out
+           hover:-translate-y-px hover:brightness-[1.06]
+           hover:shadow-[0_6px_20px_-4px_rgba(78,222,163,0.32)]
+           active:translate-y-0 active:scale-[0.98] active:shadow-none
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-danger {
+    @apply w-full py-4 px-6 rounded font-bold text-base
+           bg-pv-danger/[0.06] text-pv-danger border border-pv-danger/[0.2]
+           transition-[transform,box-shadow,background-color,border-color] duration-200 ease-out
+           hover:-translate-y-px hover:bg-pv-danger/[0.12]
+           hover:shadow-[0_4px_16px_-4px_rgba(239,68,68,0.2)]
+           active:translate-y-0 active:scale-[0.98]
+           disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  /* Navbar / compact emerald actions (not full-width) */
+  .btn-compact-primary {
+    @apply rounded font-bold text-pv-bg bg-pv-emerald
+           transition-[transform,box-shadow,filter] duration-200 ease-out
+           hover:-translate-y-px hover:brightness-[1.06]
+           hover:shadow-[0_4px_14px_-4px_rgba(78,222,163,0.3)]
+           active:translate-y-0 active:scale-[0.98] active:shadow-none
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn-primary,
+    .btn-ghost,
+    .btn-cyan,
+    .btn-fuch,
+    .btn-emerald,
+    .btn-danger,
+    .btn-compact-primary {
+      @apply hover:translate-y-0 hover:shadow-none;
+      transition-duration: 0.01ms;
+    }
+  }
+
+  /* ── Card ── */
+  .card {
+    @apply bg-pv-surface border border-white/[0.15] rounded overflow-hidden relative
+           transition-all duration-200;
+  }
+
+  .card-hover {
+    @apply hover:border-white/[0.25] hover:bg-pv-surface/80;
+  }
+
+  /* ── Form elements ── */
+  .input {
+    @apply w-full px-4 py-3.5 rounded bg-pv-surface2 border border-white/[0.1]
+           text-pv-text placeholder:text-pv-muted font-body text-[15px]
+           focus:border-pv-emerald/60 focus:border
+           transition-colors duration-150 outline-none;
+  }
+
+  /**
+   * Select nativo: flecha gris (pv-muted), centrada en altura; evita el chevron del SO en blanco / descolocado.
+   * Usar junto a `.form-field-pv` o preferir `.select-field-pv` en /vs/create.
+   */
+  .select-pv {
+    @apply cursor-pointer appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none'%3E%3Cpath stroke='%239391A0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.875rem center;
+    background-size: 1rem 1rem;
+  }
+
+  /**
+   * Selects de Market type / Odds mode: mismo sistema que `.form-field-pv` + chevron + altura táctil y hover suave.
+   */
+  .select-field-pv {
+    @apply w-full min-h-[3.25rem] cursor-pointer appearance-none rounded-xl border border-white/[0.12]
+           bg-pv-bg/90 bg-no-repeat px-4 py-3 pr-11 font-body text-sm font-medium tracking-tight
+           text-pv-text antialiased outline-none transition-[border-color,box-shadow,background-color]
+           duration-200 hover:border-white/[0.22] hover:bg-pv-surface/[0.4]
+           focus-visible:border-pv-emerald/50 focus-visible:ring-1 focus-visible:ring-pv-emerald/25
+           focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50;
+    color-scheme: dark;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none'%3E%3Cpath stroke='%23A8A4B8' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round' d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.75rem center;
+    background-size: 1.125rem 1.125rem;
+  }
+
+  /**
+   * Campos de texto/select/textarea alineados con la URL de verificación en /vs/create:
+   * `rounded-xl`, borde blanco suave, foco con anillo fino (sin duplicar borde verde grueso de `.input`).
+   */
+  .form-field-pv {
+    @apply w-full rounded-xl border border-white/[0.12] bg-pv-bg/90 px-4 py-3.5
+           font-body text-sm text-pv-text
+           placeholder:text-pv-muted/50
+           outline-none transition-[border-color,box-shadow]
+           focus-visible:border-pv-emerald/50 focus-visible:ring-1 focus-visible:ring-pv-emerald/25
+           focus-visible:outline-none;
+  }
+
+  .label {
+    @apply block text-[11px] font-bold uppercase tracking-[0.12em] text-pv-muted mb-2;
+  }
+
+  .chip {
+    @apply px-3.5 py-1.5 rounded border border-white/[0.15] bg-transparent
+           text-sm font-semibold cursor-pointer transition-all duration-150;
+  }
+
+  /* ── Ambient rivalry glow (VS detail: full-page legacy / card-scoped) ── */
+  .rivalry-bg {
+    background:
+      radial-gradient(ellipse 60% 40% at 0% 30%, rgba(93,230,255,0.06) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 40% at 100% 70%, rgba(248,172,255,0.06) 0%, transparent 70%);
+  }
+
+  /* Same dual glow, clipped to the main VS hero card (behind content) */
+  .rivalry-card-ambient {
+    background:
+      radial-gradient(ellipse 60% 40% at 0% 30%, rgba(93,230,255,0.06) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 40% at 100% 70%, rgba(248,172,255,0.06) 0%, transparent 70%);
+  }
+
+  /* ── Glow utilities ── */
+  .glow-cyan {
+    background: radial-gradient(
+      ellipse at 0% 50%,
+      rgba(93, 230, 255, 0.07),
+      transparent 65%
+    );
+  }
+
+  .glow-fuch {
+    background: radial-gradient(
+      ellipse at 100% 50%,
+      rgba(248, 172, 255, 0.07),
+      transparent 65%
+    );
+  }
+
+  .glow-emerald {
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      rgba(78, 222, 163, 0.07),
+      transparent 65%
+    );
+  }
+
+  .glow-gold {
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      rgba(251, 191, 36, 0.07),
+      transparent 65%
+    );
+  }
+
+  /* ── Focus ring for accessibility ── */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/40
+           focus-visible:ring-offset-2 focus-visible:ring-offset-pv-bg;
+  }
+}
+
+/* ── Staggered animation delays ── */
+.delay-1 { animation-delay: 0.07s; }
+.delay-2 { animation-delay: 0.14s; }
+.delay-3 { animation-delay: 0.21s; }
+.delay-4 { animation-delay: 0.28s; }
+.delay-5 { animation-delay: 0.35s; }
+.delay-6 { animation-delay: 0.42s; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #353437; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4850; }
