@@ -134,7 +134,7 @@ export default function Header() {
 
   const NAV_ITEMS = useMemo(() => {
     const items: Array<{
-      href: "/vs/create" | "/explorer" | "/dashboard" | "/messages" | "/stats";
+      href: "/vs/create" | "/explorer" | "/dashboard" | "/messages" | "/stats" | "/bridge";
       label: string;
       accent: boolean;
       mobileLabel?: string;
@@ -142,6 +142,7 @@ export default function Header() {
       { href: "/vs/create", label: t("challenge"), accent: true },
       { href: "/explorer", label: t("explore"), accent: false },
       { href: "/dashboard", label: t("myVS"), accent: false },
+      { href: "/bridge", label: "Bridge", accent: false },
       { href: "/stats", label: "Stats", accent: false },
     ];
     if (xmtpNavEnabled) {

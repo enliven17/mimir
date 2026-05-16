@@ -8,8 +8,13 @@
  * This makes the oracle a genuine economic participant — not just a judge,
  * but a player that puts USDC on the line when it's confident.
  *
+ * Signs all transactions via Circle W3S (Programmable Wallets) — no local
+ * private key. The agent's wallet is held in Circle's custody and authorized
+ * by CIRCLE_API_KEY + CIRCLE_ENTITY_SECRET.
+ *
  * Run: npx tsx agents/oracle/index.ts
- * Env: ORACLE_PRIVATE_KEY, NEXT_PUBLIC_CONTRACT_ADDRESS, ANTHROPIC_API_KEY
+ * Env: CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_ORACLE_WALLET_ID,
+ *      CIRCLE_ORACLE_ADDRESS, NEXT_PUBLIC_CONTRACT_ADDRESS, ANTHROPIC_API_KEY
  *      AUTO_CHALLENGE=1        (enable auto-challenger, default off)
  *      CHALLENGE_STAKE_USDC=2  (stake per challenge, default 2 USDC)
  *      CHALLENGE_CONFIDENCE=80 (min confidence to challenge, default 80)
@@ -19,20 +24,25 @@ import Anthropic from "@anthropic-ai/sdk";
 import { keccak256, toBytes } from "viem";
 import {
   createArcPublicClient,
-  createArcWalletClientWithKey,
   arcTestnet,
   microToUsdc,
   usdcToMicro,
   getContractAddress,
   getExplorerTxUrl,
 } from "../../lib/arc";
+import {
+  executeContract,
+  buildAbiFunctionSignature,
+  toCircleAbiParameters,
+  getOracleWalletId,
+  getOracleAddress,
+} from "../../lib/circle-w3s";
 import { MIMIR_ABI, WINNER_SIDE, STATE } from "../../lib/mimir-abi";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = 60_000;
 const MAX_CONTENT_CHARS     = 8_000;
 const CONTRACT_ADDRESS      = getContractAddress();
-const ORACLE_PRIVATE_KEY    = process.env.ORACLE_PRIVATE_KEY as `0x${string}`;
 const AUTO_CHALLENGE        = process.env.AUTO_CHALLENGE === "1";
 const CHALLENGE_STAKE_USDC  = Number(process.env.CHALLENGE_STAKE_USDC ?? "2");
 const CHALLENGE_CONFIDENCE  = Number(process.env.CHALLENGE_CONFIDENCE ?? "80");
@@ -42,19 +52,22 @@ const challengedClaimIds = new Set<number>();
 // Track evaluated-but-not-challenged (to avoid repeated LLM calls)
 const evaluatedClaimIds = new Set<number>();
 
-if (!ORACLE_PRIVATE_KEY) {
-  console.error("ORACLE_PRIVATE_KEY env var is required");
-  process.exit(1);
-}
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error("ANTHROPIC_API_KEY env var is required");
-  process.exit(1);
+for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_WALLET_ID", "CIRCLE_ORACLE_ADDRESS", "ANTHROPIC_API_KEY"]) {
+  if (!process.env[v]) {
+    console.error(`${v} env var is required`);
+    process.exit(1);
+  }
 }
 
+// Pre-compute Circle ABI signatures (call once, reuse per claim)
+const SIG_RESOLVE_CLAIM    = buildAbiFunctionSignature("resolveClaim", MIMIR_ABI);
+const SIG_CHALLENGE_CLAIM  = buildAbiFunctionSignature("challengeClaim", MIMIR_ABI);
+
 // ── Clients ───────────────────────────────────────────────────────────────────
-const publicClient = createArcPublicClient();
-const walletClient = createArcWalletClientWithKey(ORACLE_PRIVATE_KEY);
-const anthropic    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const publicClient  = createArcPublicClient();
+const ORACLE_WALLET = getOracleWalletId();
+const ORACLE_ADDR   = getOracleAddress();
+const anthropic     = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ClaimOnChain {
@@ -254,21 +267,20 @@ async function settle(claim: ClaimOnChain): Promise<void> {
   console.log(`[settle] Evidence hash: ${evidenceHash}`);
   console.log(`[settle] "${verdict.explanation.slice(0, 100)}..."`);
 
-  const account = walletClient.account!;
-  const txHash  = await walletClient.writeContract({
-    address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
-    functionName: "resolveClaim",
-    args: [
+  const txHash = await executeContract({
+    walletId:             ORACLE_WALLET,
+    contractAddress:      CONTRACT_ADDRESS,
+    abiFunctionSignature: SIG_RESOLVE_CLAIM,
+    abiParameters: toCircleAbiParameters([
       BigInt(claim.id),
       verdictToSide(verdict.verdict),
       verdict.explanation,
       verdict.confidence,
       evidenceHash,
-    ],
-    account, chain: arcTestnet,
+    ]),
+    refId: `settle-${claim.id}`,
   });
 
-  await publicClient.waitForTransactionReceipt({ hash: txHash });
   console.log(`[settle] ✓ Resolved — ${getExplorerTxUrl(txHash)}`);
 }
 
@@ -276,7 +288,7 @@ async function settle(claim: ClaimOnChain): Promise<void> {
 async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   if (!AUTO_CHALLENGE) return;
 
-  const oracleAddress = walletClient.account!.address.toLowerCase();
+  const oracleAddress = ORACLE_ADDR.toLowerCase();
 
   // Skip: already challenged, already evaluated, private, oracle created it
   if (challengedClaimIds.has(claim.id)) return;
@@ -288,7 +300,7 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   const alreadyIn = await publicClient.readContract({
     address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
     functionName: "hasChallenged",
-    args: [BigInt(claim.id), walletClient.account!.address],
+    args: [BigInt(claim.id), ORACLE_ADDR],
   }) as boolean;
   if (alreadyIn) { evaluatedClaimIds.add(claim.id); return; }
 
@@ -299,7 +311,7 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   }
 
   // Check oracle USDC balance (native on Arc)
-  const balance = await publicClient.getBalance({ address: walletClient.account!.address });
+  const balance = await publicClient.getBalance({ address: ORACLE_ADDR });
   const stakeNeeded = usdcToMicro(CHALLENGE_STAKE_USDC);
   const buffer      = usdcToMicro(CHALLENGE_STAKE_USDC * 3); // keep 3x buffer for gas
   if (balance < stakeNeeded + buffer) {
@@ -331,22 +343,20 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
 
   console.log(`[challenge] Kelly: ${(kelly * 100).toFixed(1)}% of bankroll → ${stakeUsdc} USDC stake`);
 
-  // Auto-challenge
+  // Auto-challenge — Arc uses native USDC, so we pass `amount` to attach value
   console.log(`[challenge] Staking ${stakeUsdc} USDC on challenger side...`);
-  const account = walletClient.account!;
-
   const stakeWei = usdcToMicro(stakeUsdc);
-  const txHash = await walletClient.writeContract({
-    address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
-    functionName: "challengeClaim",
-    args: [BigInt(claim.id), stakeWei, ""],
-    value: stakeWei,
-    account, chain: arcTestnet,
+
+  const txHash = await executeContract({
+    walletId:             ORACLE_WALLET,
+    contractAddress:      CONTRACT_ADDRESS,
+    abiFunctionSignature: SIG_CHALLENGE_CLAIM,
+    abiParameters:        toCircleAbiParameters([BigInt(claim.id), stakeWei, ""]),
+    amount:               stakeWei.toString(),
+    refId:                `challenge-${claim.id}`,
   });
 
-  await publicClient.waitForTransactionReceipt({ hash: txHash });
   challengedClaimIds.add(claim.id);
-
   console.log(`[challenge] ✓ Staked ${stakeUsdc} USDC — ${getExplorerTxUrl(txHash)}`);
   console.log(`[challenge] Oracle: "${verdict.explanation.slice(0, 120)}"`);
 }
@@ -403,13 +413,13 @@ async function poll(): Promise<void> {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  const account = walletClient.account!;
-  const balance = await publicClient.getBalance({ address: account.address });
+  const balance = await publicClient.getBalance({ address: ORACLE_ADDR });
 
   console.log("═══════════════════════════════════════════════");
-  console.log("  Mimir Oracle Agent");
+  console.log("  Mimir Oracle Agent (Circle W3S signer)");
   console.log(`  Contract   : ${CONTRACT_ADDRESS}`);
-  console.log(`  Oracle     : ${account.address}`);
+  console.log(`  Oracle     : ${ORACLE_ADDR}`);
+  console.log(`  Wallet ID  : ${ORACLE_WALLET}`);
   console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
   console.log(`  Poll every : ${POLL_INTERVAL_MS / 1000}s`);

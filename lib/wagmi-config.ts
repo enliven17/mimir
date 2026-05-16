@@ -2,17 +2,19 @@
  * wagmi config for Mimir on Arc
  *
  * Supports: MetaMask, Coinbase Wallet, WalletConnect, injected wallets
- * Chain: Arc Testnet (5042002), USDC native (18 decimals)
+ * Primary chain: Arc Testnet (5042002), USDC native (18 decimals)
  *
- * This is the equivalent of Circle's "App Kit" —
- * a professional wallet connection layer for Arc.
+ * Extra chains are registered so the CCTP V2 bridge can switch users to
+ * source chains (Base/Eth/Avalanche Sepolia) for `depositForBurn`, then
+ * switch back to Arc for `receiveMessage`.
  */
 import { createConfig, http } from "wagmi";
 import { coinbaseWallet, injected, metaMask } from "@wagmi/connectors";
+import { sepolia, baseSepolia, avalancheFuji } from "wagmi/chains";
 import { arcTestnet, getArcRpcUrl } from "./arc";
 
 export const wagmiConfig = createConfig({
-  chains: [arcTestnet],
+  chains: [arcTestnet, sepolia, baseSepolia, avalancheFuji],
   connectors: [
     metaMask(),
     coinbaseWallet({
@@ -23,7 +25,10 @@ export const wagmiConfig = createConfig({
     injected(),
   ],
   transports: {
-    [arcTestnet.id]: http(getArcRpcUrl()),
+    [arcTestnet.id]:     http(getArcRpcUrl()),
+    [sepolia.id]:        http(),
+    [baseSepolia.id]:    http(),
+    [avalancheFuji.id]:  http(),
   },
   ssr: true,
 });

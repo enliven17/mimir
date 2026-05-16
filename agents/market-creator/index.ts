@@ -24,36 +24,42 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
   createArcPublicClient,
-  createArcWalletClientWithKey,
   arcTestnet,
   getContractAddress,
   getExplorerTxUrl,
   usdcToMicro,
   microToUsdc,
 } from "../../lib/arc";
+import {
+  executeContract,
+  buildAbiFunctionSignature,
+  toCircleAbiParameters,
+  getMarketCreatorWalletId,
+  getMarketCreatorAddress,
+} from "../../lib/circle-w3s";
 import { MIMIR_ABI } from "../../lib/mimir-abi";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const CONTRACT_ADDRESS    = getContractAddress();
-const CREATOR_PRIVATE_KEY = process.env.CREATOR_PRIVATE_KEY as `0x${string}`;
 const CREATOR_STAKE_USDC  = Number(process.env.CREATOR_STAKE_USDC ?? "2");
 const MAX_CLAIMS_PER_RUN  = Number(process.env.MAX_CLAIMS_PER_RUN ?? "5");
 const RUN_INTERVAL_HOURS  = Number(process.env.RUN_INTERVAL_HOURS ?? "6");
 const MIN_QUALITY_SCORE   = 70; // 0-100
 
-if (!CREATOR_PRIVATE_KEY) {
-  console.error("CREATOR_PRIVATE_KEY env var is required");
-  process.exit(1);
-}
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error("ANTHROPIC_API_KEY env var is required");
-  process.exit(1);
+for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLET_ID", "CIRCLE_CREATOR_ADDRESS", "ANTHROPIC_API_KEY"]) {
+  if (!process.env[v]) {
+    console.error(`${v} env var is required`);
+    process.exit(1);
+  }
 }
 
+const SIG_CREATE_CLAIM = buildAbiFunctionSignature("createClaim", MIMIR_ABI);
+
 // ── Clients ───────────────────────────────────────────────────────────────────
-const publicClient = createArcPublicClient();
-const walletClient = createArcWalletClientWithKey(CREATOR_PRIVATE_KEY);
-const anthropic    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const publicClient   = createArcPublicClient();
+const CREATOR_WALLET = getMarketCreatorWalletId();
+const CREATOR_ADDR   = getMarketCreatorAddress();
+const anthropic      = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ClaimCandidate {
@@ -181,22 +187,22 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
 // ── Create claim on-chain ─────────────────────────────────────────────────────
 
 async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
-  const account  = walletClient.account!;
   const deadline = BigInt(Math.floor(Date.now() / 1000) + candidate.deadlineHours * 3600);
   const stake    = usdcToMicro(CREATOR_STAKE_USDC);
 
   // Check balance
-  const balance = await publicClient.getBalance({ address: account.address });
+  const balance = await publicClient.getBalance({ address: CREATOR_ADDR });
   if (balance < stake * 3n) {
     console.warn(`[market-creator] Insufficient balance for ${candidate.question.slice(0, 40)}`);
     return null;
   }
 
   try {
-    const txHash = await walletClient.writeContract({
-      address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
-      functionName: "createClaim",
-      args: [
+    const txHash = await executeContract({
+      walletId:             CREATOR_WALLET,
+      contractAddress:      CONTRACT_ADDRESS,
+      abiFunctionSignature: SIG_CREATE_CLAIM,
+      abiParameters: toCircleAbiParameters([
         candidate.question,
         candidate.creatorPosition,
         candidate.counterPosition,
@@ -213,13 +219,10 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
         BigInt(100),                 // maxChallengers
         false,                       // isPrivate
         "",                          // inviteKey
-      ],
-      value: stake,
-      account,
-      chain: arcTestnet,
+      ]),
+      amount: stake.toString(),
+      refId:  `mc-${Date.now()}`,
     });
-
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
     return txHash;
   } catch (err) {
     console.error(`[market-creator] Failed to create claim:`, err);
@@ -230,11 +233,10 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
 // ── Main run ──────────────────────────────────────────────────────────────────
 
 async function run(): Promise<void> {
-  const account = walletClient.account!;
-  const balance = await publicClient.getBalance({ address: account.address });
+  const balance = await publicClient.getBalance({ address: CREATOR_ADDR });
 
   console.log(`\n[market-creator] ── Run at ${new Date().toISOString()}`);
-  console.log(`[market-creator] Creator : ${account.address}`);
+  console.log(`[market-creator] Creator : ${CREATOR_ADDR}`);
   console.log(`[market-creator] Balance : ${microToUsdc(balance).toFixed(4)} USDC`);
 
   // Fetch source data in parallel
@@ -276,13 +278,14 @@ async function run(): Promise<void> {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const account = walletClient.account!;
-  const balance = await publicClient.getBalance({ address: account.address });
+  const balance = await publicClient.getBalance({ address: CREATOR_ADDR });
 
   console.log("═══════════════════════════════════════════════");
-  console.log("  Mimir Market Creator Agent");
-  console.log(`  Creator    : ${account.address}`);
+  console.log("  Mimir Market Creator Agent (Circle W3S signer)");
+  console.log(`  Creator    : ${CREATOR_ADDR}`);
+  console.log(`  Wallet ID  : ${CREATOR_WALLET}`);
   console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
+  console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
   console.log(`  Stake/mkt  : ${CREATOR_STAKE_USDC} USDC`);
   console.log(`  Max/run    : ${MAX_CLAIMS_PER_RUN} claims`);
   console.log(`  Interval   : every ${RUN_INTERVAL_HOURS}h`);
