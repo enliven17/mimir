@@ -64,7 +64,7 @@ function WalletAccountMenu({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-[calc(100%+4px)] z-[60] min-w-[240px] overflow-hidden rounded-2xl border border-black/[0.14] bg-[linear-gradient(180deg,rgba(36,35,35,0.96),rgba(24,24,24,0.98))] p-2 shadow-[0_22px_60px_-20px_rgba(0,0,0,0.75)] backdrop-blur-xl before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/12 before:to-transparent"
+            className="absolute right-0 top-[calc(100%+4px)] z-[60] min-w-[240px] overflow-hidden rounded-2xl border border-pv-border/40 bg-pv-surface/95 p-2 shadow-[0_22px_60px_-20px_rgba(216,95,95,0.22)] backdrop-blur-xl"
           >
             <div className="mb-1 rounded-xl border border-black/[0.08] bg-black/[0.03] px-3.5 py-3">
               <p className="font-display text-[13px] font-bold tracking-tight text-pv-text">

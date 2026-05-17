@@ -283,23 +283,21 @@ export default function HomePage() {
                 initial="hidden"
                 animate="visible"
               >
-                {/* Line 1: PROVE IT */}
-                <span className="block overflow-hidden text-[clamp(3.4rem,8.5vw,5.2rem)] lg:text-[clamp(3.8rem,5.2vw,5.8rem)]">
-                  {["PROVE", "IT"].map((word) => (
-                    <motion.span key={word} variants={kineticLetter} className="inline-block mr-[0.25em]">
-                      {word}
-                    </motion.span>
-                  ))}
-                </span>
-                {/* Line 2: ON-CHAIN. */}
-                <span className="block overflow-hidden text-[clamp(3.4rem,8.5vw,5.2rem)] lg:text-[clamp(3.8rem,5.2vw,5.8rem)]">
+                {/* Line 1: DON'T ARGUE. — single line, no wrap */}
+                <span className="block overflow-hidden text-[clamp(2.6rem,7vw,4.6rem)] lg:text-[clamp(3rem,4.4vw,5rem)]">
                   <motion.span variants={kineticLetter} className="inline-block whitespace-nowrap">
-                    {t("emptyHeroTitleOnChainSegment")}
+                    DON&apos;T ARGUE.
+                  </motion.span>
+                </span>
+                {/* Line 2: SETTLE. */}
+                <span className="block overflow-hidden text-[clamp(2.6rem,7vw,4.6rem)] lg:text-[clamp(3rem,4.4vw,5rem)]">
+                  <motion.span variants={kineticLetter} className="inline-block whitespace-nowrap">
+                    SETTLE.
                   </motion.span>
                 </span>
                 {/* Rhythmic pause */}
                 <span className="block h-2 lg:h-3" aria-hidden />
-                {/* Line 3: BY MIMIR. — smaller payoff/accent */}
+                {/* Line 3: WITH MIMIR. — smaller payoff/accent */}
                 <span className="block overflow-hidden text-[clamp(2.7rem,7vw,4rem)] lg:text-[clamp(2.8rem,4.5vw,4.2rem)]">
                   <motion.span variants={kineticLetter} className="inline-block mr-[0.25em] font-medium text-pv-muted">
                     {t("emptyHeroTitleLine2Lead")}

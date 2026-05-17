@@ -154,12 +154,12 @@ export default function CreateChallengeTicket({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-black/[0.06] bg-black/35 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-t border-pv-border/30 bg-pv-surface2/60 px-4 py-3">
         <div className="flex min-w-0 shrink gap-px" aria-hidden>
           {[1, 2, 2, 3, 2, 1, 2, 1, 2, 1].map((w, i) => (
             <div
               key={i}
-              className="h-6 bg-black/[0.14]"
+              className="h-6 bg-pv-text/[0.18]"
               style={{ width: `${w * 5}px` }}
             />
           ))}
