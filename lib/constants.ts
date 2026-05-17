@@ -218,11 +218,11 @@ export function getCategoryInfo(cat: string) {
 }
 
 export const STATE_LABELS: Record<string, string> = {
-  open: "Abierto",
-  accepted: "Aceptado",
-  resolved: "Liquidado",
-  cancelled: "Cancelado",
-  won: "Ganaste",
-  lost: "Perdiste",
-  draw: "Empate",
+  open: "Open",
+  accepted: "Accepted",
+  resolved: "Settled",
+  cancelled: "Cancelled",
+  won: "Won",
+  lost: "Lost",
+  draw: "Draw",
 };
