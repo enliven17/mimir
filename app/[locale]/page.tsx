@@ -226,7 +226,11 @@ export default function HomePage() {
   const decidedResolvedVS = resolvedVS.filter((v) => hasVSWinner(v));
   const totalGenStaked = allVS.reduce((sum, vs) => sum + getVSTotalPot(vs), 0);
 
-  const arenaGridCards = [...openVS, ...allVS.filter((v) => v.state !== "open")]
+  const arenaGridCards = Array.from(
+    new Map(
+      [...openVS, ...allVS.filter((v) => v.state !== "open")].map((vs) => [vs.id, vs]),
+    ).values(),
+  )
     .slice(0, 5)
     .map((vs) => ({ vs, challengersCount: undefined as number | undefined }));
 

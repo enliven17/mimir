@@ -430,8 +430,13 @@ async function poll(): Promise<void> {
         settled.push(id);
       }
 
-      // Role 2: Challenge mispriced open claims (still before deadline)
-      if (claim.state === STATE.OPEN && claim.deadline > now) {
+      // Role 2: Challenge mispriced claims while the challenge window is open.
+      // Mimir.sol allows up to MAX_CHALLENGERS per claim, so ACTIVE claims are
+      // still joinable — duplicate-stake check happens inside the helper.
+      if (
+        (claim.state === STATE.OPEN || claim.state === STATE.ACTIVE) &&
+        claim.deadline > now
+      ) {
         const before = challengedClaimIds.size;
         await challengeIfMispriced(claim);
         if (challengedClaimIds.size > before) challenged.push(id);
