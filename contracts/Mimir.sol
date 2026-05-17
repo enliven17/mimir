@@ -31,6 +31,11 @@ contract Mimir {
     uint256 public constant MIN_STAKE              = 2 * 10**18; // 2 USDC (18 decimals on Arc)
     uint256 public constant DEFAULT_PAYOUT_BPS     = 20_000;    // 2x
 
+    // Anti-sniping: no new challenges accepted in the final N seconds before
+    // a claim's deadline. Stops late-information actors from waiting to see
+    // the outcome and slipping in a zero-risk bet.
+    uint256 public constant CHALLENGE_LOCK_SECONDS = 60;
+
     // ── Storage ───────────────────────────────────────────────────────────────
     struct Claim {
         address creator;
@@ -243,6 +248,12 @@ contract Mimir {
         require(claim.challengerCount < claim.maxChallengers, "Mimir: full");
         require(stakeAmount >= MIN_STAKE, "Mimir: stake too small");
         require(msg.value == stakeAmount, "Mimir: wrong USDC value");
+        // Anti-sniping: challenges must arrive at least CHALLENGE_LOCK_SECONDS
+        // before the deadline so the outcome isn't observable yet.
+        require(
+            block.timestamp + CHALLENGE_LOCK_SECONDS <= claim.deadline,
+            "Mimir: challenge window closed"
+        );
 
         // Private claim: verify invite key
         if (claim.isPrivate && claim.inviteKeyHash != bytes32(0)) {

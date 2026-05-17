@@ -253,15 +253,49 @@ function hashEvidence(evidence: string): `0x${string}` {
   return keccak256(toBytes(evidence));
 }
 
+// Confidence tiers govern how the oracle commits a verdict.
+// HIGH      → settle as the LLM said.
+// MEDIUM    → still settle, but the explanation gets a [CONTESTED] prefix so
+//             the UI can flag low-trust resolutions.
+// LOW       → force the verdict to UNRESOLVABLE so the contract refunds.
+// Keeps the "refund the ambiguous" principle out of marketing slides and
+// into actual on-chain behavior.
+const CONFIDENCE_HIGH_MIN = 80; // ≥ : settle as-is
+const CONFIDENCE_MED_MIN  = 60; // 60–79: settle but mark contested
+                                // < 60 : downgrade to UNRESOLVABLE
+
+function tierVerdict(verdict: OracleVerdict): OracleVerdict {
+  if (verdict.verdict === "UNRESOLVABLE" || verdict.verdict === "DRAW") return verdict;
+  if (verdict.confidence >= CONFIDENCE_HIGH_MIN) return verdict;
+  if (verdict.confidence >= CONFIDENCE_MED_MIN) {
+    return {
+      ...verdict,
+      explanation: `[CONTESTED] ${verdict.explanation}`.slice(0, 500),
+    };
+  }
+  // Low confidence: refund rather than guess
+  return {
+    verdict:     "UNRESOLVABLE",
+    confidence:  verdict.confidence,
+    explanation: `[LOW CONFIDENCE — refunded] ${verdict.explanation}`.slice(0, 500),
+  };
+}
+
 // ── ROLE 1: Settle expired claim ──────────────────────────────────────────────
 async function settle(claim: ClaimOnChain): Promise<void> {
   console.log(`\n[settle] Claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
 
   const evidence     = await fetchEvidence(claim.resolutionUrl);
   const evidenceHash = hashEvidence(evidence);
-  const verdict      = await evaluateClaim(claim, evidence);
+  const rawVerdict   = await evaluateClaim(claim, evidence);
+  const verdict      = tierVerdict(rawVerdict);
 
-  console.log(`[settle] Verdict: ${verdict.verdict} (${verdict.confidence}%)`);
+  const tierTag =
+    verdict.verdict !== rawVerdict.verdict ? "REFUND" :
+    verdict.explanation !== rawVerdict.explanation ? "CONTESTED" :
+    "FIRM";
+
+  console.log(`[settle] Verdict: ${verdict.verdict} (${verdict.confidence}%) [${tierTag}]`);
   console.log(`[settle] Evidence hash: ${evidenceHash}`);
   console.log(`[settle] "${verdict.explanation.slice(0, 100)}..."`);
 

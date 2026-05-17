@@ -21,7 +21,7 @@ import {
 import { callLLM, activeLLMProvider, activeLLMModel } from "../lib/llm";
 import { MIMIR_ABI, STATE, WINNER_SIDE } from "../lib/mimir-abi";
 
-const DEADLINE_SECONDS = 90;
+const DEADLINE_SECONDS = 150; // ≥ CHALLENGE_LOCK_SECONDS (60) + room for the challenge tx
 const STAKE_USDC       = 2;
 const SIG_CREATE       = buildAbiFunctionSignature("createClaim",     MIMIR_ABI);
 const SIG_CHALLENGE    = buildAbiFunctionSignature("challengeClaim",  MIMIR_ABI);

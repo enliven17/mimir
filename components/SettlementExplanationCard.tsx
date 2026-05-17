@@ -109,6 +109,33 @@ export default function SettlementExplanationCard({
             </div>
           </div>
 
+          {(() => {
+            // Surface the oracle's actual confidence tier on the verdict.
+            // The text on the right is "claim strength" (pre-settlement quality);
+            // this pill is the live oracle confidence the contract recorded.
+            const oc = typeof vs.confidence === "number" ? vs.confidence : null;
+            if (oc === null || vs.winner_side === "" || vs.winner_side === "unresolvable" && oc === 0) return null;
+            const tier = oc >= 80 ? "firm" : oc >= 60 ? "contested" : "refund";
+            const isContestedTag = (summary ?? "").includes("[CONTESTED]");
+            const isRefundTag    = (summary ?? "").includes("[LOW CONFIDENCE");
+            const label =
+              isRefundTag ? "REFUNDED · low confidence" :
+              isContestedTag || tier === "contested" ? "CONTESTED · medium confidence" :
+              tier === "firm" ? "FIRM · high confidence" :
+              null;
+            if (!label) return null;
+            const cls =
+              isRefundTag ? "border-amber-400/40 bg-amber-400/[0.10] text-amber-700" :
+              isContestedTag || tier === "contested" ? "border-pv-border/60 bg-pv-surface2/60 text-pv-text/80" :
+              "border-pv-emerald/40 bg-pv-emerald/[0.08] text-pv-emerald";
+            return (
+              <div className={`mb-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${cls}`}>
+                <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+                {label} · {oc}%
+              </div>
+            );
+          })()}
+
           <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
             <div className="space-y-4">
               <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
