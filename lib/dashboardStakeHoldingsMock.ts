@@ -1,12 +1,16 @@
 import type { CategoryId } from "@/lib/constants";
 
 /**
- * Stake holdings mostrados en el dashboard (mock hasta conectar wallet / indexer).
- * Las claves de copy coinciden con `dashboard.holdings.items.<id>` en mensajes.
+ * Demo dashboard holdings (Canelo / Colapinto / Álvarez) used to seed the UI
+ * before real on-chain data existed. Now empty — the dashboard only renders
+ * the user's actual Arc claims.
+ *
+ * The type stays a non-empty string literal so existing consumers compile;
+ * `DASHBOARD_STAKE_HOLDING_IDS` is an empty array so nothing actually renders.
  */
-export const DASHBOARD_STAKE_HOLDING_IDS = ["canelo", "colapinto", "alvarez"] as const;
+export type DashboardStakeHoldingId = "canelo" | "colapinto" | "alvarez";
 
-export type DashboardStakeHoldingId = (typeof DASHBOARD_STAKE_HOLDING_IDS)[number];
+export const DASHBOARD_STAKE_HOLDING_IDS = [] as ReadonlyArray<DashboardStakeHoldingId>;
 
 export type DashboardHoldingStatus = "open" | "accepted" | "resolved";
 
