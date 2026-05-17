@@ -12,14 +12,14 @@ const COPY = {
   en: {
     eyebrow: "Recovered safely",
     title: "This page hit a snag.",
-    body: "PROVEN kept the rest of the app alive. Try the request again or head back to the arena.",
+    body: "Mimir kept the rest of the app alive. Try the request again or head back to the arena.",
     retry: "Try again",
     home: "Back home",
   },
   es: {
     eyebrow: "Recuperado",
     title: "Esta pagina fallo.",
-    body: "PROVEN mantuvo viva el resto de la app. Intenta otra vez o vuelve a la arena.",
+    body: "Mimir mantuvo viva el resto de la app. Intenta otra vez o vuelve a la arena.",
     retry: "Intentar de nuevo",
     home: "Volver al inicio",
   },

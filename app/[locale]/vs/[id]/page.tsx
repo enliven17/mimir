@@ -1283,7 +1283,7 @@ export default function VSDetailPage() {
               variants={verdictWord}
               className="font-display text-[clamp(3rem,15vw,8rem)] font-bold uppercase text-pv-emerald drop-shadow-[0_0_40px_rgba(78,222,163,0.4)]"
             >
-              PROVEN.
+              SETTLED.
             </motion.div>
             <motion.div
               variants={verdictResult}

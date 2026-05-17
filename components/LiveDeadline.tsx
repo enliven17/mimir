@@ -24,7 +24,7 @@ const PHASE_CONFIG = {
   open: { label: "OPEN", color: "text-pv-cyan", bg: "bg-pv-cyan", border: "border-pv-cyan/30" },
   locked: { label: "LOCKED", color: "text-pv-fuch", bg: "bg-pv-fuch", border: "border-pv-fuch/30" },
   verifying: { label: "VERIFYING", color: "text-pv-gold", bg: "bg-pv-gold", border: "border-pv-gold/30" },
-  proven: { label: "PROVEN", color: "text-pv-emerald", bg: "bg-pv-emerald", border: "border-pv-emerald/30" },
+  proven: { label: "SETTLED", color: "text-pv-emerald", bg: "bg-pv-emerald", border: "border-pv-emerald/30" },
 } as const;
 
 /**

@@ -1457,7 +1457,7 @@ export default function CreatePage() {
                   </p>
                   <div className="flex flex-wrap justify-center gap-2">
                     <a
-                      href={`https://wa.me/?text=${encodeURIComponent(`Challenge me on PROVEN: ${shareUrl}`)}`}
+                      href={`https://wa.me/?text=${encodeURIComponent(`Challenge me on Mimir: ${shareUrl}`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="chip inline-flex min-h-[44px] items-center justify-center px-4 text-xs font-semibold uppercase tracking-wide text-pv-muted transition-colors hover:border-pv-emerald/35 hover:text-pv-emerald"

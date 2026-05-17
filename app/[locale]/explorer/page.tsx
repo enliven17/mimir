@@ -14,7 +14,7 @@ export async function generateMetadata({
   const t = await getTranslations({ locale, namespace: "explore" });
   const tMeta = await getTranslations({ locale, namespace: "metadata" });
   const siteLine = tMeta("title");
-  const brand = siteLine.split("—")[0]?.trim() ?? "PROVEN";
+  const brand = siteLine.split("—")[0]?.trim() ?? "Mimir";
   const pageTitle = `${t("title")} · ${brand}`;
   return {
     title: pageTitle,

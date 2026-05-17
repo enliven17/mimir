@@ -409,7 +409,7 @@ export default function HomePage() {
                 </span>
                 {/* Rhythmic pause */}
                 <span className="block h-2 lg:h-3" aria-hidden />
-                {/* Line 3: WITH PROVEN. — smaller payoff/accent */}
+                {/* Line 3: BY MIMIR. — smaller payoff/accent */}
                 <span className="block overflow-hidden text-[clamp(2.7rem,7vw,4rem)] lg:text-[clamp(2.8rem,4.5vw,4.2rem)]">
                   <motion.span variants={kineticLetter} className="inline-block mr-[0.25em] font-medium text-pv-muted">
                     {t("emptyHeroTitleLine2Lead")}
@@ -418,7 +418,7 @@ export default function HomePage() {
                     variants={kineticLetter}
                     className="inline-block italic text-pv-emerald drop-shadow-[0_0_18px_rgba(78,222,163,0.5)]"
                   >
-                    PROVEN.
+                    Mimir.
                   </motion.span>
                 </span>
               </motion.h1>
@@ -763,7 +763,7 @@ export default function HomePage() {
                   READY TO <span className="text-pv-emerald">WIN?</span>
                 </h2>
                 <p className="mt-4 max-w-[46ch] text-sm leading-relaxed text-pv-muted sm:text-base">
-                  Set the terms, lock your stake, and share the link. When the outcome is provable, PROVEN settles it on-chain.
+                  Set the terms, lock your stake, and share the link. When the outcome is provable, Mimir settles it on-chain.
                 </p>
               </div>
 
@@ -822,7 +822,7 @@ export default function HomePage() {
       {/* Proof Ledger — recently proven, terminal/document aesthetic */}
       {decidedResolvedVS.length > 0 && (
         <AnimatedItem>
-          <Artifact serial="PV-LEDGER" watermark="PROVEN" className="mt-4">
+          <Artifact serial="PV-LEDGER" watermark="MIMIR" className="mt-4">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(78,222,163,0.6)]" />
               <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald">

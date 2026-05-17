@@ -20,7 +20,7 @@ export default function Footer() {
           {/* Marca y créditos — alineados al inicio de su columna */}
           <div className="flex flex-col items-center text-center md:items-start md:justify-start md:text-left">
             <span className="group font-display text-lg font-bold tracking-tight text-pv-emerald transition-colors duration-300 ease-in-out sm:text-xl">
-              PROVEN
+              Mimir
               <span className="text-pv-text transition-colors duration-300 ease-in-out group-hover:text-pv-emerald">
                 .
               </span>

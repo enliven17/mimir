@@ -45,7 +45,7 @@ export default function ProvenStamp({
           transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="inline-flex items-center justify-center rounded-xl border-[3px] border-pv-emerald bg-pv-emerald/[0.05] px-10 py-3 font-display text-2xl font-bold uppercase tracking-widest text-pv-emerald shadow-glow-emerald mb-7 sm:text-3xl"
         >
-          PROVEN.
+          SETTLED.
         </motion.div>
 
         <motion.h2
