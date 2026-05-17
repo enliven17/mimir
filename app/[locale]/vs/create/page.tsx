@@ -2065,7 +2065,7 @@ export default function CreatePage() {
                         : "border border-white/[0.12] bg-pv-surface text-pv-muted hover:border-pv-emerald/35 hover:text-pv-emerald"
                     }`}
                   >
-                    {amount} GEN
+                    {amount} USDC
                   </motion.button>
                 ))}
                 <div
@@ -2122,7 +2122,7 @@ export default function CreatePage() {
                         className="shrink-0 font-display text-[10px] font-bold leading-none tracking-tight text-inherit sm:text-[11px]"
                         aria-hidden
                       >
-                        GEN
+                        USDC
                       </span>
                     )}
                   </div>

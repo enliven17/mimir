@@ -639,7 +639,7 @@ function VsChallengersCard({
                           className="flex h-7 min-w-[4rem] items-center justify-center rounded-md border border-white/[0.1] bg-pv-bg/55 px-2 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-fuch sm:h-8 sm:min-w-[4.5rem] sm:text-[10px]"
                           title={t("challengerStake")}
                         >
-                          {challenger.stake} GEN
+                          {challenger.stake} USDC
                         </div>
                       </div>
                     </div>
@@ -1045,8 +1045,8 @@ export default function VSDetailPage() {
     !hasWinner
       ? null
       : resolvedPayout === null
-        ? `${pool} GEN`
-        : `${provenResultTone === "lost" ? "-" : "+"}${resolvedPayout} GEN`;
+        ? `${pool} USDC`
+        : `${provenResultTone === "lost" ? "-" : "+"}${resolvedPayout} USDC`;
   const marketType = display.market_type ?? "binary";
   const oddsMode = display.odds_mode ?? "pool";
   const challengeStakeValue = Number(challengeStake);
@@ -1493,7 +1493,7 @@ export default function VSDetailPage() {
                       {t("pool")}
                     </p>
                     <div className="mt-auto min-w-0 pt-2 font-mono text-base font-bold tabular-nums leading-tight text-pv-gold sm:text-lg lg:text-xl">
-                      {pool} GEN
+                      {pool} USDC
                     </div>
                   </div>
                   <div className="flex min-h-[5.75rem] min-w-0 flex-col bg-pv-bg/55 px-4 py-3.5 sm:min-h-[6rem] sm:px-4 sm:py-4">
@@ -1501,7 +1501,7 @@ export default function VSDetailPage() {
                       {t("creatorStake")}
                     </p>
                     <div className="mt-auto min-w-0 pt-2 font-mono text-base font-bold tabular-nums leading-tight text-pv-cyan sm:text-lg lg:text-xl">
-                      {display.creator_stake ?? display.stake_amount} GEN
+                      {display.creator_stake ?? display.stake_amount} USDC
                     </div>
                   </div>
                   <div className="flex min-h-[5.75rem] min-w-0 flex-col bg-pv-bg/55 px-4 py-3.5 sm:min-h-[6rem] sm:px-4 sm:py-4">
@@ -2118,7 +2118,7 @@ export default function VSDetailPage() {
                                       {entry.question}
                                     </div>
                                     <div className="text-xs text-pv-muted mt-1">
-                                      {t("pool")}: {getVSTotalPot(entry)} GEN
+                                      {t("pool")}: {getVSTotalPot(entry)} USDC
                                     </div>
                                   </div>
                                 );

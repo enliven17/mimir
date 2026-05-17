@@ -14,7 +14,7 @@ interface LiveStatProps {
   labelPosition?: "above" | "below";
   /** Prefix (e.g. "$", "Ξ") */
   prefix?: string;
-  /** Suffix (e.g. "GEN", "%") */
+  /** Suffix (e.g. "USDC", "%") */
   suffix?: string;
   /** Duration of the roll animation in seconds */
   duration?: number;

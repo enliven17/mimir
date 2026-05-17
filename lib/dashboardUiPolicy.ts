@@ -37,7 +37,7 @@ import { isSampleVsIdForXmtp } from "@/lib/xmtp/vs-chat-eligibility";
  * Dashboard UI — Fase 3 (orientación + ergonomía)
  *
  * - **Resumen del conjunto filtrado**: conteos por estado (abierto / en vivo / cerrado) y
- *   total aproximado de GEN **en riesgo** (solo `open` + `accepted`) para la wallet,
+ *   total aproximado de USDC **en riesgo** (solo `open` + `accepted`) para la wallet,
  *   derivado de `getVSUserCommittedStake` (misma noción de apuesta que las filas).
  * - **Filtros sticky** bajo el header fijo al hacer scroll en la columna de exposición.
  * - **Ancla** `#dashboard-exposure` + `scroll-margin` para saltos sin quedar bajo el nav.

@@ -148,7 +148,7 @@ export default function CreateChallengeTicket({
               {t("ticketYourCommitment")}
             </span>
             <span className="font-display text-2xl font-bold tabular-nums text-pv-emerald">
-              {stakeStr} GEN
+              {stakeStr} USDC
             </span>
           </div>
         </div>

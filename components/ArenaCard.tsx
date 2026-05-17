@@ -199,7 +199,7 @@ export default function ArenaCard({
                 {t("arenaStatMinStake")}
               </span>
               <span className="mt-1 block font-display text-sm font-bold uppercase tabular-nums tracking-tight text-pv-text sm:text-[15px]">
-                {vs.stake_amount} GEN
+                {vs.stake_amount} USDC
               </span>
             </div>
             <div className={ARENA_STAT_CELL}>

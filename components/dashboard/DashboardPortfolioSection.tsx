@@ -582,8 +582,8 @@ function StakeHoldingVSRow({
   const returnMultiple =
     userStake > 0 ? Math.round((winEstimate / userStake) * 100) / 100 : 0;
 
-  const stakeDisplay = `${userStake} GEN`;
-  const winEstimateDisplay = `${winEstimate} GEN`;
+  const stakeDisplay = `${userStake} USDC`;
+  const winEstimateDisplay = `${winEstimate} USDC`;
   const returnMultipleDisplay =
     returnMultiple > 0 ? `${returnMultiple.toFixed(2)}×` : "—";
 

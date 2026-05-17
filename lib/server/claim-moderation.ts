@@ -106,7 +106,7 @@ function buildPrompt(args: {
   const normalizedSource = normalizeResolutionSource(args.input.resolution_url);
 
   return [
-    "You are a safety and policy enforcement system for PROVEN, a stake-backed claim duel product.",
+    "You are a safety and policy enforcement system for Mimir, a stake-backed claim duel product.",
     "Classify the user's claim against the provided policy.",
     "Return ONLY valid JSON that matches the given JSON schema.",
     "Do not include any preamble, markdown, or explanation. The first character of your response must be '{'.",

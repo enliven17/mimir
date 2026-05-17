@@ -39,7 +39,6 @@ import EmptyState from "@/components/EmptyState";
 import ExploreArenaEmptyState from "@/components/explorer/ExploreArenaEmptyState";
 import ExploreFilteredEmptyState from "@/components/explorer/ExploreFilteredEmptyState";
 import { ChevronDown, ListFilter, RefreshCw, Search, X } from "lucide-react";
-import ExploreFeaturedCarousel from "@/components/explorer/ExploreFeaturedCarousel";
 import ChallengeOpportunityCard from "@/components/explorer/ChallengeOpportunityCard";
 import type { VSCacheFreshness } from "@/lib/vs-freshness";
 
@@ -595,21 +594,6 @@ export default function ExploreClient() {
     <PageTransition>
       <h1 className="sr-only">{t("title")}</h1>
 
-      <AnimatedItem>
-        <section id="arena-hero" className="mb-8">
-          <ExploreFeaturedCarousel
-            onPrimaryClick={() => {
-              switchView("open");
-              window.requestAnimationFrame(() => scrollToBand("arena-content"));
-            }}
-            onSecondaryClick={() => {
-              switchView("open");
-              window.requestAnimationFrame(() => scrollToBand("arena-controls"));
-            }}
-          />
-        </section>
-      </AnimatedItem>
-
       {/* z-20: filter dropdowns (absolute z-40) must stack above #arena-content — Framer
           motion siblings create stacking contexts; later DOM order was painting cards on top. */}
       <AnimatedItem className="relative z-20">
@@ -1077,7 +1061,7 @@ export default function ExploreClient() {
                               : filterPillInactive
                           }`}
                         >
-                          {value === 0 ? t("any") : `${value}+ GEN`}
+                          {value === 0 ? t("any") : `${value}+ USDC`}
                         </button>
                       ))}
                     </div>

@@ -56,50 +56,10 @@ export default function SettlementArchiveSection({
     [allVS]
   );
 
-  const feedRows: FeedRow[] = useMemo(() => {
-    const live = allVS.slice(0, 3).map((vs) => ({ kind: "live" as const, vs }));
-    if (live.length > 0) return live;
-    return [
-      {
-        kind: "demo",
-        id: "demo-1",
-        contextKey: "archiveDemo1Ctx",
-        titleKey: "archiveDemo1Title",
-        col1LabelKey: "archiveColPool",
-        col1Value: "12 GEN",
-        col2LabelKey: "archiveColChallengers",
-        col2Value: "7",
-        col3LabelKey: "archiveColState",
-        col3StateKey: "archiveStateOpen",
-      },
-      {
-        kind: "demo",
-        id: "demo-2",
-        contextKey: "archiveDemo2Ctx",
-        titleKey: "archiveDemo2Title",
-        col1LabelKey: "archiveColPool",
-        col1Value: "24 GEN",
-        col2LabelKey: "archiveColChallengers",
-        col2Value: "2",
-        col3LabelKey: "archiveColState",
-        col3StateKey: "archiveStateLive",
-        col3Accent: true,
-      },
-      {
-        kind: "demo",
-        id: "demo-3",
-        contextKey: "archiveDemo3Ctx",
-        titleKey: "archiveDemo3Title",
-        col1LabelKey: "archiveColPool",
-        col1Value: "8 GEN",
-        col2LabelKey: "archiveColChallengers",
-        col2Value: "11",
-        col3LabelKey: "archiveColState",
-        col3StateKey: "archiveStateOpen",
-        pulse: true,
-      },
-    ];
-  }, [allVS]);
+  const feedRows: FeedRow[] = useMemo(
+    () => allVS.slice(0, 3).map((vs) => ({ kind: "live" as const, vs })),
+    [allVS],
+  );
 
   return (
     <section
@@ -135,7 +95,7 @@ export default function SettlementArchiveSection({
               className="font-display text-3xl font-medium tabular-nums tracking-tighter text-pv-text sm:text-4xl"
               style={{ textShadow: "0 0 24px rgba(78, 222, 163, 0.22)" }}
             >
-              {loading ? "—" : `${totalPool} GEN`}
+              {loading ? "—" : `${totalPool} USDC`}
             </span>
           </div>
           <div>
@@ -223,7 +183,7 @@ export default function SettlementArchiveSection({
                       </span>
                       <span className="font-display text-lg font-medium tabular-nums text-pv-text sm:text-xl">
                         {getVSTotalPot(row.vs)}
-                        <span className="ml-0.5 text-sm font-normal text-pv-muted">GEN</span>
+                        <span className="ml-0.5 text-sm font-normal text-pv-muted">USDC</span>
                       </span>
                     </div>
                     <div className="text-center min-w-[4.5rem]">

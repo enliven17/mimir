@@ -102,7 +102,7 @@ export default function VSCard({
                 <span className={vsCardPillClass}>{tCat(catInfo.id)}</span>
               ))}
             <span className="font-mono text-[13px] font-bold text-pv-gold">
-              {pool} GEN
+              {pool} USDC
             </span>
           </div>
         </div>

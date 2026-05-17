@@ -226,84 +226,10 @@ export default function HomePage() {
   const resolvedVS = allVS.filter((v) => v.state === "resolved");
   const decidedResolvedVS = resolvedVS.filter((v) => hasVSWinner(v));
   const totalGenStaked = allVS.reduce((sum, vs) => sum + getVSTotalPot(vs), 0);
-  const fallbackArenaCards = [
-    {
-      vs: {
-        id: -1,
-        question: "BTC Price will break $100k before March 31",
-        stake_amount: 12,
-        opponent: ZERO_ADDRESS,
-        category: "crypto",
-        state: "open" as const,
-        market_type: "binary" as const,
-        odds_mode: "pool" as const,
-        max_challengers: 1,
-      },
-      challengersCount: 0,
-    },
-    {
-      vs: {
-        id: -2,
-        question: "GPT-5 Announced by OpenAI before June",
-        stake_amount: 4,
-        opponent: ZERO_ADDRESS,
-        category: "custom",
-        state: "open" as const,
-        market_type: "binary" as const,
-        odds_mode: "pool" as const,
-        max_challengers: 1,
-      },
-      challengersCount: 0,
-    },
-    {
-      vs: {
-        id: -3,
-        question: "Lakers win the western conference",
-        stake_amount: 8,
-        opponent: ZERO_ADDRESS,
-        category: "sports",
-        state: "open" as const,
-        market_type: "binary" as const,
-        odds_mode: "pool" as const,
-        max_challengers: 1,
-      },
-      challengersCount: 0,
-    },
-    {
-      vs: {
-        id: -4,
-        question: "Fed cuts rates before Q3 2026",
-        stake_amount: 15,
-        opponent: ZERO_ADDRESS,
-        category: "custom",
-        state: "accepted" as const,
-        market_type: "binary" as const,
-        odds_mode: "fixed" as const,
-        max_challengers: 1,
-      },
-      challengersCount: 1,
-    },
-    {
-      vs: {
-        id: -5,
-        question: "Ethereum ETF daily inflows exceed $50M",
-        stake_amount: 6,
-        opponent: ZERO_ADDRESS,
-        category: "crypto",
-        state: "resolved" as const,
-        market_type: "binary" as const,
-        odds_mode: "pool" as const,
-        max_challengers: 1,
-      },
-      challengersCount: 1,
-    },
-  ];
 
-  const arenaFromData = [...openVS, ...allVS.filter((v) => v.state !== "open")]
-    .slice(0, 6)
+  const arenaGridCards = [...openVS, ...allVS.filter((v) => v.state !== "open")]
+    .slice(0, 5)
     .map((vs) => ({ vs, challengersCount: undefined as number | undefined }));
-  const arenaMerged = [...arenaFromData, ...fallbackArenaCards];
-  const arenaGridCards = arenaMerged.slice(0, 5);
 
   const steps = [
     {
@@ -461,7 +387,7 @@ export default function HomePage() {
         </Stage>
       </AnimatedItem>
 
-      {/* Differentiator — stats strip (total / resolved / GEN staked); mismo patrón que THE PROTOCOL / LIVE ARENA */}
+      {/* Differentiator — stats strip (total / resolved / USDC staked); mismo patrón que THE PROTOCOL / LIVE ARENA */}
       <AnimatedItem>
         <div className="mb-12">
           <div className="mb-10 flex items-center gap-4 sm:gap-6">
@@ -501,7 +427,7 @@ export default function HomePage() {
                 labelPosition="below"
                 size="lg"
                 color="gold"
-                suffix="GEN"
+                suffix="USDC"
                   labelClassName="text-[12px]"
                 className="items-center"
               />
@@ -850,7 +776,7 @@ export default function HomePage() {
                       </span>
                     </div>
                     <span className="font-mono text-[12px] font-bold text-pv-gold flex-shrink-0 ml-2">
-                      {payout === null ? `${getVSTotalPot(vs)} GEN` : `+${payout} GEN`}
+                      {payout === null ? `${getVSTotalPot(vs)} USDC` : `+${payout} USDC`}
                     </span>
                   </motion.div>
                 </Link>

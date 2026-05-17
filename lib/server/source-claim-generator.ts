@@ -262,7 +262,7 @@ async function fetchSourceSnapshot(sourceUrl: string) {
   const response = await fetch(sourceUrl, {
     method: "GET",
     headers: {
-      "User-Agent": "PROVEN Source Draft Bot/1.0",
+      "User-Agent": "Mimir Source Draft Bot/1.0",
       Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
     },
     cache: "no-store",
@@ -304,7 +304,7 @@ function createDraftPrompt(args: {
   const outputLanguage = args.locale === "es" ? "Spanish" : "English";
 
   return [
-    "You are drafting challenge-ready claims for PROVEN, a stake-backed claim duel product.",
+    "You are drafting challenge-ready claims for Mimir, a stake-backed claim duel product.",
     "Use only the provided source material.",
     "Generate at most 3 claim ideas and only include future, verifiable outcomes.",
     "If the source is weak, subjective, already resolved, or not clearly challenge-ready, return an empty candidates array and explain why in rejectionReason.",
