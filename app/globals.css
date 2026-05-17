@@ -1,3 +1,8 @@
+@import "@fontsource/maple-mono/400.css";
+@import "@fontsource/maple-mono/500.css";
+@import "@fontsource/maple-mono/600.css";
+@import "@fontsource/maple-mono/700.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

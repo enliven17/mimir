@@ -28,9 +28,9 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ["var(--font-display)", "system-ui", "sans-serif"],
-        body:    ["var(--font-body)", "system-ui", "sans-serif"],
-        mono:    ["var(--font-mono)", "monospace"],
+        display: ["'Maple Mono'", "var(--font-display)", "ui-monospace", "monospace"],
+        body:    ["'Maple Mono'", "var(--font-body)",    "ui-monospace", "monospace"],
+        mono:    ["'Maple Mono'", "var(--font-mono)",    "ui-monospace", "monospace"],
       },
       borderRadius: {
         DEFAULT: "8px",

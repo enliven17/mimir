@@ -209,9 +209,9 @@ export default function BridgePage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 py-8">
       <header className="space-y-2">
-        <p className="text-xs uppercase tracking-widest text-zinc-500">Circle CCTP V2</p>
+        <p className="text-xs uppercase tracking-widest text-pv-muted/85">Circle CCTP V2</p>
         <h1 className="text-3xl font-semibold">Bridge USDC to Arc</h1>
-        <p className="text-zinc-400">
+        <p className="text-pv-muted">
           Bring USDC from Base, Ethereum, or Avalanche Sepolia into Arc Testnet via
           Circle's native burn-and-mint protocol. Fast Transfer (~15s).
         </p>
@@ -221,15 +221,15 @@ export default function BridgePage() {
 
       {/* Connection status */}
       {!isConnected ? (
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
-          <p className="text-zinc-300">Connect your wallet to start bridging.</p>
+        <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/80 p-6">
+          <p className="text-pv-text/85">Connect your wallet to start bridging.</p>
         </div>
       ) : (
         <>
           {/* Source chain selector */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4">
+          <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/80 p-6 space-y-4">
             <div>
-              <label className="text-xs uppercase tracking-widest text-zinc-500">Source chain</label>
+              <label className="text-xs uppercase tracking-widest text-pv-muted/85">Source chain</label>
               <div className="mt-2 grid grid-cols-3 gap-2">
                 {SOURCES.map((k) => (
                   <button
@@ -237,8 +237,8 @@ export default function BridgePage() {
                     onClick={() => { setSourceKey(k); reset(); }}
                     className={`rounded-lg border p-3 text-sm transition ${
                       sourceKey === k
-                        ? "border-blue-500 bg-blue-500/10 text-blue-300"
-                        : "border-zinc-800 text-zinc-400 hover:border-zinc-600"
+                        ? "border-pv-emerald bg-pv-emerald/10 text-pv-emerald"
+                        : "border-pv-border/30 text-pv-muted hover:border-pv-border/50"
                     }`}
                   >
                     {CCTP_CHAINS[k].name}
@@ -248,16 +248,16 @@ export default function BridgePage() {
             </div>
 
             <div>
-              <label className="text-xs uppercase tracking-widest text-zinc-500">Amount (USDC)</label>
+              <label className="text-xs uppercase tracking-widest text-pv-muted/85">Amount (USDC)</label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="mt-2 w-full rounded-lg border border-zinc-800 bg-black/40 px-4 py-3 text-lg outline-none focus:border-blue-500"
+                className="mt-2 w-full rounded-lg border border-pv-border/30 bg-pv-bg/70 px-4 py-3 text-lg outline-none focus:border-pv-emerald"
               />
-              <div className="mt-1 flex justify-between text-xs text-zinc-500">
+              <div className="mt-1 flex justify-between text-xs text-pv-muted/85">
                 <span>Balance on {source.name}: {(Number(balance) / 1e6).toFixed(2)} USDC</span>
                 <span>Destination: {DEST.name}</span>
               </div>
@@ -265,12 +265,12 @@ export default function BridgePage() {
           </div>
 
           {/* Step buttons */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-3">
+          <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/80 p-6 space-y-3">
             {!onSourceChain && !irisMessage && (
               <button
                 onClick={handleSwitchToSource}
                 disabled={isSwitching}
-                className="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition hover:bg-blue-500 disabled:opacity-50"
+                className="w-full rounded-lg bg-pv-emerald px-4 py-3 font-medium text-white transition hover:bg-pv-emerald disabled:opacity-50"
               >
                 {isSwitching ? "Switching…" : `Switch wallet to ${source.name}`}
               </button>
@@ -280,7 +280,7 @@ export default function BridgePage() {
               <button
                 onClick={handleApprove}
                 disabled={phase === "approving"}
-                className="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition hover:bg-blue-500 disabled:opacity-50"
+                className="w-full rounded-lg bg-pv-emerald px-4 py-3 font-medium text-white transition hover:bg-pv-emerald disabled:opacity-50"
               >
                 {phase === "approving" ? "Approving…" : `Approve ${amount} USDC`}
               </button>
@@ -290,7 +290,7 @@ export default function BridgePage() {
               <button
                 onClick={handleBurn}
                 disabled={phase === "burning" || phase === "attesting"}
-                className="w-full rounded-lg bg-green-600 px-4 py-3 font-medium text-white transition hover:bg-green-500 disabled:opacity-50"
+                className="w-full rounded-lg bg-pv-emerald px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:opacity-50"
               >
                 {phase === "burning" ? "Burning USDC on source…" :
                  phase === "attesting" ? "Waiting for Circle attestation (~15s)…" :
@@ -302,7 +302,7 @@ export default function BridgePage() {
               <button
                 onClick={handleSwitchToArc}
                 disabled={isSwitching}
-                className="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition hover:bg-blue-500 disabled:opacity-50"
+                className="w-full rounded-lg bg-pv-emerald px-4 py-3 font-medium text-white transition hover:bg-pv-emerald disabled:opacity-50"
               >
                 {isSwitching ? "Switching…" : "Switch wallet to Arc Testnet"}
               </button>
@@ -312,7 +312,7 @@ export default function BridgePage() {
               <button
                 onClick={handleMint}
                 disabled={phase === "minting"}
-                className="w-full rounded-lg bg-green-600 px-4 py-3 font-medium text-white transition hover:bg-green-500 disabled:opacity-50"
+                className="w-full rounded-lg bg-pv-emerald px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:opacity-50"
               >
                 {phase === "minting" ? "Minting on Arc…" : `Mint ${amount} USDC on Arc`}
               </button>
@@ -320,10 +320,10 @@ export default function BridgePage() {
 
             {phase === "done" && (
               <div className="space-y-2">
-                <p className="text-green-400 font-medium">✓ Bridge complete!</p>
+                <p className="text-pv-emerald font-medium">✓ Bridge complete!</p>
                 <button
                   onClick={reset}
-                  className="w-full rounded-lg border border-zinc-700 px-4 py-3 text-zinc-300 transition hover:border-zinc-500"
+                  className="w-full rounded-lg border border-pv-border/40 px-4 py-3 text-pv-text/85 transition hover:border-pv-border"
                 >
                   Bridge another
                 </button>
@@ -333,25 +333,25 @@ export default function BridgePage() {
 
           {/* Tx hashes */}
           {(burnTxHash || mintTxHash) && (
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-3 text-sm">
-              <p className="text-xs uppercase tracking-widest text-zinc-500">Transactions</p>
+            <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/80 p-6 space-y-3 text-sm">
+              <p className="text-xs uppercase tracking-widest text-pv-muted/85">Transactions</p>
               {burnTxHash && (
                 <a
                   href={`${source.explorerUrl}/tx/${burnTxHash}`}
                   target="_blank" rel="noopener noreferrer"
-                  className="block break-all text-blue-400 hover:underline"
+                  className="block break-all text-pv-emerald hover:underline"
                 >
                   Burn on {source.name}: {burnTxHash}
                 </a>
               )}
               {irisMessage && !mintTxHash && (
-                <p className="text-zinc-400">Attestation received from Circle Iris ✓</p>
+                <p className="text-pv-muted">Attestation received from Circle Iris ✓</p>
               )}
               {mintTxHash && (
                 <a
                   href={`${DEST.explorerUrl}/tx/${mintTxHash}`}
                   target="_blank" rel="noopener noreferrer"
-                  className="block break-all text-blue-400 hover:underline"
+                  className="block break-all text-pv-emerald hover:underline"
                 >
                   Mint on {DEST.name}: {mintTxHash}
                 </a>
@@ -360,14 +360,14 @@ export default function BridgePage() {
           )}
 
           {error && (
-            <div className="rounded-2xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-300">
+            <div className="rounded-2xl border border-pv-danger/30 bg-pv-danger/10 p-4 text-sm text-pv-danger">
               {error}
             </div>
           )}
         </>
       )}
 
-      <footer className="pt-4 text-xs text-zinc-600">
+      <footer className="pt-4 text-xs text-pv-muted/70">
         Powered by{" "}
         <a href="https://developers.circle.com/cctp" target="_blank" rel="noopener noreferrer" className="underline">
           Circle CCTP V2

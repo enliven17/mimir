@@ -21,7 +21,6 @@ import VSCard from "@/components/VSCard";
 import ArenaCard from "@/components/ArenaCard";
 import ArenaProposeCard from "@/components/ArenaProposeCard";
 import SettlementArchiveSection from "@/components/SettlementArchiveSection";
-import Stage from "@/components/Stage";
 import Artifact from "@/components/Artifact";
 import LiveStat from "@/components/LiveStat";
 import { kineticContainer, kineticLetter } from "@/lib/animations/rituals";
@@ -266,15 +265,10 @@ export default function HomePage() {
     <PageTransition>
       {/* Hero — Manifesto with kinetic typography + arena grid */}
       <AnimatedItem>
-        <Stage
-          glow="both"
-          grid
-          className="mb-6 sm:mb-8 relative w-full"
-        >
-          {/* Plasma WebGL backdrop — fills hero, hidden when scrolled past via IntersectionObserver inside the component */}
-          <div className="absolute inset-0 z-0 overflow-hidden">
+        <section className="relative mb-6 w-full sm:mb-8">
+          {/* Plasma WebGL backdrop — full-viewport-bleed, escapes both <main> and the hero box */}
+          <div className="absolute inset-y-0 left-1/2 z-0 h-full w-screen -translate-x-1/2 overflow-hidden">
             <Plasma color="#F5AFAF" speed={0.9} scale={1} opacity={0.85} mouseInteractive={false} />
-            {/* Edge fade so the plasma doesn't bleed into surrounding sections */}
             <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-pv-bg via-pv-bg/35 to-transparent sm:h-32" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-pv-bg via-pv-bg/60 to-transparent sm:h-40" />
           </div>
@@ -354,7 +348,7 @@ export default function HomePage() {
               </motion.div>
             </div>
           </div>
-        </Stage>
+        </section>
       </AnimatedItem>
 
       {/* Differentiator — stats strip (total / resolved / USDC staked); mismo patrón que THE PROTOCOL / LIVE ARENA */}

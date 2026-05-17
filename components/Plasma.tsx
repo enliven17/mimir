@@ -84,17 +84,38 @@ vec3 sanitize(vec3 c){
   );
 }
 
+// 4-stop blush palette (matches the page's pv tokens).
+// Index 0 = page bg (lightest), index 3 = accent (deepest tint).
+const vec3 PAL0 = vec3(0.988, 0.973, 0.973); // #FCF8F8
+const vec3 PAL1 = vec3(0.984, 0.937, 0.937); // #FBEFEF
+const vec3 PAL2 = vec3(0.976, 0.875, 0.875); // #F9DFDF
+const vec3 PAL3 = vec3(0.961, 0.686, 0.686); // #F5AFAF
+
+vec3 palette(float t) {
+  t = clamp(t, 0.0, 1.0);
+  // 3 segments across 4 stops.
+  if (t < 0.3333) {
+    return mix(PAL0, PAL1, t / 0.3333);
+  } else if (t < 0.6667) {
+    return mix(PAL1, PAL2, (t - 0.3333) / 0.3333);
+  }
+  return mix(PAL2, PAL3, (t - 0.6667) / 0.3333);
+}
+
 void main() {
   vec4 o = vec4(0.0);
   mainImage(o, gl_FragCoord.xy);
   vec3 rgb = sanitize(o.rgb);
 
-  float intensity = (rgb.r + rgb.g + rgb.b) / 3.0;
-  vec3 customColor = intensity * uCustomColor;
-  vec3 finalColor = mix(rgb, customColor, step(0.5, uUseCustomColor));
+  // Map plasma intensity → blush gradient so no value drops to dark.
+  // Bias the input so the median plasma value lands in the mid-light range.
+  float intensity = clamp((rgb.r + rgb.g + rgb.b) / 3.0, 0.0, 1.0);
+  intensity = pow(intensity, 0.85);            // gentle curve, lift the lows
+  vec3 finalColor = palette(intensity);
 
-  float alpha = length(rgb) * uOpacity;
-  fragColor = vec4(finalColor, alpha);
+  // Solid alpha (modulated by the prop). Avoids the canvas going transparent
+  // through to the page background, which is what produced dark patches.
+  fragColor = vec4(finalColor, uOpacity);
 }`;
 
 export default function Plasma({
