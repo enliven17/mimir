@@ -21,7 +21,8 @@
  *      RUN_INTERVAL_HOURS=6      (hours between runs, default 6h)
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { formatEther } from "viem";
+import { callLLM, activeLLMProvider, activeLLMModel } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
@@ -46,11 +47,15 @@ const MAX_CLAIMS_PER_RUN  = Number(process.env.MAX_CLAIMS_PER_RUN ?? "5");
 const RUN_INTERVAL_HOURS  = Number(process.env.RUN_INTERVAL_HOURS ?? "6");
 const MIN_QUALITY_SCORE   = 70; // 0-100
 
-for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLET_ID", "CIRCLE_CREATOR_ADDRESS", "ANTHROPIC_API_KEY"]) {
+for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLET_ID", "CIRCLE_CREATOR_ADDRESS"]) {
   if (!process.env[v]) {
     console.error(`${v} env var is required`);
     process.exit(1);
   }
+}
+if (!process.env.GEMINI_API_KEY?.trim() && !process.env.ANTHROPIC_API_KEY?.trim()) {
+  console.error("GEMINI_API_KEY or ANTHROPIC_API_KEY env var is required");
+  process.exit(1);
 }
 
 const SIG_CREATE_CLAIM = buildAbiFunctionSignature("createClaim", MIMIR_ABI);
@@ -59,7 +64,6 @@ const SIG_CREATE_CLAIM = buildAbiFunctionSignature("createClaim", MIMIR_ABI);
 const publicClient   = createArcPublicClient();
 const CREATOR_WALLET = getMarketCreatorWalletId();
 const CREATOR_ADDR   = getMarketCreatorAddress();
-const anthropic      = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ClaimCandidate {
@@ -166,13 +170,7 @@ For each candidate, provide:
 
 Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
 
-  const message = await anthropic.messages.create({
-    model:      "claude-sonnet-4-6",
-    max_tokens: 2000,
-    messages:   [{ role: "user", content: prompt }],
-  });
-
-  const text = (message.content[0] as any)?.text ?? "";
+  const text = await callLLM(prompt, { maxTokens: 2000, jsonOnly: true });
   try {
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error("No JSON array in response");
@@ -220,7 +218,7 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
         false,                       // isPrivate
         "",                          // inviteKey
       ]),
-      amount: stake.toString(),
+      amount: formatEther(stake), // Circle expects decimal USDC, not wei
       refId:  `mc-${Date.now()}`,
     });
     return txHash;
@@ -286,6 +284,7 @@ async function main(): Promise<void> {
   console.log(`  Wallet ID  : ${CREATOR_WALLET}`);
   console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
+  console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()}`);
   console.log(`  Stake/mkt  : ${CREATOR_STAKE_USDC} USDC`);
   console.log(`  Max/run    : ${MAX_CLAIMS_PER_RUN} claims`);
   console.log(`  Interval   : every ${RUN_INTERVAL_HOURS}h`);

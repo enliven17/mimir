@@ -14,14 +14,15 @@
  *
  * Run: npx tsx agents/oracle/index.ts
  * Env: CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_ORACLE_WALLET_ID,
- *      CIRCLE_ORACLE_ADDRESS, NEXT_PUBLIC_CONTRACT_ADDRESS, ANTHROPIC_API_KEY
+ *      CIRCLE_ORACLE_ADDRESS, NEXT_PUBLIC_CONTRACT_ADDRESS
+ *      + one of: GEMINI_API_KEY (preferred) OR ANTHROPIC_API_KEY
  *      AUTO_CHALLENGE=1        (enable auto-challenger, default off)
  *      CHALLENGE_STAKE_USDC=2  (stake per challenge, default 2 USDC)
  *      CHALLENGE_CONFIDENCE=80 (min confidence to challenge, default 80)
  */
 
-import Anthropic from "@anthropic-ai/sdk";
-import { keccak256, toBytes } from "viem";
+import { keccak256, toBytes, formatEther } from "viem";
+import { callLLM, activeLLMProvider, activeLLMModel } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
@@ -52,11 +53,15 @@ const challengedClaimIds = new Set<number>();
 // Track evaluated-but-not-challenged (to avoid repeated LLM calls)
 const evaluatedClaimIds = new Set<number>();
 
-for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_WALLET_ID", "CIRCLE_ORACLE_ADDRESS", "ANTHROPIC_API_KEY"]) {
+for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_WALLET_ID", "CIRCLE_ORACLE_ADDRESS"]) {
   if (!process.env[v]) {
     console.error(`${v} env var is required`);
     process.exit(1);
   }
+}
+if (!process.env.GEMINI_API_KEY?.trim() && !process.env.ANTHROPIC_API_KEY?.trim()) {
+  console.error("GEMINI_API_KEY or ANTHROPIC_API_KEY env var is required");
+  process.exit(1);
 }
 
 // Pre-compute Circle ABI signatures (call once, reuse per claim)
@@ -67,7 +72,6 @@ const SIG_CHALLENGE_CLAIM  = buildAbiFunctionSignature("challengeClaim", MIMIR_A
 const publicClient  = createArcPublicClient();
 const ORACLE_WALLET = getOracleWalletId();
 const ORACLE_ADDR   = getOracleAddress();
-const anthropic     = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ClaimOnChain {
@@ -111,11 +115,11 @@ async function fetchClaim(claimId: number): Promise<ClaimOnChain | null> {
       publicClient.readContract({
         address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
         functionName: "getClaim", args: [BigInt(claimId)],
-      }) as Promise<any[]>,
+      }) as Promise<readonly any[]>,
       publicClient.readContract({
         address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
         functionName: "getClaimMarketConfig", args: [BigInt(claimId)],
-      }) as Promise<any[]>,
+      }) as Promise<readonly any[]>,
     ]);
 
     if (!base[0] || base[0] === "0x0000000000000000000000000000000000000000") {
@@ -203,13 +207,7 @@ Return JSON only:
 - UNRESOLVABLE if evidence is missing, ambiguous, or the deadline hasn't passed yet.
 - Be strict about confidence — only go above 80 when evidence is unambiguous.`;
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 512,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = (message.content[0] as any)?.text ?? "";
+  const text = await callLLM(prompt, { maxTokens: 512, jsonOnly: true });
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON");
@@ -352,7 +350,7 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
     contractAddress:      CONTRACT_ADDRESS,
     abiFunctionSignature: SIG_CHALLENGE_CLAIM,
     abiParameters:        toCircleAbiParameters([BigInt(claim.id), stakeWei, ""]),
-    amount:               stakeWei.toString(),
+    amount:               formatEther(stakeWei), // Circle expects decimal USDC, not wei
     refId:                `challenge-${claim.id}`,
   });
 
@@ -422,6 +420,7 @@ async function main(): Promise<void> {
   console.log(`  Wallet ID  : ${ORACLE_WALLET}`);
   console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
+  console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()}`);
   console.log(`  Poll every : ${POLL_INTERVAL_MS / 1000}s`);
   console.log(`  Auto-challenge: ${AUTO_CHALLENGE ? `YES (≥${CHALLENGE_CONFIDENCE}% confidence, ${CHALLENGE_STAKE_USDC} USDC/claim)` : "OFF (set AUTO_CHALLENGE=1 to enable)"}`);
   console.log("═══════════════════════════════════════════════\n");
