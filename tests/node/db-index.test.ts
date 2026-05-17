@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import test from "node:test";
 
 import type { ClaimData } from "../../lib/contract";
 
-const tempDir = mkdtempSync(path.join(tmpdir(), "proven-db-"));
-process.env.TURSO_DATABASE_URL = `file:${path.join(tempDir, "index.db").replace(/\\/g, "/")}`;
-delete process.env.TURSO_AUTH_TOKEN;
+// This suite exercises the read-index against a real Postgres instance.
+// Skip when DATABASE_URL is missing (e.g. local smoke runs without NeonDB)
+// so the test:smoke script stays fast.
+const HAS_DB = Boolean(process.env.DATABASE_URL?.trim());
+const describeDb = HAS_DB ? test : test.skip;
 
 function makeClaim(overrides: Partial<ClaimData> = {}): ClaimData {
   return {
@@ -53,7 +52,7 @@ function makeClaim(overrides: Partial<ClaimData> = {}): ClaimData {
   };
 }
 
-test("upsertClaim scrubs private content before storage", async () => {
+describeDb("upsertClaim scrubs private content before storage", async () => {
   const db = await import("../../lib/db");
   const claim = makeClaim();
 
@@ -90,7 +89,7 @@ test("upsertClaim scrubs private content before storage", async () => {
   assert.deepEqual(claimIdsByChallenger, [claim.id]);
 });
 
-test("sync_meta persists seeded and updated values", async () => {
+describeDb("sync_meta persists seeded and updated values", async () => {
   const db = await import("../../lib/db");
 
   assert.equal(await db.getSyncMeta("last_claim_count"), "0");

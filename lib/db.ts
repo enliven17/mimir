@@ -1,7 +1,15 @@
-import { createClient, type Client, type InStatement } from "@libsql/client";
+import { Pool, neonConfig, type PoolConfig } from "@neondatabase/serverless";
+import ws from "ws";
 
 import type { ChallengeOpportunity } from "@/lib/claimDrafts";
 import type { ClaimChallenger, ClaimData } from "@/lib/contract";
+
+// Neon's @neondatabase/serverless uses WebSockets in Node — wire up the ws
+// implementation. In edge/serverless runtimes that don't ship a global
+// WebSocket, this is a no-op fallback (Vercel edge has its own native WS).
+if (typeof globalThis.WebSocket === "undefined") {
+  neonConfig.webSocketConstructor = ws as unknown as typeof WebSocket;
+}
 
 export interface ClaimRow {
   id: number;
@@ -93,58 +101,67 @@ const PRIVATE_CONTENT_FIELDS = [
   "settlement_rule",
 ] as const;
 
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS claims (
-    id INTEGER PRIMARY KEY,
+interface SqlStatement {
+  sql:   string;
+  args?: ReadonlyArray<unknown>;
+}
+
+/**
+ * Postgres schema. BIGINT for any value that could exceed 2^31 (stakes, deadlines).
+ * On-conflict syntax is identical to SQLite since Postgres 9.5.
+ */
+const SCHEMA_STATEMENTS: SqlStatement[] = [
+  { sql: `CREATE TABLE IF NOT EXISTS claims (
+    id BIGINT PRIMARY KEY,
     creator TEXT NOT NULL,
     question TEXT,
     creator_position TEXT,
     counter_position TEXT,
     resolution_url TEXT,
-    creator_stake INTEGER NOT NULL DEFAULT 0,
-    total_challenger_stake INTEGER NOT NULL DEFAULT 0,
-    reserved_creator_liability INTEGER NOT NULL DEFAULT 0,
-    deadline INTEGER NOT NULL,
+    creator_stake BIGINT NOT NULL DEFAULT 0,
+    total_challenger_stake BIGINT NOT NULL DEFAULT 0,
+    reserved_creator_liability BIGINT NOT NULL DEFAULT 0,
+    deadline BIGINT NOT NULL,
     state TEXT NOT NULL DEFAULT 'open',
     winner_side TEXT NOT NULL DEFAULT '',
     resolution_summary TEXT,
     confidence INTEGER NOT NULL DEFAULT 0,
     category TEXT NOT NULL DEFAULT 'custom',
-    parent_id INTEGER NOT NULL DEFAULT 0,
+    parent_id BIGINT NOT NULL DEFAULT 0,
     market_type TEXT NOT NULL DEFAULT 'binary',
     odds_mode TEXT NOT NULL DEFAULT 'pool',
-    challenger_payout_bps INTEGER NOT NULL DEFAULT 0,
+    challenger_payout_bps BIGINT NOT NULL DEFAULT 0,
     handicap_line TEXT,
     settlement_rule TEXT,
-    max_challengers INTEGER NOT NULL DEFAULT 0,
+    max_challengers BIGINT NOT NULL DEFAULT 0,
     visibility TEXT NOT NULL DEFAULT 'public',
-    challenger_count INTEGER NOT NULL DEFAULT 0,
-    total_pot INTEGER NOT NULL DEFAULT 0,
+    challenger_count BIGINT NOT NULL DEFAULT 0,
+    total_pot BIGINT NOT NULL DEFAULT 0,
     first_challenger TEXT NOT NULL DEFAULT '',
-    first_indexed_at INTEGER NOT NULL DEFAULT 0,
-    updated_at INTEGER NOT NULL DEFAULT 0,
+    first_indexed_at BIGINT NOT NULL DEFAULT 0,
+    updated_at BIGINT NOT NULL DEFAULT 0,
     is_final INTEGER NOT NULL DEFAULT 0
-  )`,
-  "CREATE INDEX IF NOT EXISTS idx_claims_state ON claims(state)",
-  "CREATE INDEX IF NOT EXISTS idx_claims_category ON claims(category)",
-  "CREATE INDEX IF NOT EXISTS idx_claims_creator ON claims(creator)",
-  "CREATE INDEX IF NOT EXISTS idx_claims_deadline ON claims(deadline)",
-  "CREATE INDEX IF NOT EXISTS idx_claims_parent ON claims(parent_id)",
-  "CREATE INDEX IF NOT EXISTS idx_claims_visibility ON claims(visibility)",
-  "CREATE INDEX IF NOT EXISTS idx_claims_active ON claims(state, is_final)",
-  `CREATE TABLE IF NOT EXISTS challengers (
-    claim_id INTEGER NOT NULL,
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_claims_state ON claims(state)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_claims_category ON claims(category)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_claims_creator ON claims(creator)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_claims_deadline ON claims(deadline)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_claims_parent ON claims(parent_id)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_claims_visibility ON claims(visibility)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_claims_active ON claims(state, is_final)" },
+  { sql: `CREATE TABLE IF NOT EXISTS challengers (
+    claim_id BIGINT NOT NULL,
     address TEXT NOT NULL,
-    stake INTEGER NOT NULL DEFAULT 0,
-    potential_payout INTEGER NOT NULL DEFAULT 0,
+    stake BIGINT NOT NULL DEFAULT 0,
+    potential_payout BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (claim_id, address)
-  )`,
-  "CREATE INDEX IF NOT EXISTS idx_challengers_address ON challengers(address)",
-  `CREATE TABLE IF NOT EXISTS sync_meta (
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_challengers_address ON challengers(address)" },
+  { sql: `CREATE TABLE IF NOT EXISTS sync_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS challenge_opportunities (
+  )` },
+  { sql: `CREATE TABLE IF NOT EXISTS challenge_opportunities (
     locale TEXT NOT NULL,
     id TEXT NOT NULL,
     source_url TEXT NOT NULL,
@@ -163,74 +180,101 @@ const SCHEMA_STATEMENTS = [
     claim_strength_score INTEGER NOT NULL DEFAULT 0,
     claim_strength_tier TEXT NOT NULL DEFAULT 'weak',
     action TEXT NOT NULL DEFAULT 'create',
-    existing_claim_id INTEGER,
-    generated_at INTEGER NOT NULL DEFAULT 0,
-    expires_at INTEGER NOT NULL DEFAULT 0,
+    existing_claim_id BIGINT,
+    generated_at BIGINT NOT NULL DEFAULT 0,
+    expires_at BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (locale, id)
-  )`,
-  "CREATE INDEX IF NOT EXISTS idx_challenge_opportunities_locale ON challenge_opportunities(locale)",
-  "CREATE INDEX IF NOT EXISTS idx_challenge_opportunities_expires_at ON challenge_opportunities(expires_at)",
-  "CREATE INDEX IF NOT EXISTS idx_challenge_opportunities_action ON challenge_opportunities(action)",
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_challenge_opportunities_locale ON challenge_opportunities(locale)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_challenge_opportunities_expires_at ON challenge_opportunities(expires_at)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_challenge_opportunities_action ON challenge_opportunities(action)" },
   {
-    sql: "INSERT INTO sync_meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO NOTHING",
+    sql: "INSERT INTO sync_meta(key, value) VALUES($1, $2) ON CONFLICT(key) DO NOTHING",
     args: ["last_claim_count", "0"],
   },
   {
-    sql: "INSERT INTO sync_meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO NOTHING",
+    sql: "INSERT INTO sync_meta(key, value) VALUES($1, $2) ON CONFLICT(key) DO NOTHING",
     args: ["last_sync_at", "0"],
   },
-] satisfies Array<string | InStatement>;
+];
 
 declare global {
-  var __provenDbClient: Client | undefined;
-  var __provenDbReady: Promise<Client> | undefined;
+  // eslint-disable-next-line no-var
+  var __mimirDbPool:  Pool | undefined;
+  // eslint-disable-next-line no-var
+  var __mimirDbReady: Promise<Pool> | undefined;
 }
 
-function isDbConfigured() {
-  return Boolean(process.env.TURSO_DATABASE_URL?.trim());
+function isDbConfigured(): boolean {
+  return Boolean((process.env.DATABASE_URL ?? process.env.TURSO_DATABASE_URL)?.trim());
 }
 
-function getDbConfig() {
-  const url = process.env.TURSO_DATABASE_URL?.trim();
-  if (!url) {
-    throw new Error("Turso database is not configured");
-  }
-
-  const authToken = process.env.TURSO_AUTH_TOKEN?.trim();
-  return authToken ? { url, authToken, intMode: "number" as const } : { url, intMode: "number" as const };
+function getDbConnectionString(): string {
+  const url = (process.env.DATABASE_URL ?? process.env.TURSO_DATABASE_URL)?.trim();
+  if (!url) throw new Error("DATABASE_URL is not configured");
+  return url;
 }
 
-async function ensureSchema(client: Client) {
-  await client.migrate(SCHEMA_STATEMENTS);
+function buildPool(): Pool {
+  const cfg: PoolConfig = { connectionString: getDbConnectionString() };
+  return new Pool(cfg);
 }
 
-function getNumber(value: unknown) {
-  if (typeof value === "number") {
-    return value;
+/** Convert `?` placeholders to Postgres `$1, $2, ...` in source order. */
+function toPg(sql: string): string {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+}
+
+async function execute(
+  pool: Pool,
+  stmt: SqlStatement,
+): Promise<{ rows: Array<Record<string, unknown>> }> {
+  const args = stmt.args ?? [];
+  const sql = stmt.sql.includes("$") ? stmt.sql : toPg(stmt.sql);
+  const result = await pool.query(sql, args as unknown[]);
+  return { rows: result.rows as Array<Record<string, unknown>> };
+}
+
+async function ensureSchema(pool: Pool): Promise<void> {
+  for (const stmt of SCHEMA_STATEMENTS) {
+    await execute(pool, stmt);
   }
-  if (typeof value === "bigint") {
-    return Number(value);
+}
+
+async function batchWrite(pool: Pool, statements: SqlStatement[]): Promise<void> {
+  if (statements.length === 0) return;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const stmt of statements) {
+      const sql = stmt.sql.includes("$") ? stmt.sql : toPg(stmt.sql);
+      await client.query(sql, (stmt.args ?? []) as unknown[]);
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-  if (typeof value === "string" && value.length > 0) {
-    return Number(value);
-  }
+}
+
+function getNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string" && value.length > 0) return Number(value);
   return 0;
 }
 
-function getString(value: unknown) {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (value == null) {
-    return "";
-  }
+function getString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
   return String(value);
 }
 
-function getNullableString(value: unknown) {
-  if (value == null) {
-    return null;
-  }
+function getNullableString(value: unknown): string | null {
+  if (value == null) return null;
   return String(value);
 }
 
@@ -357,40 +401,16 @@ function buildIndexedClaimRecord(claim: ClaimData): IndexedClaimRecord {
   };
 }
 
-function buildClaimUpsertStatement(claim: ClaimData, timestamp: number): InStatement {
+function buildClaimUpsertStatement(claim: ClaimData, timestamp: number): SqlStatement {
   const record = buildIndexedClaimRecord(claim);
-
   return {
     sql: `INSERT INTO claims (
-      id,
-      creator,
-      question,
-      creator_position,
-      counter_position,
-      resolution_url,
-      creator_stake,
-      total_challenger_stake,
-      reserved_creator_liability,
-      deadline,
-      state,
-      winner_side,
-      resolution_summary,
-      confidence,
-      category,
-      parent_id,
-      market_type,
-      odds_mode,
-      challenger_payout_bps,
-      handicap_line,
-      settlement_rule,
-      max_challengers,
-      visibility,
-      challenger_count,
-      total_pot,
-      first_challenger,
-      first_indexed_at,
-      updated_at,
-      is_final
+      id, creator, question, creator_position, counter_position, resolution_url,
+      creator_stake, total_challenger_stake, reserved_creator_liability,
+      deadline, state, winner_side, resolution_summary, confidence, category,
+      parent_id, market_type, odds_mode, challenger_payout_bps, handicap_line,
+      settlement_rule, max_challengers, visibility, challenger_count, total_pot,
+      first_challenger, first_indexed_at, updated_at, is_final
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       creator = excluded.creator,
@@ -419,7 +439,7 @@ function buildClaimUpsertStatement(claim: ClaimData, timestamp: number): InState
       total_pot = excluded.total_pot,
       first_challenger = excluded.first_challenger,
       first_indexed_at = CASE
-        WHEN first_indexed_at > 0 THEN first_indexed_at
+        WHEN claims.first_indexed_at > 0 THEN claims.first_indexed_at
         ELSE excluded.first_indexed_at
       END,
       updated_at = excluded.updated_at,
@@ -458,60 +478,53 @@ function buildClaimUpsertStatement(claim: ClaimData, timestamp: number): InState
   };
 }
 
-function makeListPlaceholders(values: unknown[]) {
+function makeListPlaceholders(values: unknown[]): string {
   return values.map(() => "?").join(", ");
 }
 
-export function getPrivateClaimFields() {
+export function getPrivateClaimFields(): string[] {
   return [...PRIVATE_CONTENT_FIELDS];
 }
 
-export async function getDb() {
+export async function getDb(): Promise<Pool> {
   if (!isDbConfigured()) {
-    throw new Error("Turso database is not configured");
+    throw new Error("DATABASE_URL is not configured");
   }
-
-  if (!globalThis.__provenDbClient) {
-    globalThis.__provenDbClient = createClient(getDbConfig());
+  if (!globalThis.__mimirDbPool) {
+    globalThis.__mimirDbPool = buildPool();
   }
-
-  if (!globalThis.__provenDbReady) {
-    globalThis.__provenDbReady = ensureSchema(globalThis.__provenDbClient).then(
-      () => globalThis.__provenDbClient as Client
+  if (!globalThis.__mimirDbReady) {
+    globalThis.__mimirDbReady = ensureSchema(globalThis.__mimirDbPool).then(
+      () => globalThis.__mimirDbPool as Pool,
     );
   }
-
-  return globalThis.__provenDbReady;
+  return globalThis.__mimirDbReady;
 }
 
-export async function upsertClaim(claim: ClaimData) {
-  const db = await getDb();
-  await db.execute(buildClaimUpsertStatement(claim, Date.now()));
+export async function upsertClaim(claim: ClaimData): Promise<void> {
+  const pool = await getDb();
+  await execute(pool, buildClaimUpsertStatement(claim, Date.now()));
 }
 
-export async function upsertClaimsBatch(claims: ClaimData[]) {
-  if (claims.length === 0) {
-    return;
-  }
-
-  const db = await getDb();
+export async function upsertClaimsBatch(claims: ClaimData[]): Promise<void> {
+  if (claims.length === 0) return;
+  const pool = await getDb();
   const now = Date.now();
-  await db.batch(claims.map((claim) => buildClaimUpsertStatement(claim, now)), "write");
+  await batchWrite(pool, claims.map((claim) => buildClaimUpsertStatement(claim, now)));
 }
 
-export async function getClaimById(id: number) {
-  const db = await getDb();
-  const result = await db.execute({
-    sql: "SELECT * FROM claims WHERE id = ? LIMIT 1",
+export async function getClaimById(id: number): Promise<ClaimRow | null> {
+  const pool = await getDb();
+  const result = await execute(pool, {
+    sql:  "SELECT * FROM claims WHERE id = ? LIMIT 1",
     args: [id],
   });
-
   const row = result.rows[0];
   return row ? normalizeClaimRow(row as Record<string, unknown>) : null;
 }
 
-export async function getClaimsByFilter(filters: ClaimFilters = {}) {
-  const db = await getDb();
+export async function getClaimsByFilter(filters: ClaimFilters = {}): Promise<ClaimRow[]> {
+  const pool = await getDb();
   const clauses: string[] = [];
   const args: Array<string | number> = [];
 
@@ -519,32 +532,26 @@ export async function getClaimsByFilter(filters: ClaimFilters = {}) {
     clauses.push(`id IN (${makeListPlaceholders(filters.ids)})`);
     args.push(...filters.ids);
   }
-
   if (filters.creator) {
     clauses.push("creator = ?");
     args.push(filters.creator);
   }
-
   if (filters.categories && filters.categories.length > 0) {
     clauses.push(`category IN (${makeListPlaceholders(filters.categories)})`);
     args.push(...filters.categories);
   }
-
   if (filters.states && filters.states.length > 0) {
     clauses.push(`state IN (${makeListPlaceholders(filters.states)})`);
     args.push(...filters.states);
   }
-
   if (typeof filters.parentId === "number") {
     clauses.push("parent_id = ?");
     args.push(filters.parentId);
   }
-
   if (filters.visibility) {
     clauses.push("visibility = ?");
     args.push(filters.visibility);
   }
-
   if (typeof filters.isFinal === "boolean") {
     clauses.push("is_final = ?");
     args.push(filters.isFinal ? 1 : 0);
@@ -574,15 +581,14 @@ export async function getClaimsByFilter(filters: ClaimFilters = {}) {
   }
 
   const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  const result = await db.execute({
-    sql: `SELECT * FROM claims ${whereClause} ${orderBy}${limitClause}`,
+  const result = await execute(pool, {
+    sql:  `SELECT * FROM claims ${whereClause} ${orderBy}${limitClause}`,
     args,
   });
-
   return result.rows.map((row) => normalizeClaimRow(row as Record<string, unknown>));
 }
 
-export async function getOpenClaims() {
+export async function getOpenClaims(): Promise<ClaimRow[]> {
   return getClaimsByFilter({
     states: ["open", "active"],
     visibility: "public",
@@ -590,7 +596,7 @@ export async function getOpenClaims() {
   });
 }
 
-export async function getRecentlyResolved(limit: number) {
+export async function getRecentlyResolved(limit: number): Promise<ClaimRow[]> {
   return getClaimsByFilter({
     states: ["resolved"],
     visibility: "public",
@@ -599,10 +605,10 @@ export async function getRecentlyResolved(limit: number) {
   });
 }
 
-export async function getExpiringClaims(withinSeconds: number) {
-  const db = await getDb();
+export async function getExpiringClaims(withinSeconds: number): Promise<ClaimRow[]> {
+  const pool = await getDb();
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const result = await db.execute({
+  const result = await execute(pool, {
     sql: `SELECT * FROM claims
       WHERE visibility = ?
         AND is_final = 0
@@ -612,43 +618,38 @@ export async function getExpiringClaims(withinSeconds: number) {
       ORDER BY deadline ASC, id DESC`,
     args: ["public", "open", "active", nowSeconds, nowSeconds + withinSeconds],
   });
-
   return result.rows.map((row) => normalizeClaimRow(row as Record<string, unknown>));
 }
 
-export async function getClaimsByParent(parentId: number) {
+export async function getClaimsByParent(parentId: number): Promise<ClaimRow[]> {
   return getClaimsByFilter({
     parentId,
     orderBy: "id_desc",
   });
 }
 
-export async function getClaimFreshness(id: number) {
-  const db = await getDb();
-  const result = await db.execute({
-    sql: "SELECT updated_at, is_final FROM claims WHERE id = ? LIMIT 1",
+export async function getClaimFreshness(id: number): Promise<{ updated_at: number; is_final: number } | null> {
+  const pool = await getDb();
+  const result = await execute(pool, {
+    sql:  "SELECT updated_at, is_final FROM claims WHERE id = ? LIMIT 1",
     args: [id],
   });
-
   const row = result.rows[0];
-  if (!row) {
-    return null;
-  }
-
+  if (!row) return null;
   return {
     updated_at: getNumber((row as Record<string, unknown>).updated_at),
-    is_final: getNumber((row as Record<string, unknown>).is_final),
+    is_final:   getNumber((row as Record<string, unknown>).is_final),
   };
 }
 
 export async function upsertChallengers(
   claimId: number,
-  challengers: ClaimChallenger[]
-) {
-  const db = await getDb();
-  const statements: InStatement[] = [
+  challengers: ClaimChallenger[],
+): Promise<void> {
+  const pool = await getDb();
+  const statements: SqlStatement[] = [
     {
-      sql: "DELETE FROM challengers WHERE claim_id = ?",
+      sql:  "DELETE FROM challengers WHERE claim_id = ?",
       args: [claimId],
     },
     ...challengers.map((challenger) => ({
@@ -665,48 +666,40 @@ export async function upsertChallengers(
       ],
     })),
   ];
-
-  await db.batch(statements, "write");
+  await batchWrite(pool, statements);
 }
 
-export async function getChallengersByClaimId(claimId: number) {
-  const db = await getDb();
-  const result = await db.execute({
-    sql: "SELECT * FROM challengers WHERE claim_id = ? ORDER BY address ASC",
+export async function getChallengersByClaimId(claimId: number): Promise<ChallengerRow[]> {
+  const pool = await getDb();
+  const result = await execute(pool, {
+    sql:  "SELECT * FROM challengers WHERE claim_id = ? ORDER BY address ASC",
     args: [claimId],
   });
-
-  return result.rows.map((row) =>
-    normalizeChallengerRow(row as Record<string, unknown>)
-  );
+  return result.rows.map((row) => normalizeChallengerRow(row as Record<string, unknown>));
 }
 
-export async function getClaimsByChallenger(address: string) {
-  const db = await getDb();
-  const result = await db.execute({
-    sql: "SELECT claim_id FROM challengers WHERE address = ? ORDER BY claim_id DESC",
+export async function getClaimsByChallenger(address: string): Promise<number[]> {
+  const pool = await getDb();
+  const result = await execute(pool, {
+    sql:  "SELECT claim_id FROM challengers WHERE address = ? ORDER BY claim_id DESC",
     args: [address],
   });
-
-  return result.rows.map((row) =>
-    getNumber((row as Record<string, unknown>).claim_id)
-  );
+  return result.rows.map((row) => getNumber((row as Record<string, unknown>).claim_id));
 }
 
-export async function getSyncMeta(key: string) {
-  const db = await getDb();
-  const result = await db.execute({
-    sql: "SELECT value FROM sync_meta WHERE key = ? LIMIT 1",
+export async function getSyncMeta(key: string): Promise<string | null> {
+  const pool = await getDb();
+  const result = await execute(pool, {
+    sql:  "SELECT value FROM sync_meta WHERE key = ? LIMIT 1",
     args: [key],
   });
-
   const row = result.rows[0];
   return row ? getString((row as Record<string, unknown>).value) : null;
 }
 
-export async function setSyncMeta(key: string, value: string) {
-  const db = await getDb();
-  await db.execute({
+export async function setSyncMeta(key: string, value: string): Promise<void> {
+  const pool = await getDb();
+  await execute(pool, {
     sql: `INSERT INTO sync_meta(key, value)
       VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -719,30 +712,13 @@ function buildChallengeOpportunityInsertStatement(args: {
   opportunity: ChallengeOpportunity;
   generatedAt: number;
   expiresAt: number;
-}): InStatement {
+}): SqlStatement {
   return {
     sql: `INSERT INTO challenge_opportunities (
-      locale,
-      id,
-      source_url,
-      source_type,
-      source_summary,
-      category,
-      claim_text,
-      side_a,
-      side_b,
-      deadline_at,
-      timezone,
-      primary_resolution_source,
-      settlement_rule,
-      ambiguity_flags_json,
-      confidence_score,
-      claim_strength_score,
-      claim_strength_tier,
-      action,
-      existing_claim_id,
-      generated_at,
-      expires_at
+      locale, id, source_url, source_type, source_summary, category, claim_text,
+      side_a, side_b, deadline_at, timezone, primary_resolution_source,
+      settlement_rule, ambiguity_flags_json, confidence_score, claim_strength_score,
+      claim_strength_tier, action, existing_claim_id, generated_at, expires_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(locale, id) DO UPDATE SET
       source_url = excluded.source_url,
@@ -794,12 +770,12 @@ export async function replaceChallengeOpportunities(args: {
   locale: string;
   opportunities: Array<ChallengeOpportunity & { expiresAt: number }>;
   generatedAt?: number;
-}) {
-  const db = await getDb();
+}): Promise<void> {
+  const pool = await getDb();
   const generatedAt = args.generatedAt ?? Date.now();
-  const statements: InStatement[] = [
+  const statements: SqlStatement[] = [
     {
-      sql: "DELETE FROM challenge_opportunities WHERE locale = ?",
+      sql:  "DELETE FROM challenge_opportunities WHERE locale = ?",
       args: [args.locale],
     },
     ...args.opportunities.map((opportunity) =>
@@ -811,14 +787,13 @@ export async function replaceChallengeOpportunities(args: {
       })
     ),
   ];
-
-  await db.batch(statements, "write");
+  await batchWrite(pool, statements);
 }
 
-export async function pruneExpiredChallengeOpportunities(nowMs = Date.now()) {
-  const db = await getDb();
-  await db.execute({
-    sql: "DELETE FROM challenge_opportunities WHERE expires_at <= ?",
+export async function pruneExpiredChallengeOpportunities(nowMs = Date.now()): Promise<void> {
+  const pool = await getDb();
+  await execute(pool, {
+    sql:  "DELETE FROM challenge_opportunities WHERE expires_at <= ?",
     args: [nowMs],
   });
 }
@@ -827,14 +802,13 @@ export async function getActiveChallengeOpportunities(args?: {
   locale?: string;
   limit?: number;
   nowMs?: number;
-}) {
-  const db = await getDb();
+}): Promise<ChallengeOpportunityRow[]> {
+  const pool = await getDb();
   const locale = args?.locale === "es" ? "es" : "en";
   const limit =
     typeof args?.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : 6;
   const nowMs = args?.nowMs ?? Date.now();
-
-  const result = await db.execute({
+  const result = await execute(pool, {
     sql: `SELECT * FROM challenge_opportunities
       WHERE locale = ?
         AND expires_at > ?
@@ -846,8 +820,5 @@ export async function getActiveChallengeOpportunities(args?: {
       LIMIT ?`,
     args: [locale, nowMs, limit],
   });
-
-  return result.rows.map((row) =>
-    normalizeChallengeOpportunityRow(row as Record<string, unknown>)
-  );
+  return result.rows.map((row) => normalizeChallengeOpportunityRow(row as Record<string, unknown>));
 }
