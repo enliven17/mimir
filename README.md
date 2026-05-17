@@ -26,7 +26,6 @@ The agents that run Mimir do not hold private keys. They sign every transaction 
 - [Configuration reference](#configuration-reference)
 - [Scripts](#scripts)
 - [Design principles](#design-principles)
-- [Roadmap](#roadmap)
 
 ---
 
@@ -40,16 +39,18 @@ Anyone can create a claim, stake USDC on one side, and publish it. Another party
 
 There are no judges, no committees, no manual disputes. The product surfaces are:
 
-| Page                                 | Purpose                                                              |
-| ------------------------------------ | -------------------------------------------------------------------- |
-| `/`                                  | Marketing surface — what Mimir is, live stats, recent settlements    |
-| `/explorer`                          | Curated claim feed with category and stake filters                   |
-| `/vs/[id]`                           | Claim detail — pool sizes, challengers, settlement receipt           |
-| `/vs/create`                         | Author flow — claim drafting with AI-assisted resolution metadata    |
-| `/dashboard`                         | Per-wallet view — your claims, your payouts, your W/L record         |
-| `/bridge`                            | Pull USDC into Arc from any CCTP V2 chain in ~15s                    |
-| `/stats`                             | Real-time on-chain analytics: oracle reputation, settlement history  |
-| `/emerging-narratives`               | Daily-curated "challenge-ready" opportunities (human-lite curation)  |
+| Page                                 | Purpose                                                                            |
+| ------------------------------------ | ---------------------------------------------------------------------------------- |
+| `/`                                  | Marketing surface — what Mimir is, live stats, recent settlements                  |
+| `/explorer`                          | Claim feed with Open / AI signals / Closed tabs and category + stake filters       |
+| `/vs/[id]`                           | Claim detail — pool sizes, challengers, settlement receipt with confidence tier     |
+| `/vs/create`                         | Author flow — claim drafting with AI-assisted resolution metadata                  |
+| `/dashboard`                         | Per-wallet view — your claims, your payouts, your W/L record                       |
+| `/bridge`                            | Pull USDC into Arc from any CCTP V2 chain in ~15s                                  |
+| `/stats`                             | Real-time on-chain analytics: total volume, accuracy %, refund rate, agent vault   |
+| `/agents`                            | Live activity log for the oracle + market-creator (every on-chain action they take) |
+| `/docs`                              | Long-form architecture + how-it-works writeup with custom diagrams                  |
+| `/emerging-narratives`               | Daily-curated "challenge-ready" opportunities (human-lite curation)                |
 
 ---
 
@@ -153,8 +154,9 @@ sequenceDiagram
 Several details matter for trust:
 
 - **`evidenceHash`** is `keccak256(raw evidence)` and is committed to the contract storage. Anyone can re-fetch the URL, hash it, and verify what the oracle actually saw.
-- **`confidence`** is exposed on-chain. The product surface uses it to label settlements as confident vs. contested.
+- **`confidence`** is exposed on-chain. The oracle bakes it into tiers — `≥ 80%` settles as **FIRM**, `60–79%` settles with a **CONTESTED** badge, `< 60%` is force-downgraded to `UNRESOLVABLE` and refunded. The Settlement Receipt UI surfaces the tier explicitly.
 - **`UNRESOLVABLE` and `DRAW`** refund all sides instead of forcing an arbitrary winner. The protocol prefers refunding ambiguity over fabricating certainty.
+- **Challenge lock window.** `challengeClaim` rejects any tx that lands within `CHALLENGE_LOCK_SECONDS` (60s) of the deadline. Stops late-information actors from waiting until the outcome is observable and slipping in a zero-risk bet.
 - **Only the configured `oracle` address** can call `resolveClaim`. That address is a Circle-managed wallet — no human can quietly re-route it.
 
 ---
@@ -583,23 +585,11 @@ These show up in PR review and shape what we accept:
 
 ---
 
-## Roadmap
-
-Near-term:
-
-- **Event-time lock window.** Today a claim's `deadline` is the only time gate. Adding an `eventTime` field that closes the market a configurable buffer *before* the event would close the obvious late-info sniping vector.
-- **Confidence-tier dispute resolution.** Verdicts come back with a confidence number. Use that to bucket settlements: `high` settles immediately; `medium` settles with a contested badge; `low` refunds as unresolvable instead of guessing.
-- **Series stats for rivalry chains.** `parent_id` already links rematches on-chain; surface a "series score" on the claim detail page when a rivalry has more than one entry.
-- **Sponsored gas via App Kit.** Use the reserved `CIRCLE_KIT_KEY` to subsidise the user's `receiveMessage` mint on Arc, removing the second-tx friction in the bridge flow.
-
-Longer-term:
-
-- **Per-creator reputation.** The contract already tracks `wins`/`losses` per address. A public reputation surface would let challengers price counterparty quality, not just market odds.
-- **Programmable resolution sources.** Today the oracle reads a single URL. A small DSL that lets a claim specify "median of these three sources, weighted by recency" would dramatically widen the safely-resolvable claim space.
-- **Mainnet deployment.** Arc is testnet-only as of writing. The codebase is chain-config-driven (`lib/arc.ts`) — when Arc mainnet ships, a single chain definition update plus a redeploy is the bulk of the migration.
-
----
-
 ## License
 
-MIT — see [`LICENSE`](./LICENSE) if present, otherwise: do what you want, no warranty.
+AGPL-3.0 — see [`LICENSE`](./LICENSE).
+
+Mimir is source-available. You can use, study, modify, and share it freely.
+The catch (the *A* in AGPL): if you run a modified version as a hosted
+service, you must publish your changes under the same license. That keeps
+oracle-side modifications visible to users staking USDC against the agent.
