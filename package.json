@@ -8,9 +8,10 @@
     "clean": "rm -rf .next",
     "build": "next build",
     "start": "next start",
-    "oracle": "npx tsx agents/oracle/index.ts",
-    "oracle:challenge": "AUTO_CHALLENGE=1 npx tsx agents/oracle/index.ts",
-    "market-creator": "npx tsx agents/market-creator/index.ts",
+    "oracle": "tsx agents/oracle/index.ts",
+    "oracle:challenge": "AUTO_CHALLENGE=1 tsx agents/oracle/index.ts",
+    "market-creator": "tsx agents/market-creator/index.ts",
+    "workers": "concurrently --names oracle,creator --kill-others-on-fail -c blue,magenta \"npm:oracle\" \"npm:market-creator\"",
     "seed": "npx tsx scripts/seed-claims.ts",
     "seed:dry": "DRY_RUN=1 npx tsx scripts/seed-claims.ts",
     "deploy:contract": "npx tsx deploy/deploy.ts",
@@ -36,7 +37,9 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "server-only": "^0.0.1",
+    "concurrently": "^9.2.1",
     "sonner": "^1.7.0",
+    "tsx": "^4.19.0",
     "viem": "^2.47.6",
     "wagmi": "^3.6.15",
     "ws": "^8.20.1"
@@ -49,7 +52,6 @@
     "postcss": "^8",
     "solc": "^0.8.28",
     "tailwindcss": "^3.4.0",
-    "tsx": "^4.19.0",
     "typescript": "^5"
   }
 }

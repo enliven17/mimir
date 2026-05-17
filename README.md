@@ -36,36 +36,81 @@ No committees. No disputes. No volatile gas tokens.
 | Unified balance | Circle Gateway — `app/api/gateway/balances/route.ts` |
 | Messaging | XMTP Browser SDK v7 (encrypted 1v1 chat) |
 | i18n | next-intl (English default) |
-| Database | Turso / libsql (read-index cache) |
+| Database | Neon Postgres (`@neondatabase/serverless`) — read-index cache |
+| Deploy | Vercel (frontend) + Railway (agent workers) |
 
 ---
 
-## Quickstart
+## Quickstart (local)
 
 ```bash
-# 1. Install dependencies
+# 1. Install
 npm install
 
-# 2. Copy env template
+# 2. Env
 cp .env.example .env.local
-# Fill in: NEXT_PUBLIC_CONTRACT_ADDRESS, ARC_RPC, ORACLE_PRIVATE_KEY, ANTHROPIC_API_KEY
+# Fill in (see env.example for the full list):
+#   NEXT_PUBLIC_CONTRACT_ADDRESS  (or run the deploy script below)
+#   CIRCLE_API_KEY, CIRCLE_KIT_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_*_WALLET_ID, CIRCLE_*_ADDRESS
+#   GEMINI_API_KEY  (or ANTHROPIC_API_KEY)
+#   DATABASE_URL    (optional — Neon read-index; explorer/dashboard need it)
 
-# 3. Run dev server
-npm run dev
+# 3. (One-time, per-environment) bootstrap Circle managed wallets
+npx tsx scripts/circle-entity-secret.ts   # generates entity secret + ciphertext
+#                                         # paste ciphertext into Circle Console
+npx tsx scripts/circle-create-wallets.ts  # creates oracle + market-creator wallets
+# Fund both wallets via https://faucet.circle.com (Arc Testnet)
 
-# 4. Start oracle agent (separate terminal)
-npm run oracle
+# 4. Deploy Mimir.sol
+npx tsx --env-file=.env.local scripts/deploy-mimir-w3s.ts
+
+# 5. End-to-end demo (90s — create → challenge → Gemini settle)
+npx tsx --env-file=.env.local scripts/demo-full-cycle.ts
+
+# 6. Local dev
+npm run dev               # http://localhost:3000
+npm run workers           # oracle + market-creator together
+# or run individually:
+npm run oracle            # settle expired claims; AUTO_CHALLENGE=1 for auto-stake
+npm run market-creator    # autonomous market creation every 6h
 ```
 
-## Deploy contract
+## Deploy (Vercel + Railway)
 
-```bash
-# Compile Mimir.sol (Hardhat or Foundry)
-npx hardhat compile
+The recommended split: **Vercel** hosts the Next.js frontend + API routes;
+**Railway** runs the long-lived agent workers (Vercel functions time out
+too quickly for them).
 
-# Deploy to Arc Testnet
-DEPLOYER_PRIVATE_KEY=0x... ORACLE_ADDRESS=0x... npm run deploy:contract
-```
+### Vercel — frontend
+1. `vercel link` (or import the repo at vercel.com)
+2. In **Project Settings → Environment Variables**, paste every variable
+   from `.env.example` except the ones marked Railway-only. At minimum:
+   - `NEXT_PUBLIC_CONTRACT_ADDRESS`
+   - `NEXT_PUBLIC_ARC_RPC` (optional Canteen endpoint override)
+   - `CIRCLE_API_KEY`, `CIRCLE_KIT_KEY`
+   - `DATABASE_URL` (if you want /explorer + /dashboard)
+3. Push to `main`. Vercel auto-detects Next.js and ships in ~60s.
+
+`vercel.json` already pins the framework, `iad1` region, and bumps API route
+duration to 30s for the bridge/oracle endpoints.
+
+### Railway — agent workers
+1. Create a new project, "Deploy from GitHub repo", pick this repo.
+2. Add the same env vars as Vercel **plus** the agent-side secrets:
+   - `CIRCLE_ENTITY_SECRET`, `CIRCLE_ORACLE_WALLET_ID`, `CIRCLE_ORACLE_ADDRESS`
+   - `CIRCLE_CREATOR_WALLET_ID`, `CIRCLE_CREATOR_ADDRESS`
+   - `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`)
+   - `NEXT_PUBLIC_CONTRACT_ADDRESS`
+   - `AUTO_CHALLENGE=1` (optional — enables Kelly-sized auto-staking)
+3. Railway uses `railway.json` → `npm run workers`, which boots both the
+   oracle and the market-creator via `concurrently` and auto-restarts on
+   failure. Logs separate them with `oracle:` and `creator:` prefixes.
+
+### Neon Postgres (optional)
+1. https://console.neon.tech → New Project → copy the **pooler** connection
+   string (it already includes `sslmode=require`).
+2. Paste as `DATABASE_URL` in **both** Vercel and Railway environments.
+3. The schema auto-creates on first query — no migration step.
 
 ---
 
