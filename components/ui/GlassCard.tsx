@@ -41,7 +41,7 @@ export default function GlassCard({
   ...props
 }: GlassCardProps) {
   const baseClass = glass
-    ? "bg-pv-surface/70 backdrop-blur-[20px] border border-white/[0.15] rounded overflow-hidden relative transition-all duration-200"
+    ? "bg-pv-surface/70 backdrop-blur-[20px] border border-black/[0.15] rounded overflow-hidden relative transition-all duration-200"
     : "card";
 
   return (

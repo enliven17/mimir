@@ -29,7 +29,7 @@ export default function MessagesWalletGate({
           <MessagesPageHero className="pt-2 sm:pt-4" />
         </AnimatedItem>
 
-        <div className="mt-6 border-t border-white/[0.06] pt-8 sm:mt-8 sm:pt-10">
+        <div className="mt-6 border-t border-black/[0.06] pt-8 sm:mt-8 sm:pt-10">
           <AnimatedItem>
             <section
               aria-labelledby="messages-connect-heading"
@@ -39,7 +39,7 @@ export default function MessagesWalletGate({
                 glass
                 noPad
                 glow="none"
-                className="relative overflow-hidden !rounded-2xl border border-white/[0.12]"
+                className="relative overflow-hidden !rounded-2xl border border-black/[0.12]"
                 role="region"
               >
                 <div

@@ -53,7 +53,7 @@ export function VSCardSkeleton() {
 /** Matches ArenaCard layout (LIVE ARENA) for loading grids. */
 export function ArenaCardSkeleton() {
   return (
-    <div className="card relative flex h-full flex-col gap-6 overflow-hidden border-white/[0.12] bg-pv-surface p-6 sm:gap-8 sm:p-8">
+    <div className="card relative flex h-full flex-col gap-6 overflow-hidden border-black/[0.12] bg-pv-surface p-6 sm:gap-8 sm:p-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <SkeletonLine className="h-6 w-20" />
         <SkeletonLine className="h-6 w-24" />
@@ -63,7 +63,7 @@ export function ArenaCardSkeleton() {
         <SkeletonLine className="h-7 w-[85%]" />
         <SkeletonLine className="mt-2 h-4 w-full" />
       </div>
-      <div className="mt-auto space-y-4 border-t border-white/[0.1] pt-6">
+      <div className="mt-auto space-y-4 border-t border-black/[0.1] pt-6">
         <SkeletonLine className="h-3 w-28" />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex -space-x-2.5">

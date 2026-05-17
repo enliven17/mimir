@@ -209,7 +209,7 @@ function StakeHoldingRow({
             </p>
           </div>
           <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-pv-muted transition-[transform,color,border-color] duration-300 ${
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-black/[0.08] bg-black/[0.04] text-pv-muted transition-[transform,color,border-color] duration-300 ${
               isOpen ? "text-pv-emerald border-pv-emerald/25" : ""
             }`}
           >
@@ -232,7 +232,7 @@ function StakeHoldingRow({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.28, ease }}
-            className="overflow-hidden border-t border-white/[0.08]"
+            className="overflow-hidden border-t border-black/[0.08]"
           >
             <div className="space-y-4 px-3 pb-4 pt-3 sm:space-y-5 sm:px-4 sm:pb-5 sm:pt-4">
               <div
@@ -240,15 +240,15 @@ function StakeHoldingRow({
                 role="group"
                 aria-label={t("holdings.chipsGroupAria")}
               >
-                <span className="inline-flex shrink-0 items-center rounded-md border border-white/[0.1] bg-white/[0.03] px-2 py-1 font-display text-[10px] font-bold uppercase tracking-[0.12em] text-pv-text">
+                <span className="inline-flex shrink-0 items-center rounded-md border border-black/[0.1] bg-black/[0.03] px-2 py-1 font-display text-[10px] font-bold uppercase tracking-[0.12em] text-pv-text">
                   {tCat(meta.categoryId)}
                 </span>
-                <span className="inline-flex min-w-0 items-center rounded-md bg-white/[0.03] px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-pv-muted ring-1 ring-white/[0.1]">
+                <span className="inline-flex min-w-0 items-center rounded-md bg-black/[0.03] px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-pv-muted ring-1 ring-black/[0.1]">
                   {meta.idCode}
                 </span>
               </div>
 
-              <div className="flex flex-col gap-2 border-b border-white/[0.06] pb-4 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-6 sm:gap-y-1">
+              <div className="flex flex-col gap-2 border-b border-black/[0.06] pb-4 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-6 sm:gap-y-1">
                 <p className="min-w-0 flex-1 sm:max-w-[14rem]">
                   <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-pv-muted">
                     {t("holdings.marketTypeShort")}
@@ -314,7 +314,7 @@ function StakeHoldingRow({
         ) : null}
       </AnimatePresence>
 
-      <div className="flex flex-col gap-3 border-t border-white/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4 sm:py-3">
+      <div className="flex flex-col gap-3 border-t border-black/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4 sm:py-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 sm:gap-x-4">
           {footerPoolPill === "live" ? (
             <span className="inline-flex items-center gap-1.5 rounded border border-pv-emerald/25 bg-pv-emerald/[0.08] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-emerald sm:text-[10px]">
@@ -328,7 +328,7 @@ function StakeHoldingRow({
               {t("holdings.status.accepted")}
             </span>
           ) : footerPoolPill === "open" ? (
-            <span className="inline-flex items-center rounded border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
+            <span className="inline-flex items-center rounded border border-black/[0.12] bg-black/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
               {t("holdings.status.open")}
             </span>
           ) : footerPoolPill === "closed" ? (
@@ -336,7 +336,7 @@ function StakeHoldingRow({
               {t("holdings.poolPill.closed")}
             </span>
           ) : (
-            <span className="inline-flex items-center rounded border border-white/[0.1] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
+            <span className="inline-flex items-center rounded border border-black/[0.1] bg-black/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
               {t("holdings.status.resolved")}
             </span>
           )}
@@ -344,10 +344,10 @@ function StakeHoldingRow({
             <span className="font-mono text-[10px] font-semibold tabular-nums text-pv-text sm:text-[11px]">
               {participantsLine}
             </span>
-            <span className="inline-flex items-center rounded border border-white/[0.1] bg-white/[0.03] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-text sm:text-[10px]">
+            <span className="inline-flex items-center rounded border border-black/[0.1] bg-black/[0.03] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-text sm:text-[10px]">
               {visibilityLine}
             </span>
-            <span className="inline-flex items-center rounded border border-white/[0.14] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
+            <span className="inline-flex items-center rounded border border-black/[0.14] bg-black/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
               {t("holdings.demoBadge")}
             </span>
           </div>
@@ -398,7 +398,7 @@ function SettlementTeaser({
 
   if (vs.state === "cancelled") {
     return (
-      <div className="rounded-md border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 sm:px-4 sm:py-3">
+      <div className="rounded-md border border-black/[0.08] bg-black/[0.04] px-3 py-2.5 sm:px-4 sm:py-3">
         <p className="font-mono text-[10px] leading-relaxed text-pv-muted sm:text-[11px]">
           {t("holdings.settlementTeaserCancelled")}
         </p>
@@ -523,7 +523,7 @@ function StakeHoldingVSRow({
   let outcomeBadge: ReactNode = null;
   if (vs.state === "cancelled") {
     outcomeBadge = (
-      <span className="inline-flex items-center rounded border border-white/[0.18] bg-white/[0.05] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
+      <span className="inline-flex items-center rounded border border-black/[0.18] bg-black/[0.05] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
         {t("holdings.outcomeCancelled")}
       </span>
     );
@@ -616,7 +616,7 @@ function StakeHoldingVSRow({
             </p>
           </div>
           <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-pv-muted transition-[transform,color,border-color] duration-300 ${
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-black/[0.08] bg-black/[0.04] text-pv-muted transition-[transform,color,border-color] duration-300 ${
               isOpen ? "text-pv-emerald border-pv-emerald/25" : ""
             }`}
           >
@@ -641,7 +641,7 @@ function StakeHoldingVSRow({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: reduceMotion ? 0 : 0.28, ease }}
-            className="overflow-hidden border-t border-white/[0.08]"
+            className="overflow-hidden border-t border-black/[0.08]"
           >
             <div className="space-y-4 px-3 pb-4 pt-3 sm:space-y-5 sm:px-4 sm:pb-5 sm:pt-4">
               <div
@@ -649,10 +649,10 @@ function StakeHoldingVSRow({
                 role="group"
                 aria-label={t("holdings.chipsGroupAria")}
               >
-                <span className="inline-flex shrink-0 items-center rounded-md border border-white/[0.1] bg-white/[0.03] px-2 py-1 font-display text-[10px] font-bold uppercase tracking-[0.12em] text-pv-text">
+                <span className="inline-flex shrink-0 items-center rounded-md border border-black/[0.1] bg-black/[0.03] px-2 py-1 font-display text-[10px] font-bold uppercase tracking-[0.12em] text-pv-text">
                   {tCat(vs.category as never)}
                 </span>
-                <span className="inline-flex min-w-0 items-center rounded-md bg-white/[0.03] px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-pv-muted ring-1 ring-white/[0.1]">
+                <span className="inline-flex min-w-0 items-center rounded-md bg-black/[0.03] px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-pv-muted ring-1 ring-black/[0.1]">
                   ID #{vs.id}
                 </span>
               </div>
@@ -665,7 +665,7 @@ function StakeHoldingVSRow({
                 />
               ) : null}
 
-              <div className="flex flex-col gap-2 border-b border-white/[0.06] pb-4 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-6 sm:gap-y-1">
+              <div className="flex flex-col gap-2 border-b border-black/[0.06] pb-4 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-6 sm:gap-y-1">
                 <p className="min-w-0 flex-1 sm:max-w-[14rem]">
                   <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-pv-muted">
                     {t("holdings.marketTypeShort")}
@@ -731,9 +731,9 @@ function StakeHoldingVSRow({
         ) : null}
       </AnimatePresence>
 
-      <div className="flex flex-col gap-3 border-t border-white/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4 sm:py-3">
+      <div className="flex flex-col gap-3 border-t border-black/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4 sm:py-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 sm:gap-x-4">
-          <span className="inline-flex items-center rounded border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
+          <span className="inline-flex items-center rounded border border-black/[0.12] bg-black/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
             {footerStatusLabel}
           </span>
           {outcomeBadge}
@@ -741,11 +741,11 @@ function StakeHoldingVSRow({
             <span className="font-mono text-[10px] font-semibold tabular-nums text-pv-text sm:text-[11px]">
               {participantsLine}
             </span>
-            <span className="inline-flex items-center rounded border border-white/[0.1] bg-white/[0.03] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-text sm:text-[10px]">
+            <span className="inline-flex items-center rounded border border-black/[0.1] bg-black/[0.03] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-text sm:text-[10px]">
               {visibilityLine}
             </span>
             {isSampleVsIdForXmtp(vs.id) ? (
-              <span className="inline-flex items-center rounded border border-white/[0.14] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
+              <span className="inline-flex items-center rounded border border-black/[0.14] bg-black/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
                 {t("holdings.demoVsBadge")}
               </span>
             ) : null}
@@ -991,7 +991,7 @@ function StakeHoldingsColumn({
             <button
               type="button"
               onClick={onResetFilters}
-              className="focus-ring mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.04] px-4 py-2 font-display text-[10px] font-bold uppercase tracking-[0.16em] text-pv-text transition-colors hover:border-pv-emerald/35 hover:bg-pv-emerald/[0.08] hover:text-pv-emerald"
+              className="focus-ring mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg border border-black/[0.1] bg-black/[0.04] px-4 py-2 font-display text-[10px] font-bold uppercase tracking-[0.16em] text-pv-text transition-colors hover:border-pv-emerald/35 hover:bg-pv-emerald/[0.08] hover:text-pv-emerald"
             >
               {t("resetFiltersAction")}
             </button>
@@ -1015,7 +1015,7 @@ function StakeHoldingsColumn({
               </Link>
               <Link
                 href="/explorer"
-                className="focus-ring inline-flex min-h-[44px] items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.04] px-5 py-2.5 font-display text-[10px] font-bold uppercase tracking-[0.16em] text-pv-text transition-colors hover:border-pv-emerald/35 hover:bg-pv-emerald/[0.08] hover:text-pv-emerald sm:text-[11px]"
+                className="focus-ring inline-flex min-h-[44px] items-center justify-center rounded-lg border border-black/[0.1] bg-black/[0.04] px-5 py-2.5 font-display text-[10px] font-bold uppercase tracking-[0.16em] text-pv-text transition-colors hover:border-pv-emerald/35 hover:bg-pv-emerald/[0.08] hover:text-pv-emerald sm:text-[11px]"
               >
                 {t("holdings.emptyCtaExplore")}
               </Link>
@@ -1116,7 +1116,7 @@ export function RiskAllocationProfileCard({
               </span>
             </div>
             <div
-              className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08]"
+              className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-black/[0.08]"
               role="progressbar"
               aria-valuenow={row.pct}
               aria-valuemin={0}
@@ -1182,7 +1182,7 @@ function RiskAndActionsColumn({
           </Link>
           <Link
             href="/explorer"
-            className="group flex min-h-[3.75rem] items-center justify-center gap-3 rounded-lg border border-white/[0.1] bg-transparent px-4 py-3.5 text-center font-display text-xs font-bold uppercase leading-snug tracking-wide text-pv-muted transition-[color,border-color,background-color] duration-300 hover:border-white/[0.2] hover:bg-white/[0.04] hover:text-pv-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/40 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-bg sm:min-h-[4rem] sm:px-5 sm:text-sm"
+            className="group flex min-h-[3.75rem] items-center justify-center gap-3 rounded-lg border border-black/[0.1] bg-transparent px-4 py-3.5 text-center font-display text-xs font-bold uppercase leading-snug tracking-wide text-pv-muted transition-[color,border-color,background-color] duration-300 hover:border-black/[0.2] hover:bg-black/[0.04] hover:text-pv-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/40 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-bg sm:min-h-[4rem] sm:px-5 sm:text-sm"
           >
             <Compass
               size={22}
@@ -1212,7 +1212,7 @@ function RiskAndActionsColumn({
       </section>
 
       <section
-        className={`${DASHBOARD_SURFACE_DASHED} px-4 py-8 text-center transition-colors duration-300 hover:border-white/[0.16] sm:py-9`}
+        className={`${DASHBOARD_SURFACE_DASHED} px-4 py-8 text-center transition-colors duration-300 hover:border-black/[0.16] sm:py-9`}
         aria-label={t("holdings.friendsAria")}
       >
         <h2 className="font-display text-xs font-bold uppercase tracking-[0.22em] text-pv-muted">

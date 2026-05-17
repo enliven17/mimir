@@ -36,7 +36,7 @@ export default function LocaleError({ error, reset }: Props) {
 
   return (
     <section className="min-h-[60vh] flex items-center justify-center">
-      <div className="w-full max-w-2xl rounded-3xl border border-white/[0.08] bg-pv-surface/70 p-8 sm:p-10 text-center shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+      <div className="w-full max-w-2xl rounded-3xl border border-black/[0.08] bg-pv-surface/70 p-8 sm:p-10 text-center shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
         <p className="text-xs uppercase tracking-[0.35em] text-pv-emerald/85 font-bold">
           {copy.eyebrow}
         </p>
@@ -55,7 +55,7 @@ export default function LocaleError({ error, reset }: Props) {
           </button>
           <a
             href={`/${locale}`}
-            className="w-full sm:w-auto px-5 py-3 rounded-xl border border-white/[0.12] text-pv-text hover:border-white/[0.2] hover:bg-white/[0.04] transition-all focus-ring"
+            className="w-full sm:w-auto px-5 py-3 rounded-xl border border-black/[0.12] text-pv-text hover:border-black/[0.2] hover:bg-black/[0.04] transition-all focus-ring"
           >
             {copy.home}
           </a>

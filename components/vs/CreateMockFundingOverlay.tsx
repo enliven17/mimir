@@ -91,7 +91,7 @@ export default function CreateMockFundingOverlay({
               glass
               noPad
               glow="emerald"
-              className="!rounded-2xl border border-white/[0.14] shadow-[0_0_48px_-12px_rgba(78,222,163,0.35)]"
+              className="!rounded-2xl border border-black/[0.14] shadow-[0_0_48px_-12px_rgba(78,222,163,0.35)]"
             >
               <div className="p-6 sm:p-8">
                 <div

@@ -43,8 +43,8 @@ export default function Artifact({
 
   return (
     <motion.div
-      className={`relative border border-white/[0.12] rounded-lg bg-pv-surface/80 overflow-hidden ${
-        hoverable ? "hover:border-white/[0.22] hover:bg-pv-surface/90 cursor-pointer transition-all duration-200" : ""
+      className={`relative border border-black/[0.12] rounded-lg bg-pv-surface/80 overflow-hidden ${
+        hoverable ? "hover:border-black/[0.22] hover:bg-pv-surface/90 cursor-pointer transition-all duration-200" : ""
       } ${className}`}
       whileHover={hoverable ? { y: -2 } : undefined}
       {...props}
@@ -52,7 +52,7 @@ export default function Artifact({
       {/* Watermark */}
       {watermark && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
-          <span className="font-display text-[72px] sm:text-[96px] font-bold uppercase tracking-[0.15em] text-white/[0.02] rotate-[-12deg]">
+          <span className="font-display text-[72px] sm:text-[96px] font-bold uppercase tracking-[0.15em] text-black/[0.02] rotate-[-12deg]">
             {watermark}
           </span>
         </div>
@@ -60,7 +60,7 @@ export default function Artifact({
 
       {/* Top bar — serial + stamp */}
       {(serialNumber || stamp) && (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.06] bg-white/[0.02]">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-black/[0.06] bg-black/[0.02]">
           {serialNumber && (
             <span className="font-mono text-[10px] tracking-[0.15em] text-pv-muted/60 uppercase">
               {serialNumber}
@@ -74,7 +74,7 @@ export default function Artifact({
       <div className="relative z-10 p-4 sm:p-5">{children}</div>
 
       {/* Bottom edge mark */}
-      <div className="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
+      <div className="h-px bg-gradient-to-r from-transparent via-black/[0.06] to-transparent" />
     </motion.div>
   );
 }

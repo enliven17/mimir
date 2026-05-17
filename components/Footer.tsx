@@ -14,7 +14,7 @@ export default function Footer() {
   const t = useTranslations("footer");
 
   return (
-    <footer className="mt-8 sm:mt-12 border-t border-white/[0.08]">
+    <footer className="mt-8 sm:mt-12 border-t border-black/[0.08]">
       <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,1fr)_auto] md:items-stretch md:gap-8 lg:gap-12">
           {/* Marca y créditos — alineados al inicio de su columna */}

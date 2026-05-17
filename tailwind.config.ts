@@ -10,17 +10,19 @@ const config: Config = {
     extend: {
       colors: {
         pv: {
-          bg:       "#0E0E0E",
-          surface:  "#1A1919",
-          surface2: "#353437",
-          border:   "#353437",
-          text:     "#F4F3F5",
-          muted:    "#9391A0",
-          cyan:     "#5de6ff",
-          fuch:     "#f8acff",
-          emerald:  "#4edea3",
-          gold:     "#FBBF24",
-          danger:   "#EF4444",
+          // Soft blush palette
+          bg:       "#FCF8F8",
+          surface:  "#FBEFEF",
+          surface2: "#F9DFDF",
+          border:   "#F5AFAF",
+          text:     "#2A1818",   // warm near-black for readable body copy
+          muted:    "#7A5050",   // muted brown-rose for secondary text
+          // Accents (kept distinctive but darkened slightly for contrast on light)
+          cyan:     "#0EA5B5",
+          fuch:     "#C53191",
+          emerald:  "#10A36C",
+          gold:     "#B07300",
+          danger:   "#B91C1C",
         },
       },
       fontFamily: {

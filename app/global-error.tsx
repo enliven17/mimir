@@ -16,7 +16,7 @@ export default function GlobalError({ error, reset }: Props) {
     <html lang="en">
       <body className="min-h-screen bg-pv-bg text-pv-text">
         <main className="min-h-screen flex items-center justify-center px-6">
-          <section className="w-full max-w-2xl rounded-3xl border border-white/[0.08] bg-pv-surface/70 p-8 sm:p-10 text-center shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+          <section className="w-full max-w-2xl rounded-3xl border border-black/[0.08] bg-pv-surface/70 p-8 sm:p-10 text-center shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
             <p className="text-xs uppercase tracking-[0.35em] text-pv-emerald/85 font-bold">
               Safe fallback
             </p>
@@ -35,7 +35,7 @@ export default function GlobalError({ error, reset }: Props) {
               </button>
               <a
                 href="/"
-                className="w-full sm:w-auto px-5 py-3 rounded-xl border border-white/[0.12] hover:border-white/[0.2] hover:bg-white/[0.04] transition-all focus-ring"
+                className="w-full sm:w-auto px-5 py-3 rounded-xl border border-black/[0.12] hover:border-black/[0.2] hover:bg-black/[0.04] transition-all focus-ring"
               >
                 Reload home
               </a>

@@ -88,7 +88,7 @@ export default function SettlementExplanationCard({
       glass
       glow="none"
       noPad
-      className={`!rounded-2xl border border-white/[0.12] ${className}`}
+      className={`!rounded-2xl border border-black/[0.12] ${className}`}
     >
       <div className="p-5 sm:p-6">
         <div className="space-y-5">
@@ -111,7 +111,7 @@ export default function SettlementExplanationCard({
 
           <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
             <div className="space-y-4">
-              <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+              <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                 <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-emerald/80">
                   <Scale size={14} />
                   {t("verdict")}
@@ -120,7 +120,7 @@ export default function SettlementExplanationCard({
                 <p className="mt-2 text-sm leading-relaxed text-pv-muted">{summary}</p>
               </div>
 
-              <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+              <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                 <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-cyan/80">
                   <ScrollText size={14} />
                   {t("ruleApplied")}
@@ -133,7 +133,7 @@ export default function SettlementExplanationCard({
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+              <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                 <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-fuch/80">
                   <FileCheck2 size={14} />
                   {t("evidence")}
@@ -155,7 +155,7 @@ export default function SettlementExplanationCard({
                 ) : null}
               </div>
 
-              <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+              <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                 <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-gold/80">
                   <ShieldCheck size={14} />
                   {t("confidence")}
@@ -169,7 +169,7 @@ export default function SettlementExplanationCard({
                   </div>
                 </div>
 
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.08]">
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/[0.08]">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-amber-400 via-pv-cyan to-pv-emerald transition-[width] duration-300"
                     style={{ width: `${Math.max(0, Math.min(100, confidence))}%` }}
@@ -177,7 +177,7 @@ export default function SettlementExplanationCard({
                 </div>
 
                 {/* Tier label (minimal, debajo de la progress bar) */}
-                <div className="mt-3 border-t border-white/[0.08] pt-3">
+                <div className="mt-3 border-t border-black/[0.08] pt-3">
                   <div
                     className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] ${
                       confidenceTier === "high"

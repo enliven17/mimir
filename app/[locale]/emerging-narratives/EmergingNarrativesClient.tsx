@@ -16,7 +16,7 @@ export default function EmergingNarrativesClient() {
                 <h1 className="font-display text-2xl font-bold uppercase tracking-tighter text-pv-text sm:text-3xl md:text-4xl">
                   {t("title")}
                 </h1>
-                <div className="h-px min-w-[2rem] flex-1 bg-white/[0.12]" aria-hidden />
+                <div className="h-px min-w-[2rem] flex-1 bg-black/[0.12]" aria-hidden />
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -26,7 +26,7 @@ export default function EmergingNarrativesClient() {
             </div>
           </div>
 
-          <div className="card border-white/[0.12] bg-pv-surface/60 p-10 text-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] sm:p-12">
+          <div className="card border-black/[0.12] bg-pv-surface/60 p-10 text-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] sm:p-12">
             <div className="font-display text-xl font-bold uppercase tracking-[0.08em] text-pv-text sm:text-2xl">
               {t("comingSoon")}
             </div>

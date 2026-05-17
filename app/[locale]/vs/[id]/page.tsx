@@ -91,7 +91,7 @@ const DUEL_STATUS_FUCHSIA_PILL_CLASS =
   "inline-flex max-w-full min-w-0 items-center rounded-full border border-pv-fuch/35 bg-pv-fuch/[0.08] px-2.5 py-1 text-left text-[11px] font-semibold leading-tight text-pv-fuch shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] sm:px-3 sm:py-1.5 sm:text-xs";
 
 const RIVALRY_ITEM_BASE_CLASS =
-  "rounded-xl border p-4 transition-[border-color,background-color] duration-200 bg-pv-bg/30 hover:border-white/[0.22] hover:bg-pv-bg/35";
+  "rounded-xl border p-4 transition-[border-color,background-color] duration-200 bg-pv-bg/30 hover:border-black/[0.22] hover:bg-pv-bg/35";
 const RIVALRY_ITEM_ACTIVE_CLASS =
   "border-pv-emerald/[0.35] bg-pv-emerald/[0.08] hover:border-pv-emerald/[0.45] hover:bg-pv-emerald/[0.12]";
 
@@ -411,15 +411,15 @@ function ProgressBar({
         ? "border-pv-emerald/40 bg-pv-emerald/[0.07] shadow-glow-emerald"
         : isDone
           ? "border-pv-emerald/20 bg-pv-emerald/[0.04]"
-          : "border-white/[0.06] bg-pv-bg/40"
-    } ${interactive && !isCurrent ? "hover:border-white/[0.1]" : ""}`;
+          : "border-black/[0.06] bg-pv-bg/40"
+    } ${interactive && !isCurrent ? "hover:border-black/[0.1]" : ""}`;
 
   return (
     <nav
       className="mb-8 sm:mb-10"
       aria-label={t("progressAriaLabel")}
     >
-      <div className="rounded-2xl border border-white/[0.08] bg-pv-surface/80 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] sm:p-6">
+      <div className="rounded-2xl border border-black/[0.08] bg-pv-surface/80 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] sm:p-6">
         {/* Expanding phase bar — active phase takes proportional space */}
         <div className="flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progressPercent)} aria-valuetext={t("progressStepFraction", { current: phaseCurrent, total })}>
           {steps.map((_, i) => {
@@ -429,7 +429,7 @@ function ProgressBar({
             return (
               <motion.div
                 key={i}
-                className="relative flex-1 h-full overflow-hidden rounded-full bg-white/[0.06]"
+                className="relative flex-1 h-full overflow-hidden rounded-full bg-black/[0.06]"
                 initial={false}
                 style={{ transformOrigin: "left center" }}
               >
@@ -540,7 +540,7 @@ function VsChallengersCard({
   challengerCount,
   maxChallengers,
   showLoadMore = false,
-  className = "border border-white/[0.12] !rounded-2xl",
+  className = "border border-black/[0.12] !rounded-2xl",
 }: {
   challengers: ClaimChallenger[];
   counterPosition: string;
@@ -590,7 +590,7 @@ function VsChallengersCard({
 
         {challengers.length === 0 ? (
           <div
-            className="rounded-xl border border-dashed border-white/[0.14] bg-pv-bg/30 px-4 py-9 text-center sm:py-11"
+            className="rounded-xl border border-dashed border-black/[0.14] bg-pv-bg/30 px-4 py-9 text-center sm:py-11"
             role="status"
           >
             <Users
@@ -603,11 +603,11 @@ function VsChallengersCard({
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border border-white/[0.1] bg-pv-bg/25 p-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] sm:p-3.5">
+          <div className="rounded-xl border border-black/[0.1] bg-pv-bg/25 p-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] sm:p-3.5">
             <ul className="space-y-2 sm:space-y-2.5" role="list">
               {visibleChallengers.map((challenger, index) => (
                 <li key={`${challenger.address}-${index}`}>
-                  <div className="rounded-lg border border-white/[0.08] bg-gradient-to-br from-pv-fuch/[0.04] via-transparent to-transparent p-2.5 transition-[border-color,background-color] duration-200 hover:border-white/[0.14] sm:p-3">
+                  <div className="rounded-lg border border-black/[0.08] bg-gradient-to-br from-pv-fuch/[0.04] via-transparent to-transparent p-2.5 transition-[border-color,background-color] duration-200 hover:border-black/[0.14] sm:p-3">
                     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 sm:gap-2.5 md:gap-3">
                       <div
                         className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-pv-fuch/[0.28] bg-pv-fuch/[0.08] font-mono text-[9px] font-bold tabular-nums leading-none text-pv-fuch sm:size-8 sm:text-[10px]"
@@ -636,7 +636,7 @@ function VsChallengersCard({
                       </div>
                       <div className="min-w-0 justify-self-end sm:justify-self-start">
                         <div
-                          className="flex h-7 min-w-[4rem] items-center justify-center rounded-md border border-white/[0.1] bg-pv-bg/55 px-2 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-fuch sm:h-8 sm:min-w-[4.5rem] sm:text-[10px]"
+                          className="flex h-7 min-w-[4rem] items-center justify-center rounded-md border border-black/[0.1] bg-pv-bg/55 px-2 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-fuch sm:h-8 sm:min-w-[4.5rem] sm:text-[10px]"
                           title={t("challengerStake")}
                         >
                           {challenger.stake} USDC
@@ -653,7 +653,7 @@ function VsChallengersCard({
                   type="button"
                   aria-expanded={isExpanded}
                   onClick={() => setIsExpanded(true)}
-                  className="inline-flex items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.01] px-3 py-2 text-xs font-semibold text-pv-muted transition-[background-color,border-color] hover:border-white/[0.1] hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/25"
+                  className="inline-flex items-center justify-center rounded-lg border border-black/[0.06] bg-black/[0.01] px-3 py-2 text-xs font-semibold text-pv-muted transition-[background-color,border-color] hover:border-black/[0.1] hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/25"
                 >
                   Load more
                 </button>
@@ -1300,7 +1300,7 @@ export default function VSDetailPage() {
         <AnimatedItem>
           <Link
             href={isConnected ? "/dashboard" : "/"}
-            className="mb-6 inline-flex items-center gap-2 rounded-lg border border-transparent px-2 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-pv-muted transition-[color,border-color,background-color] hover:border-white/[0.1] hover:bg-white/[0.04] hover:text-pv-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/30 sm:mb-8 sm:px-3 sm:text-[11px]"
+            className="mb-6 inline-flex items-center gap-2 rounded-lg border border-transparent px-2 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-pv-muted transition-[color,border-color,background-color] hover:border-black/[0.1] hover:bg-black/[0.04] hover:text-pv-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/30 sm:mb-8 sm:px-3 sm:text-[11px]"
           >
             <ArrowLeft size={14} className="shrink-0 opacity-80" aria-hidden />
             {tc("back")}
@@ -1315,7 +1315,7 @@ export default function VSDetailPage() {
                   {t("heroLead")}
                 </h1>
                 <div
-                  className="h-px min-w-[2rem] flex-1 bg-white/[0.12]"
+                  className="h-px min-w-[2rem] flex-1 bg-black/[0.12]"
                   aria-hidden
                 />
               </div>
@@ -1342,7 +1342,7 @@ export default function VSDetailPage() {
               }
             />
             {isSampleVS && (
-              <div className="mb-8 flex flex-col gap-2 border-b border-white/[0.06] pb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="mb-8 flex flex-col gap-2 border-b border-black/[0.06] pb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <p className="max-w-3xl text-[10px] leading-relaxed text-pv-muted sm:text-[11px]">
                   {t("designPreviewLifecycleHint")}
                 </p>
@@ -1396,7 +1396,7 @@ export default function VSDetailPage() {
         {(display.state !== "resolved" || resolvePhase !== -1) &&
           actionLoading !== "resolve" && (
           <AnimatedItem>
-            <Stage glow="both" className="mb-6 border border-white/[0.10] sm:mb-8">
+            <Stage glow="both" className="mb-6 border border-black/[0.10] sm:mb-8">
               <div className="relative">
                 <div className="relative z-[1]">
               <div className="p-5 sm:p-8">
@@ -1419,7 +1419,7 @@ export default function VSDetailPage() {
                   {display.question}
                 </h2>
 
-                <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-white/[0.12] sm:flex-row">
+                <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-black/[0.12] sm:flex-row">
                   <div className="flex-1 p-4 bg-pv-cyan/[0.04]">
                     <div className="flex items-center gap-2 mb-2">
                       <Avatar side="creator" size={28} />
@@ -1437,14 +1437,14 @@ export default function VSDetailPage() {
                   </div>
 
                   <div
-                    className="h-px w-full shrink-0 bg-white/[0.06] sm:h-auto sm:w-px sm:self-stretch"
+                    className="h-px w-full shrink-0 bg-black/[0.06] sm:h-auto sm:w-px sm:self-stretch"
                     aria-hidden
                   />
 
                   <div className="flex-1 p-4 bg-pv-fuch/[0.04]">
                     {isOpen ? (
                       <div className="text-center py-2">
-                        <div className="w-7 h-7 border-2 border-dashed border-white/[0.2] flex items-center justify-center mx-auto mb-2 text-pv-muted font-bold text-xs">
+                        <div className="w-7 h-7 border-2 border-dashed border-black/[0.2] flex items-center justify-center mx-auto mb-2 text-pv-muted font-bold text-xs">
                           ?
                         </div>
                         <div className="text-xs text-pv-muted italic">{t("waitingRival")}</div>
@@ -1486,7 +1486,7 @@ export default function VSDetailPage() {
                 </div>
 
                 {/* Métricas: mobile-first — 1 col → 2 (sm) → 4 (lg); panel unificado + celdas con min-h táctil */}
-                <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-white/[0.1] bg-white/[0.07] p-px shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-black/[0.1] bg-black/[0.07] p-px shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] sm:grid-cols-2 lg:grid-cols-4">
                   {/* Misma estructura en las 4: título arriba (shrink-0) + valor abajo (mt-auto) para alinear filas */}
                   <div className="flex min-h-[5.75rem] min-w-0 flex-col bg-pv-bg/55 px-4 py-3.5 sm:min-h-[6rem] sm:px-4 sm:py-4">
                     <p className="shrink-0 text-[10px] font-bold uppercase leading-snug tracking-[0.16em] text-pv-muted/90 sm:text-[11px] sm:tracking-[0.18em]">
@@ -1534,7 +1534,7 @@ export default function VSDetailPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border-t border-white/[0.08] px-5 py-3 sm:px-8">
+              <div className="flex items-center justify-between border-t border-black/[0.08] px-5 py-3 sm:px-8">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(78,222,163,0.6)]" />
                   <span className="text-xs text-pv-muted">{t("provenVerifies")}</span>
@@ -1577,14 +1577,14 @@ export default function VSDetailPage() {
             glass
             glow="none"
             noPad
-            className="mb-6 w-full overflow-hidden !rounded-2xl border border-white/[0.12] sm:mb-8"
+            className="mb-6 w-full overflow-hidden !rounded-2xl border border-black/[0.12] sm:mb-8"
           >
             <button
               type="button"
               onClick={() => setMarketTermsOpen((open) => !open)}
               aria-expanded={marketTermsOpen}
               aria-controls={marketTermsPanelId}
-              className="flex w-full min-h-[3.25rem] items-start justify-between gap-3 px-5 py-5 text-left transition-colors hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pv-emerald/35 sm:min-h-0 sm:gap-4 sm:px-8 sm:py-6"
+              className="flex w-full min-h-[3.25rem] items-start justify-between gap-3 px-5 py-5 text-left transition-colors hover:bg-black/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pv-emerald/35 sm:min-h-0 sm:gap-4 sm:px-8 sm:py-6"
             >
               <div className="flex min-w-0 gap-3 sm:gap-3.5">
                 <span
@@ -1637,28 +1637,28 @@ export default function VSDetailPage() {
                 id={marketTermsPanelId}
                 role="region"
                 aria-labelledby={marketTermsHeadingId}
-                className="border-t border-white/[0.08] px-5 pb-6 pt-5 sm:px-8 sm:pb-8 sm:pt-6"
+                className="border-t border-black/[0.08] px-5 pb-6 pt-5 sm:px-8 sm:pb-8 sm:pt-6"
               >
                 <div className="grid grid-cols-1 gap-2.5 text-sm sm:grid-cols-2 sm:gap-3">
-                  <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                  <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                     <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                       {t("marketType")}
                     </div>
                     <div className="font-semibold">{t(`marketTypes.${marketType}`)}</div>
                   </div>
-                  <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                  <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                     <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                       {t("oddsMode")}
                     </div>
                     <div className="font-semibold">{t(`oddsModes.${oddsMode}`)}</div>
                   </div>
-                  <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                  <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                     <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                       {t("format")}
                     </div>
                     <div className="font-semibold">{t("headToHeadSummary")}</div>
                   </div>
-                  <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                  <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                     <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                       {t("challengerCapacity")}
                     </div>
@@ -1666,7 +1666,7 @@ export default function VSDetailPage() {
                       {t("slotsFilled", { count: challengerCount, total: maxChallengers })}
                     </div>
                   </div>
-                  <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                  <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                     <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                       {t("visibility")}
                     </div>
@@ -1675,7 +1675,7 @@ export default function VSDetailPage() {
                     </div>
                   </div>
                   {oddsMode === "fixed" && typeof display.challenger_payout_bps === "number" && (
-                    <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4 sm:col-span-2">
+                    <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4 sm:col-span-2">
                       <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                         {t("fixedPayout")}
                       </div>
@@ -1685,7 +1685,7 @@ export default function VSDetailPage() {
                     </div>
                   )}
                   {display.handicap_line && (
-                    <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4 sm:col-span-2">
+                    <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4 sm:col-span-2">
                       <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                         {t("handicapLine")}
                       </div>
@@ -1693,7 +1693,7 @@ export default function VSDetailPage() {
                     </div>
                   )}
                   {display.settlement_rule && (
-                    <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4 sm:col-span-2">
+                    <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4 sm:col-span-2">
                       <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                         {t("settlementRule")}
                       </div>
@@ -1712,7 +1712,7 @@ export default function VSDetailPage() {
           <AnimatedItem>
             <div className="flex flex-col gap-3 sm:gap-4">
               {missingPrivateInvite && (
-                <GlassCard glass className="!rounded-2xl border border-white/[0.12]">
+                <GlassCard glass className="!rounded-2xl border border-black/[0.12]">
                   <div className="mb-2 text-sm font-semibold text-pv-emerald">
                     {t("privateInviteRequired")}
                   </div>
@@ -1721,7 +1721,7 @@ export default function VSDetailPage() {
               )}
 
               {canAccept && (
-                <GlassCard glass className="!rounded-2xl border border-white/[0.12]">
+                <GlassCard glass className="!rounded-2xl border border-black/[0.12]">
                     <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
                       <Input
                         label={t("challengeStake")}
@@ -1762,7 +1762,7 @@ export default function VSDetailPage() {
               )}
 
               {display.state === "accepted" && countdown.expired && (
-                <GlassCard glass className="!rounded-2xl border border-white/[0.12]">
+                <GlassCard glass className="!rounded-2xl border border-black/[0.12]">
                   <div className="space-y-4">
                     <div>
                       <div className="text-sm font-semibold text-pv-text">
@@ -1773,7 +1773,7 @@ export default function VSDetailPage() {
                       </p>
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                      <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                         <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                           {t("creatorRequestedLabel")}
                         </div>
@@ -1781,7 +1781,7 @@ export default function VSDetailPage() {
                           {creatorRequestedResolve ? t("requestedStatus") : t("pendingStatus")}
                         </div>
                       </div>
-                      <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                      <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                         <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                           {t("challengerRequestedLabel")}
                         </div>
@@ -1790,14 +1790,14 @@ export default function VSDetailPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                    <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                       <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                         {t("resolveAttemptsLabel")}
                       </div>
                       <div className="mt-1 font-semibold">{display.resolve_attempts ?? 0}</div>
                     </div>
                     {display.resolution_summary ? (
-                      <div className="rounded-xl border border-white/[0.08] bg-pv-bg/40 p-4">
+                      <div className="rounded-xl border border-black/[0.08] bg-pv-bg/40 p-4">
                         <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
                           {t("latestResolutionNote")}
                         </div>
@@ -1833,7 +1833,7 @@ export default function VSDetailPage() {
               )}
 
               {canResetResolveRequest && actionLoading !== "resetResolve" && (
-                <GlassCard glass className="!rounded-2xl border border-white/[0.12]">
+                <GlassCard glass className="!rounded-2xl border border-black/[0.12]">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-pv-text">
@@ -1856,7 +1856,7 @@ export default function VSDetailPage() {
                 userRequestedResolve &&
                 !counterpartyRequestedResolve &&
                 actionLoading !== "resolve" && (
-                <GlassCard glass className="!rounded-2xl border border-white/[0.12] text-center">
+                <GlassCard glass className="!rounded-2xl border border-black/[0.12] text-center">
                   <p className="text-sm text-pv-muted">{t("waitingOtherResolveRequest")}</p>
                 </GlassCard>
               )}
@@ -1864,13 +1864,13 @@ export default function VSDetailPage() {
               {display.state === "accepted" &&
                 countdown.expired &&
                 !isParticipant && (
-                <GlassCard glass className="!rounded-2xl border border-white/[0.12] text-center">
+                <GlassCard glass className="!rounded-2xl border border-black/[0.12] text-center">
                   <p className="text-sm text-pv-muted">{t("participantsMustRequestResolve")}</p>
                 </GlassCard>
               )}
 
               {vs.state === "accepted" && !countdown.expired && actionLoading !== "resolve" && (
-                <GlassCard glass className="!rounded-2xl border border-white/[0.12] text-center">
+                <GlassCard glass className="!rounded-2xl border border-black/[0.12] text-center">
                   <p className="text-sm text-pv-muted">{t("waitingDeadline")}</p>
                 </GlassCard>
               )}
@@ -1881,7 +1881,7 @@ export default function VSDetailPage() {
                   glass
                   noPad
                   glow="none"
-                  className="!rounded-2xl border border-white/[0.12]"
+                  className="!rounded-2xl border border-black/[0.12]"
                 >
                   <div className="space-y-3 p-5 sm:p-6">
                     <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-pv-text">
@@ -1950,12 +1950,12 @@ export default function VSDetailPage() {
               glass
               glow="none"
               noPad
-              className="!rounded-2xl !border-2 !border-dashed !border-white/[0.18] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)]"
+              className="!rounded-2xl !border-2 !border-dashed !border-black/[0.18] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)]"
             >
               <div className="p-5 sm:p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.03] text-pv-muted"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/[0.1] bg-black/[0.03] text-pv-muted"
                     aria-hidden
                   >
                     <FlaskConical size={18} strokeWidth={2} />
@@ -1965,7 +1965,7 @@ export default function VSDetailPage() {
                       <h3 className="font-display text-xs font-bold uppercase tracking-[0.18em] text-pv-text sm:tracking-[0.2em]">
                         {t("sampleModeTitle")}
                       </h3>
-                      <span className="inline-flex shrink-0 rounded border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-pv-muted sm:text-[10px] sm:tracking-[0.22em]">
+                      <span className="inline-flex shrink-0 rounded border border-black/[0.12] bg-black/[0.04] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-pv-muted sm:text-[10px] sm:tracking-[0.22em]">
                         {t("sampleModeDemoBadge")}
                       </span>
                     </div>
@@ -1983,7 +1983,7 @@ export default function VSDetailPage() {
                             setDesignLifecycleStep(4);
                             setDesignResolvedOutcome("creator");
                           }}
-                          className="w-full !border-white/[0.1] !bg-white/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-white/[0.16] hover:!bg-white/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
+                          className="w-full !border-black/[0.1] !bg-black/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-black/[0.16] hover:!bg-black/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
                         >
                           {tBadges("cancelled")}
                         </Button>
@@ -1999,7 +1999,7 @@ export default function VSDetailPage() {
                               prev === "challengers" ? "creator" : "challengers"
                             );
                           }}
-                          className="w-full !border-white/[0.1] !bg-white/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-white/[0.16] hover:!bg-white/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
+                          className="w-full !border-black/[0.1] !bg-black/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-black/[0.16] hover:!bg-black/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
                         >
                           {designResolvedOutcome === "challengers"
                             ? tBadges("lost")
@@ -2014,7 +2014,7 @@ export default function VSDetailPage() {
                             variant="ghost"
                             size="sm"
                             fullWidth={false}
-                            className="w-full !border-white/[0.1] !bg-white/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-white/[0.16] hover:!bg-white/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
+                            className="w-full !border-black/[0.1] !bg-black/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-black/[0.16] hover:!bg-black/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
                           >
                             {t("sampleModeCTA")}
                           </Button>
@@ -2058,7 +2058,7 @@ export default function VSDetailPage() {
                     <GlassCard
                       glass
                       noPad
-                      className="!rounded-2xl border border-white/[0.12]"
+                      className="!rounded-2xl border border-black/[0.12]"
                     >
                       <div className="p-5 sm:p-6">
                         <div className="mb-4 flex flex-col gap-3 sm:mb-5">
@@ -2090,11 +2090,11 @@ export default function VSDetailPage() {
                         </div>
 
                         {!isRivalryDataReady || rivalryLoading ? (
-                          <div className="rounded-xl border border-white/[0.08] bg-pv-bg/30 p-4 sm:p-5">
+                          <div className="rounded-xl border border-black/[0.08] bg-pv-bg/30 p-4 sm:p-5">
                             <p className="text-sm text-pv-muted">{tc("loading")}</p>
                           </div>
                         ) : rivalryChain.length > 1 ? (
-                          <div className="rounded-xl border border-white/[0.08] bg-pv-bg/30 p-4 sm:p-5">
+                          <div className="rounded-xl border border-black/[0.08] bg-pv-bg/30 p-4 sm:p-5">
                             <div className="space-y-3">
                               {visibleRivalryChain.map((entry, index) => {
                                 const inner = (
@@ -2102,7 +2102,7 @@ export default function VSDetailPage() {
                                     className={`${RIVALRY_ITEM_BASE_CLASS} ${
                                       entry.id === vs.id
                                         ? RIVALRY_ITEM_ACTIVE_CLASS
-                                        : "border-white/[0.1]"
+                                        : "border-black/[0.1]"
                                     }`}
                                   >
                                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -2145,7 +2145,7 @@ export default function VSDetailPage() {
                                   type="button"
                                   aria-expanded={isRivalryExpanded}
                                   onClick={() => setIsRivalryExpanded(true)}
-                                  className="inline-flex items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.01] px-3 py-2 text-xs font-semibold text-pv-muted transition-[background-color,border-color] hover:border-white/[0.1] hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/25"
+                                  className="inline-flex items-center justify-center rounded-lg border border-black/[0.06] bg-black/[0.01] px-3 py-2 text-xs font-semibold text-pv-muted transition-[background-color,border-color] hover:border-black/[0.1] hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/25"
                                 >
                                   Load more
                                 </button>
@@ -2153,7 +2153,7 @@ export default function VSDetailPage() {
                             ) : null}
                           </div>
                         ) : (
-                          <div className="rounded-xl border border-dashed border-white/[0.14] bg-pv-bg/30 p-4 text-center sm:p-5">
+                          <div className="rounded-xl border border-dashed border-black/[0.14] bg-pv-bg/30 p-4 text-center sm:p-5">
                             <p className="text-sm leading-relaxed text-pv-muted">
                               {t("rivalryEmpty")}
                             </p>

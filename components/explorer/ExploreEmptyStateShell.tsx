@@ -35,7 +35,7 @@ export default function ExploreEmptyStateShell({
       transition={{ duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
       className="mx-auto w-full max-w-[min(100%,28rem)] sm:max-w-xl"
     >
-      <div className="relative overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] px-5 py-10 shadow-[0_18px_60px_-36px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:rounded-[28px] sm:px-8 sm:py-12">
+      <div className="relative overflow-hidden rounded-[24px] border border-black/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] px-5 py-10 shadow-[0_18px_60px_-36px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:rounded-[28px] sm:px-8 sm:py-12">
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent"
           aria-hidden

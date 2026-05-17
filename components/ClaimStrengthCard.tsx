@@ -39,7 +39,7 @@ const tierClasses = {
   strong: "border-pv-emerald/35 bg-pv-emerald/[0.12] text-pv-emerald",
   good: "border-pv-cyan/35 bg-pv-cyan/[0.12] text-pv-cyan",
   fair: "border-amber-400/35 bg-amber-400/[0.12] text-amber-300",
-  weak: "border-white/[0.14] bg-white/[0.05] text-pv-muted",
+  weak: "border-black/[0.14] bg-black/[0.05] text-pv-muted",
 } as const;
 
 export default function ClaimStrengthCard({
@@ -147,7 +147,7 @@ export default function ClaimStrengthCard({
     <GlassCard
       glass
       glow="none"
-      className={`border border-white/[0.12] !rounded-2xl ${className}`}
+      className={`border border-black/[0.12] !rounded-2xl ${className}`}
     >
       <div className={compact ? "space-y-3" : "space-y-4"}>
         <div>
@@ -182,7 +182,7 @@ export default function ClaimStrengthCard({
           </div>
         </div>
 
-        <div className="h-2 overflow-hidden rounded-full bg-white/[0.08]">
+        <div className="h-2 overflow-hidden rounded-full bg-black/[0.08]">
           <div
             className="h-full rounded-full bg-gradient-to-r from-pv-emerald via-pv-cyan to-pv-gold transition-[width] duration-300"
             style={{ width: `${result.score}%` }}
@@ -216,7 +216,7 @@ export default function ClaimStrengthCard({
         </ul>
 
         {moderation ? (
-          <div className="rounded-xl border border-white/[0.12] bg-white/[0.03] px-3 py-2">
+          <div className="rounded-xl border border-black/[0.12] bg-black/[0.03] px-3 py-2">
             <div className="flex items-stretch gap-3 text-xs leading-relaxed">
               <div className="flex min-w-0 flex-1 items-start gap-2">
                 {moderation.status === "allowed" ? (
@@ -255,7 +255,7 @@ export default function ClaimStrengthCard({
                       {moderationCodeChips.map((chip) => (
                         <span
                           key={chip.code}
-                          className="rounded-full border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-pv-text/80"
+                          className="rounded-full border border-black/[0.12] bg-black/[0.04] px-2 py-0.5 text-[10px] font-medium text-pv-text/80"
                         >
                           {chip.label}
                         </span>

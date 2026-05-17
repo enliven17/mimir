@@ -394,11 +394,11 @@ export default function HomePage() {
             <h2 className="font-display text-2xl font-bold uppercase tracking-tighter text-pv-text sm:text-3xl md:text-4xl">
               {t("statsSectionTitle")}
             </h2>
-            <div className="h-px flex-1 bg-white/[0.12]" aria-hidden />
+            <div className="h-px flex-1 bg-black/[0.12]" aria-hidden />
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-            <div className="p-5 sm:p-6 text-center border border-white/[0.06] rounded-xl bg-pv-surface/30">
+            <div className="p-5 sm:p-6 text-center border border-black/[0.06] rounded-xl bg-pv-surface/30">
               <LiveStat
                 value={allVS.length}
                 label={t("totalClaims")}
@@ -409,7 +409,7 @@ export default function HomePage() {
                 className="items-center"
               />
             </div>
-            <div className="p-5 sm:p-6 text-center border border-white/[0.06] rounded-xl bg-pv-surface/30">
+            <div className="p-5 sm:p-6 text-center border border-black/[0.06] rounded-xl bg-pv-surface/30">
               <LiveStat
                 value={resolvedVS.length}
                 label={t("resolvedClaims")}
@@ -420,7 +420,7 @@ export default function HomePage() {
                 className="items-center"
               />
             </div>
-            <div className="p-5 sm:p-6 text-center border border-white/[0.06] rounded-xl bg-pv-surface/30">
+            <div className="p-5 sm:p-6 text-center border border-black/[0.06] rounded-xl bg-pv-surface/30">
               <LiveStat
                 value={totalGenStaked}
                 label={t("genStaked")}
@@ -443,7 +443,7 @@ export default function HomePage() {
             <h2 className="font-display text-2xl font-bold uppercase tracking-tighter text-pv-text sm:text-3xl md:text-4xl">
               THE PROTOCOL
             </h2>
-            <div className="h-px flex-1 bg-white/[0.12]" aria-hidden />
+            <div className="h-px flex-1 bg-black/[0.12]" aria-hidden />
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4 md:auto-rows-[minmax(240px,auto)]">
@@ -473,7 +473,7 @@ export default function HomePage() {
                 return (
                   <div
                     key={title}
-                    className="card group relative col-span-1 flex flex-col justify-between overflow-hidden border-white/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-2 md:min-h-[280px]"
+                    className="card group relative col-span-1 flex flex-col justify-between overflow-hidden border-black/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-2 md:min-h-[280px]"
                   >
                     <div className="pointer-events-none absolute -right-6 -top-6 opacity-[0.06] transition-opacity group-hover:opacity-[0.1] sm:-right-10 sm:-top-10">
                       {iconSrc ? (
@@ -524,7 +524,7 @@ export default function HomePage() {
                 return (
                   <div
                     key={title}
-                    className="card group relative overflow-hidden flex flex-col justify-between border-white/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-1 md:min-h-[280px]"
+                    className="card group relative overflow-hidden flex flex-col justify-between border-black/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-1 md:min-h-[280px]"
                   >
                     <div className="pointer-events-none absolute -right-9 -top-6 z-0 opacity-[0.06] transition-opacity group-hover:opacity-[0.1] sm:-right-13 sm:-top-10">
                       {iconSrc ? (
@@ -576,7 +576,7 @@ export default function HomePage() {
               return (
                 <div
                   key={title}
-                  className="card group relative col-span-1 overflow-hidden flex flex-col gap-6 border-white/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-4 md:flex-row md:items-center md:justify-between md:gap-10"
+                  className="card group relative col-span-1 overflow-hidden flex flex-col gap-6 border-black/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-4 md:flex-row md:items-center md:justify-between md:gap-10"
                 >
                   <div className="pointer-events-none absolute -right-9 -top-6 z-0 opacity-[0.06] transition-opacity group-hover:opacity-[0.1] sm:-right-13 sm:-top-10">
                     {iconSrc ? (
@@ -610,7 +610,7 @@ export default function HomePage() {
                       </p>
                     </div>
                   </div>
-                  <div className="relative z-10 hidden h-12 w-px shrink-0 bg-white/[0.1] md:block" aria-hidden />
+                  <div className="relative z-10 hidden h-12 w-px shrink-0 bg-black/[0.1] md:block" aria-hidden />
                   <div className="relative z-10 flex shrink-0 flex-col items-start gap-1 md:items-end md:text-right">
                     <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-pv-muted">
                       Settlement
@@ -634,7 +634,7 @@ export default function HomePage() {
               <h2 className="font-display text-2xl font-bold uppercase tracking-tighter text-pv-text sm:text-3xl md:text-4xl">
                 LIVE ARENA
               </h2>
-              <div className="h-px flex-1 bg-white/[0.12]" aria-hidden />
+              <div className="h-px flex-1 bg-black/[0.12]" aria-hidden />
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -661,7 +661,7 @@ export default function HomePage() {
       {/* READY TO WIN CTA */}
       <AnimatedItem>
         <div className="mt-16 sm:mt-20 mb-12">
-          <div className="group relative w-full overflow-hidden rounded-lg border border-white/[0.12] bg-pv-surface/80 px-6 py-10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl sm:p-10 md:p-12 lg:p-14">
+          <div className="group relative w-full overflow-hidden rounded-lg border border-black/[0.12] bg-pv-surface/80 px-6 py-10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl sm:p-10 md:p-12 lg:p-14">
             <div
               className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-[0.14] transition-opacity duration-700 group-hover:opacity-[0.2]"
               aria-hidden
@@ -764,7 +764,7 @@ export default function HomePage() {
                 <Link key={vs.id} href={`/vs/${vs.id}`} className="block group">
                   <motion.div
                     whileHover={{ x: 4 }}
-                    className="flex items-center justify-between p-3 bg-white/[0.02] border border-white/[0.06] rounded group-hover:border-pv-emerald/[0.25] transition-colors"
+                    className="flex items-center justify-between p-3 bg-black/[0.02] border border-black/[0.06] rounded group-hover:border-pv-emerald/[0.25] transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className="font-mono text-[10px] text-pv-muted/40 w-8 shrink-0">

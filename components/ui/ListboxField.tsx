@@ -124,7 +124,7 @@ export default function ListboxField({
         initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.16, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="overflow-hidden rounded border border-white/[0.1] bg-pv-bg py-1 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.85)]"
+        className="overflow-hidden rounded border border-black/[0.1] bg-pv-bg py-1 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.85)]"
       >
         {options.map((opt) => (
           <button
@@ -139,7 +139,7 @@ export default function ListboxField({
             className={`flex w-full items-center px-4 py-2.5 text-left font-body text-sm transition-colors ${
               value === opt.value
                 ? "bg-pv-emerald/[0.12] font-medium text-pv-emerald"
-                : "text-pv-muted hover:bg-white/[0.05] hover:text-pv-text"
+                : "text-pv-muted hover:bg-black/[0.05] hover:text-pv-text"
             }`}
           >
             {opt.label}
@@ -162,7 +162,7 @@ export default function ListboxField({
         aria-haspopup="listbox"
         aria-controls={listboxId}
         onClick={() => setOpen((o) => !o)}
-        className="input flex h-11 min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 bg-pv-bg py-0 pr-3 text-left font-body text-sm text-pv-text transition-[border-color,box-shadow] hover:border-white/[0.14]"
+        className="input flex h-11 min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 bg-pv-bg py-0 pr-3 text-left font-body text-sm text-pv-text transition-[border-color,box-shadow] hover:border-black/[0.14]"
       >
         <span className="min-w-0 truncate">{selectedLabel}</span>
         <ChevronDown

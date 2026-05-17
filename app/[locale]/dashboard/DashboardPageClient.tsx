@@ -225,7 +225,7 @@ export default function DashboardPageClient() {
                 {t("title")}
               </h1>
               <div
-                className="h-px min-w-[2rem] flex-1 bg-white/[0.12]"
+                className="h-px min-w-[2rem] flex-1 bg-black/[0.12]"
                 aria-hidden
               />
             </div>
@@ -279,7 +279,7 @@ export default function DashboardPageClient() {
             </span>
             <a
               href="#dashboard-exposure"
-              className="shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted underline decoration-white/[0.15] underline-offset-[5px] transition-colors hover:text-pv-emerald hover:decoration-pv-emerald/50 sm:text-[11px]"
+              className="shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted underline decoration-black/[0.15] underline-offset-[5px] transition-colors hover:text-pv-emerald hover:decoration-pv-emerald/50 sm:text-[11px]"
             >
               {t("jumpToExposure")}
             </a>

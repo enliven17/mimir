@@ -23,7 +23,7 @@ export default function VSStrip({
   const t = useTranslations("strip");
 
   return (
-    <div className="flex overflow-hidden rounded border border-white/[0.12]">
+    <div className="flex overflow-hidden rounded border border-black/[0.12]">
       <div
         className={`min-w-0 flex-1 bg-pv-emerald/[0.05] ${compact ? "px-3 py-2" : "p-4"}`}
       >
@@ -44,7 +44,7 @@ export default function VSStrip({
         </div>
       </div>
 
-      <div className="w-px flex-shrink-0 bg-white/[0.08]" />
+      <div className="w-px flex-shrink-0 bg-black/[0.08]" />
 
       <div
         className={`min-w-0 flex-1 bg-pv-surface2/60 ${compact ? "px-3 py-2" : "p-4"}`}

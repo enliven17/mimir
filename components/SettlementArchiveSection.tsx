@@ -63,7 +63,7 @@ export default function SettlementArchiveSection({
 
   return (
     <section
-      className="mb-12 border-t border-white/[0.06] pt-14 sm:mb-16 sm:pt-16 md:pt-20"
+      className="mb-12 border-t border-black/[0.06] pt-14 sm:mb-16 sm:pt-16 md:pt-20"
       aria-labelledby="settlement-archive-heading"
     >
       {/* Header + headline stats */}
@@ -110,7 +110,7 @@ export default function SettlementArchiveSection({
       </div>
 
       {/* Glass insight panel */}
-      <div className="group relative mb-14 overflow-hidden rounded-lg border border-white/[0.12] bg-pv-surface/80 px-6 py-10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl sm:mb-16 sm:p-10 md:p-12 lg:mb-20">
+      <div className="group relative mb-14 overflow-hidden rounded-lg border border-black/[0.12] bg-pv-surface/80 px-6 py-10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl sm:mb-16 sm:p-10 md:p-12 lg:mb-20">
         <div
           className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-[0.14] transition-opacity duration-700 group-hover:opacity-[0.2]"
           aria-hidden
@@ -156,7 +156,7 @@ export default function SettlementArchiveSection({
               <Link
                 key={row.vs.id}
                 href={`/vs/${row.vs.id}`}
-                className="group flex gap-6 border border-transparent bg-[#131313] p-5 transition-all duration-300 hover:border-pv-emerald/20 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
+                className="group flex gap-6 border border-transparent bg-pv-surface p-5 transition-all duration-300 hover:border-pv-emerald/20 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
               >
                 {/* Columna izquierda: enumeración centrada verticalmente */}
                 <div className="flex shrink-0 items-center self-stretch">
@@ -216,7 +216,7 @@ export default function SettlementArchiveSection({
             ) : (
               <div
                 key={row.id}
-                className="group flex gap-6 border border-white/[0.06] bg-[#131313] p-5 transition-all duration-300 hover:border-pv-emerald/20 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
+                className="group flex gap-6 border border-black/[0.06] bg-pv-surface p-5 transition-all duration-300 hover:border-pv-emerald/20 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
               >
                 {/* Columna izquierda: enumeración demo centrada verticalmente */}
                 <div className="flex shrink-0 items-center self-stretch">

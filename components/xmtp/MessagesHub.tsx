@@ -41,10 +41,10 @@ function truncateQuestion(q: string, max = 72): string {
 const HUB_SHELL = "mx-auto w-full max-w-[720px] px-4 pb-16 sm:px-6";
 const HUB_SHELL_WIDE =
   "mx-auto w-full max-w-[1280px] px-4 pb-16 sm:px-6 lg:px-8";
-const CONTENT_DIVIDER = "mt-6 border-t border-white/[0.06] pt-8 sm:mt-8 sm:pt-10";
+const CONTENT_DIVIDER = "mt-6 border-t border-black/[0.06] pt-8 sm:mt-8 sm:pt-10";
 
 const HUB_SPLIT_SHELL =
-  "mt-6 flex min-h-[min(72vh,680px)] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[linear-gradient(165deg,rgba(255,255,255,0.04),rgba(0,0,0,0.22))] shadow-[0_28px_80px_-36px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:mt-8 md:flex-row";
+  "mt-6 flex min-h-[min(72vh,680px)] flex-col overflow-hidden rounded-2xl border border-black/[0.08] bg-[linear-gradient(165deg,rgba(255,255,255,0.04),rgba(0,0,0,0.22))] shadow-[0_28px_80px_-36px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:mt-8 md:flex-row";
 
 function ChannelListSkeleton({ ariaLabel }: { ariaLabel: string }) {
   return (
@@ -57,7 +57,7 @@ function ChannelListSkeleton({ ariaLabel }: { ariaLabel: string }) {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="h-[4.75rem] rounded-xl border border-white/[0.08] bg-pv-surface2/40 animate-pulse sm:h-[5.25rem]"
+          className="h-[4.75rem] rounded-xl border border-black/[0.08] bg-pv-surface2/40 animate-pulse sm:h-[5.25rem]"
         />
       ))}
     </div>
@@ -171,7 +171,7 @@ export default function MessagesHub() {
           </AnimatedItem>
           <div className={CONTENT_DIVIDER}>
             <AnimatedItem>
-              <GlassCard className="border border-white/[0.1]">
+              <GlassCard className="border border-black/[0.1]">
                 <div className="flex items-start gap-3 sm:gap-4">
                   <div className="rounded-lg border border-pv-muted/25 bg-pv-surface2 p-2.5 sm:p-3">
                     <Lock className="text-pv-muted" size={22} aria-hidden />
@@ -255,7 +255,7 @@ export default function MessagesHub() {
 
           {!loading && !loadError && !participating && (
             <AnimatedItem>
-              <GlassCard className="relative overflow-hidden border border-white/[0.1]">
+              <GlassCard className="relative overflow-hidden border border-black/[0.1]">
                 <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-pv-emerald/[0.06] blur-2xl" />
                 <div className="relative flex flex-col items-center px-4 py-10 text-center sm:px-6 sm:py-12">
                   <div className="flex h-14 w-14 items-center justify-center rounded-full border border-pv-emerald/20 bg-pv-emerald/[0.08] sm:h-16 sm:w-16">
@@ -300,13 +300,13 @@ export default function MessagesHub() {
           {!loading && !loadError && showHubSplit && (
             <AnimatedItem>
               <div className={HUB_SPLIT_SHELL}>
-                <div className="flex w-full flex-col border-b border-white/[0.06] md:max-h-[min(72vh,680px)] md:w-[400px] md:shrink-0 md:border-b-0 md:border-r md:border-white/[0.06]">
-                  <div className="border-b border-white/[0.06] bg-black/30 px-5 py-5 sm:px-6">
+                <div className="flex w-full flex-col border-b border-black/[0.06] md:max-h-[min(72vh,680px)] md:w-[400px] md:shrink-0 md:border-b-0 md:border-r md:border-black/[0.06]">
+                  <div className="border-b border-black/[0.06] bg-black/30 px-5 py-5 sm:px-6">
                     <div className="flex flex-wrap items-center gap-2.5 gap-y-2">
                       <h2 className="font-display text-lg font-bold uppercase tracking-tight text-pv-text sm:text-xl">
                         {t("title")}
                       </h2>
-                      <span className="rounded border border-white/[0.1] bg-white/[0.04] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-pv-muted">
+                      <span className="rounded border border-black/[0.1] bg-black/[0.04] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-pv-muted">
                         {t("hubSplitBadge")}
                       </span>
                     </div>
@@ -317,7 +317,7 @@ export default function MessagesHub() {
 
                   {eligible.length > 0 && other.length > 0 ? (
                     <div
-                      className="flex border-b border-white/[0.06] bg-black/20 px-1"
+                      className="flex border-b border-black/[0.06] bg-black/20 px-1"
                       role="tablist"
                       aria-label={t("title")}
                     >
@@ -331,7 +331,7 @@ export default function MessagesHub() {
                         className={`flex-1 px-2 py-2.5 text-center font-display text-[10px] font-bold uppercase tracking-[0.16em] transition-colors sm:tracking-[0.18em] ${
                           hubListTab === "active"
                             ? "border-b-2 border-pv-emerald bg-pv-emerald/[0.08] text-pv-emerald"
-                            : "border-b-2 border-transparent text-pv-muted hover:bg-white/[0.04] hover:text-pv-text"
+                            : "border-b-2 border-transparent text-pv-muted hover:bg-black/[0.04] hover:text-pv-text"
                         }`}
                       >
                         {t("sectionActive")}
@@ -346,7 +346,7 @@ export default function MessagesHub() {
                         className={`flex-1 px-2 py-2.5 text-center font-display text-[10px] font-bold uppercase tracking-[0.16em] transition-colors sm:tracking-[0.18em] ${
                           hubListTab === "pending"
                             ? "border-b-2 border-pv-emerald bg-pv-emerald/[0.08] text-pv-emerald"
-                            : "border-b-2 border-transparent text-pv-muted hover:bg-white/[0.04] hover:text-pv-text"
+                            : "border-b-2 border-transparent text-pv-muted hover:bg-black/[0.04] hover:text-pv-text"
                         }`}
                       >
                         {t("sectionPending")}
@@ -369,7 +369,7 @@ export default function MessagesHub() {
                     className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
                   >
                     {showActiveInColumn ? (
-                      <ul className="divide-y divide-white/[0.06]">
+                      <ul className="divide-y divide-black/[0.06]">
                         {eligible.map((vs, i) => {
                           const peer = getVsXmtpPeerAddress(vs, address);
                           const vsPageHref = `/vs/${vs.id}#${VS_XMTP_CHAT_ANCHOR_ID}`;
@@ -433,7 +433,7 @@ export default function MessagesHub() {
                                       ) : null}
                                     </div>
                                   </button>
-                                  <div className="flex justify-end border-t border-white/[0.06] px-5 py-3 sm:px-6">
+                                  <div className="flex justify-end border-t border-black/[0.06] px-5 py-3 sm:px-6">
                                     <Link
                                       href={vsPageHref}
                                       className="group focus-ring inline-flex min-h-[44px] items-center gap-1 rounded-md font-display text-[10px] font-bold uppercase tracking-[0.14em] text-pv-emerald transition-colors hover:text-pv-emerald/85"
@@ -456,7 +456,7 @@ export default function MessagesHub() {
                     ) : null}
 
                     {showPendingInColumn ? (
-                      <ul className="divide-y divide-white/[0.06]">
+                      <ul className="divide-y divide-black/[0.06]">
                         {other.map((vs, i) => {
                           const reason =
                             getVsXmtpUnavailableReason(vs) ?? "not_accepted";
@@ -481,8 +481,8 @@ export default function MessagesHub() {
                                         ? "border-l-amber-400/70 bg-amber-400/[0.1] ring-1 ring-inset ring-amber-400/25"
                                         : "border-l-amber-400/55 bg-amber-400/[0.04]"
                                       : isSelected
-                                        ? "border-l-white/25 bg-white/[0.06] ring-1 ring-inset ring-white/15"
-                                        : "border-l-white/[0.12] bg-transparent"
+                                        ? "border-l-white/25 bg-black/[0.06] ring-1 ring-inset ring-white/15"
+                                        : "border-l-black/[0.12] bg-transparent"
                                   }`}
                                 >
                                   <button
@@ -497,7 +497,7 @@ export default function MessagesHub() {
                                       isWaiting && !isSelected
                                         ? "hover:bg-amber-400/[0.06]"
                                         : !isWaiting && !isSelected
-                                          ? "hover:bg-white/[0.04]"
+                                          ? "hover:bg-black/[0.04]"
                                           : ""
                                     }`}
                                   >
@@ -530,7 +530,7 @@ export default function MessagesHub() {
                                         className={`inline-flex items-center rounded border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] ${
                                           isWaiting
                                             ? "border-amber-400/35 bg-amber-400/[0.08] text-amber-200/95"
-                                            : "border-white/[0.1] bg-white/[0.04] text-pv-muted"
+                                            : "border-black/[0.1] bg-black/[0.04] text-pv-muted"
                                         }`}
                                       >
                                         {isWaiting
@@ -542,7 +542,7 @@ export default function MessagesHub() {
                                       {t(`reason.${reason}`)}
                                     </p>
                                   </button>
-                                  <div className="flex justify-end border-t border-white/[0.06] px-5 py-3 sm:px-6">
+                                  <div className="flex justify-end border-t border-black/[0.06] px-5 py-3 sm:px-6">
                                     <Link
                                       href={`/vs/${vs.id}`}
                                       aria-label={`${t("viewVs")} — VS ${vs.id}`}

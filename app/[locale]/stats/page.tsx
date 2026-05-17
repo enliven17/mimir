@@ -117,7 +117,7 @@ export default async function StatsPage() {
           { label: "Oracle Balance",    value: stats ? `${stats.oracleBalance.toFixed(2)} USDC` : "—", sub: "auto-challenger" },
           { label: "Creator Win Rate",  value: cleanResolutions > 0 ? `${Math.round((creatorWins / cleanResolutions) * 100)}%` : "—", sub: `${creatorWins} creator / ${challengerWins} challenger` },
         ].map(({ label, value, sub }) => (
-          <div key={label} className="rounded-2xl border border-white/[0.08] bg-pv-surface p-4">
+          <div key={label} className="rounded-2xl border border-black/[0.08] bg-pv-surface p-4">
             <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-pv-muted">{label}</div>
             <div className="mt-1 font-display text-2xl font-bold tracking-tight text-pv-text">{value}</div>
             <div className="mt-0.5 text-[11px] text-pv-muted">{sub}</div>
@@ -145,7 +145,7 @@ export default async function StatsPage() {
           Recent Oracle Settlements
         </h2>
         {settlements.length === 0 ? (
-          <div className="rounded-2xl border border-white/[0.06] bg-pv-surface p-8 text-center text-pv-muted text-sm">
+          <div className="rounded-2xl border border-black/[0.06] bg-pv-surface p-8 text-center text-pv-muted text-sm">
             No settlements yet. Run <code className="text-pv-emerald">npm run seed</code> then <code className="text-pv-emerald">npm run oracle</code>.
           </div>
         ) : (
@@ -153,7 +153,7 @@ export default async function StatsPage() {
             {settlements.map((s) => {
               const side = SIDE_LABEL[s.winnerSide] ?? { label: "Unknown", color: "text-pv-muted" };
               return (
-                <div key={s.txHash} className="rounded-2xl border border-white/[0.06] bg-pv-surface p-4">
+                <div key={s.txHash} className="rounded-2xl border border-black/[0.06] bg-pv-surface p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -173,7 +173,7 @@ export default async function StatsPage() {
                       href={`https://testnet.arcscan.app/tx/${s.txHash}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="shrink-0 rounded-lg border border-white/[0.08] px-2 py-1 text-[11px] text-pv-muted hover:text-pv-text transition-colors"
+                      className="shrink-0 rounded-lg border border-black/[0.08] px-2 py-1 text-[11px] text-pv-muted hover:text-pv-text transition-colors"
                     >
                       View tx ↗
                     </a>
@@ -186,7 +186,7 @@ export default async function StatsPage() {
       </div>
 
       {/* Circle / Arc links */}
-      <div className="mt-10 rounded-2xl border border-white/[0.06] bg-pv-surface p-6">
+      <div className="mt-10 rounded-2xl border border-black/[0.06] bg-pv-surface p-6">
         <h3 className="mb-4 font-display text-lg font-bold tracking-tight text-pv-text">
           Get Testnet USDC
         </h3>
@@ -213,7 +213,7 @@ export default async function StatsPage() {
               href={href}
               target="_blank"
               rel="noreferrer"
-              className="rounded-xl border border-white/[0.08] p-3 hover:border-pv-emerald/30 hover:bg-pv-emerald/[0.04] transition-all"
+              className="rounded-xl border border-black/[0.08] p-3 hover:border-pv-emerald/30 hover:bg-pv-emerald/[0.04] transition-all"
             >
               <div className="text-[13px] font-semibold text-pv-text">{label} ↗</div>
               <div className="mt-0.5 text-[12px] text-pv-muted">{desc}</div>
