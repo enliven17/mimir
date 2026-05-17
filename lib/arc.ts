@@ -16,6 +16,9 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
+// Pulled out so the rest of the file can read the URL without optional-chain noise.
+const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
+
 // ── Chain definition ──────────────────────────────────────────────────────────
 export const arcTestnet: Chain = {
   id: 5042002,
@@ -36,7 +39,7 @@ export const arcTestnet: Chain = {
   blockExplorers: {
     default: {
       name: "ArcScan",
-      url: "https://testnet.arcscan.app",
+      url: ARC_EXPLORER_URL,
     },
   },
   testnet: true,
@@ -59,11 +62,11 @@ export function getContractAddress(): `0x${string}` {
 }
 
 export function getExplorerTxUrl(txHash: string): string {
-  return `${arcTestnet.blockExplorers.default.url}/tx/${txHash}`;
+  return `${ARC_EXPLORER_URL}/tx/${txHash}`;
 }
 
 export function getExplorerAddressUrl(address: string): string {
-  return `${arcTestnet.blockExplorers.default.url}/address/${address}`;
+  return `${ARC_EXPLORER_URL}/address/${address}`;
 }
 
 // ── viem clients ──────────────────────────────────────────────────────────────
@@ -114,7 +117,7 @@ export async function ensureArcChain(ethereum: {
           chainName: arcTestnet.name,
           rpcUrls: arcTestnet.rpcUrls.default.http,
           nativeCurrency: arcTestnet.nativeCurrency,
-          blockExplorerUrls: [arcTestnet.blockExplorers.default.url],
+          blockExplorerUrls: [ARC_EXPLORER_URL],
         },
       ],
     });

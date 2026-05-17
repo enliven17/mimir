@@ -98,6 +98,7 @@ export interface ExecuteContractArgs {
   contractAddress: `0x${string}`;
   abiFunctionSignature: string;
   abiParameters: unknown[];
+  /** Decimal native-token amount to attach as msg.value, e.g. "2.5" — NOT wei. */
   amount?: string;
   feeLevel?: "LOW" | "MEDIUM" | "HIGH";
   refId?: string;
@@ -147,6 +148,46 @@ async function waitForTxHash(transactionId: string, timeoutMs = 90_000): Promise
     delay = Math.min(delay + 500, 5000);
   }
   throw new Error(`W3S tx ${transactionId} did not confirm within ${timeoutMs}ms`);
+}
+
+// ── Native token transfer ─────────────────────────────────────────────────────
+// W3S developer-controlled wallets do not expose a `contractDeployment` endpoint.
+// To bootstrap an Arc deployment we instead fund a one-shot deploy key from a
+// W3S wallet via this transfer, then use vanilla viem.deployContract.
+
+export interface TransferNativeArgs {
+  walletId:           string;
+  destinationAddress: `0x${string}`;
+  blockchain:         string; // e.g. "ARC-TESTNET"
+  amount:             string; // decimal string in token units (e.g. "2.5")
+  feeLevel?:          "LOW" | "MEDIUM" | "HIGH";
+  refId?:             string;
+}
+
+/**
+ * Transfer the chain's native token (e.g. USDC on Arc) from a W3S wallet to an
+ * arbitrary destination. Returns the on-chain tx hash once confirmed.
+ */
+export async function transferNative(args: TransferNativeArgs): Promise<Hex> {
+  const ciphertext = await encryptEntitySecret();
+  const body: Record<string, unknown> = {
+    idempotencyKey:         randomUUID(),
+    entitySecretCiphertext: ciphertext,
+    walletId:               args.walletId,
+    destinationAddress:     args.destinationAddress,
+    amounts:                [args.amount],
+    tokenAddress:           "",            // native token
+    blockchain:             args.blockchain,
+    feeLevel:               args.feeLevel ?? "MEDIUM",
+  };
+  if (args.refId) body.refId = args.refId;
+
+  const resp = await circleFetch<ContractExecResponse>(
+    "POST",
+    "/developer/transactions/transfer",
+    body,
+  );
+  return await waitForTxHash(resp.data.id);
 }
 
 function sleep(ms: number): Promise<void> {

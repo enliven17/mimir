@@ -192,7 +192,8 @@ contract Mimir {
             isPrivate:                isPrivate,
             inviteKeyHash:            bytes(inviteKey).length > 0
                                           ? keccak256(bytes(inviteKey))
-                                          : bytes32(0)
+                                          : bytes32(0),
+            evidenceHash:             bytes32(0)
         });
 
         emit ClaimCreated(id, msg.sender, category);

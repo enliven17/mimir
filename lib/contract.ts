@@ -115,6 +115,10 @@ export interface VSData {
   is_private?: boolean;
   total_pot?: number;
   challenger_addresses?: string[];
+  // Resolution-request flow (optional, surfaces off-chain UI state)
+  creator_requested_resolve?: boolean;
+  challenger_requested_resolve?: boolean;
+  resolve_attempts?: number;
 }
 
 export interface CreateClaimParams {
@@ -202,13 +206,13 @@ export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
         abi:          MIMIR_ABI,
         functionName: "getClaim",
         args:         [BigInt(claimId)],
-      }) as Promise<any[]>,
+      }) as Promise<readonly any[]>,
       client.readContract({
         address:      CONTRACT_ADDRESS,
         abi:          MIMIR_ABI,
         functionName: "getClaimMarketConfig",
         args:         [BigInt(claimId)],
-      }) as Promise<any[]>,
+      }) as Promise<readonly any[]>,
       client.readContract({
         address:      CONTRACT_ADDRESS,
         abi:          MIMIR_ABI,

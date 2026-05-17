@@ -228,6 +228,17 @@ export const MIMIR_ABI = [
     outputs: [{ name: "", type: "uint256" }],
   },
   {
+    // Public mapping auto-getter: hasChallenged[claimId][address] → bool
+    type: "function",
+    name: "hasChallenged",
+    stateMutability: "view",
+    inputs: [
+      { name: "claimId",    type: "uint256" },
+      { name: "challenger", type: "address" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
     type: "function",
     name: "oracle",
     stateMutability: "view",
