@@ -296,7 +296,7 @@ export default function ChallengeOpportunityCard({
       <div className="mt-auto flex flex-wrap items-center gap-2 pt-0">
         <Link
           href={createHref}
-          className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-lg bg-pv-emerald px-4 py-2 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-bg transition-[transform,box-shadow,background-color] duration-200 ease-out hover:-translate-y-px hover:bg-[#5ef0b3] hover:shadow-[0_10px_28px_-12px_rgba(78,222,163,0.7)]"
+          className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-lg bg-pv-emerald px-4 py-2 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-bg transition-[transform,box-shadow,background-color] duration-200 ease-out hover:-translate-y-px hover:brightness-110 hover:shadow-[0_10px_28px_-12px_rgba(216,95,95,0.7)]"
         >
           {t("challengeOpportunityPrimaryCreate")}
         </Link>

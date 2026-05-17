@@ -1281,7 +1281,7 @@ export default function VSDetailPage() {
           >
             <motion.div
               variants={verdictWord}
-              className="font-display text-[clamp(3rem,15vw,8rem)] font-bold uppercase text-pv-emerald drop-shadow-[0_0_40px_rgba(78,222,163,0.4)]"
+              className="font-display text-[clamp(3rem,15vw,8rem)] font-bold uppercase text-pv-emerald drop-shadow-[0_0_40px_rgba(216,95,95,0.4)]"
             >
               SETTLED.
             </motion.div>
@@ -1536,7 +1536,7 @@ export default function VSDetailPage() {
 
               <div className="flex items-center justify-between border-t border-black/[0.08] px-5 py-3 sm:px-8">
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(78,222,163,0.6)]" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(216,95,95,0.6)]" />
                   <span className="text-xs text-pv-muted">{t("provenVerifies")}</span>
                 </div>
                 {display.resolution_url && (

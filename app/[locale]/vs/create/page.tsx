@@ -1721,7 +1721,7 @@ export default function CreatePage() {
                       onClick={handleGenerateFromSource}
                       loading={draftLoading}
                       disabled={!normalizedSourceUrl || draftLoading}
-                      className="w-full shrink-0 self-start rounded-xl px-5 py-3 font-display text-[11px] font-bold uppercase tracking-[0.16em] transition-[background-color,border-color,color,box-shadow,transform,filter] duration-200 ease-out sm:w-auto sm:self-center !border-black/[0.22] !bg-black/[0.06] !text-pv-text/90 enabled:hover:-translate-y-px enabled:hover:!border-transparent enabled:hover:!bg-pv-emerald enabled:hover:!text-pv-bg enabled:hover:!brightness-[1.06] enabled:hover:!shadow-[0_6px_20px_-4px_rgba(78,222,163,0.32)] enabled:active:translate-y-0 enabled:active:scale-[0.98] enabled:active:!shadow-none focus-visible:!outline-none enabled:focus-visible:!ring-2 enabled:focus-visible:!ring-pv-emerald/40 enabled:focus-visible:!ring-offset-2 enabled:focus-visible:!ring-offset-pv-bg disabled:hover:!translate-y-0 disabled:hover:!border-black/[0.22] disabled:hover:!bg-black/[0.06] disabled:hover:!text-pv-text/90 disabled:hover:!brightness-100 disabled:hover:!shadow-none"
+                      className="w-full shrink-0 self-start rounded-xl px-5 py-3 font-display text-[11px] font-bold uppercase tracking-[0.16em] transition-[background-color,border-color,color,box-shadow,transform,filter] duration-200 ease-out sm:w-auto sm:self-center !border-black/[0.22] !bg-black/[0.06] !text-pv-text/90 enabled:hover:-translate-y-px enabled:hover:!border-transparent enabled:hover:!bg-pv-emerald enabled:hover:!text-pv-bg enabled:hover:!brightness-[1.06] enabled:hover:!shadow-[0_6px_20px_-4px_rgba(216,95,95,0.32)] enabled:active:translate-y-0 enabled:active:scale-[0.98] enabled:active:!shadow-none focus-visible:!outline-none enabled:focus-visible:!ring-2 enabled:focus-visible:!ring-pv-emerald/40 enabled:focus-visible:!ring-offset-2 enabled:focus-visible:!ring-offset-pv-bg disabled:hover:!translate-y-0 disabled:hover:!border-black/[0.22] disabled:hover:!bg-black/[0.06] disabled:hover:!text-pv-text/90 disabled:hover:!brightness-100 disabled:hover:!shadow-none"
                     >
                       {draftLoading ? t("sourceDraftGenerating") : t("sourceDraftGenerate")}
                     </Button>
@@ -1931,7 +1931,7 @@ export default function CreatePage() {
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-0">
               {/* Side A — Creator / Cyan */}
               <div className="relative flex flex-col gap-4 md:pr-4 md:border-r md:border-black/[0.06]">
-                <div className="absolute inset-0 pointer-events-none rounded-xl opacity-60" style={{ background: creatorPos ? "radial-gradient(ellipse 80% 60% at 0% 50%, rgba(93,230,255,0.06), transparent 70%)" : "none" }} />
+                <div className="absolute inset-0 pointer-events-none rounded-xl opacity-60" style={{ background: creatorPos ? "radial-gradient(ellipse 80% 60% at 0% 50%, rgba(216,95,95,0.06), transparent 70%)" : "none" }} />
                 <div className="relative flex items-center gap-2.5">
                   <span
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pv-cyan/10 text-pv-cyan"
@@ -1955,7 +1955,7 @@ export default function CreatePage() {
               </div>
               {/* Side B — Opponent / Fuchsia */}
               <div className="relative flex flex-col gap-4 md:pl-4">
-                <div className="absolute inset-0 pointer-events-none rounded-xl opacity-60" style={{ background: opponentPos ? "radial-gradient(ellipse 80% 60% at 100% 50%, rgba(248,172,255,0.06), transparent 70%)" : "none" }} />
+                <div className="absolute inset-0 pointer-events-none rounded-xl opacity-60" style={{ background: opponentPos ? "radial-gradient(ellipse 80% 60% at 100% 50%, rgba(200,71,71,0.06), transparent 70%)" : "none" }} />
                 <div className="relative flex items-center gap-2.5">
                   <span
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pv-fuch/10 text-pv-fuch"
@@ -2019,7 +2019,7 @@ export default function CreatePage() {
                     aria-pressed={selected}
                     className={`flex-1 rounded-lg px-6 py-2.5 font-display text-[11px] font-bold uppercase tracking-[0.18em] transition-[color,background-color,border-color,box-shadow,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/40 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-bg sm:tracking-[0.2em] md:flex-none md:min-w-[9.5rem] ${
                       selected
-                        ? "bg-pv-emerald text-pv-bg shadow-[0_0_22px_-6px_rgba(78,222,163,0.35)] hover:brightness-[1.05] active:scale-[0.98]"
+                        ? "bg-pv-emerald text-pv-bg shadow-[0_0_22px_-6px_rgba(216,95,95,0.35)] hover:brightness-[1.05] active:scale-[0.98]"
                         : "border border-black/[0.12] bg-pv-surface text-pv-muted hover:border-black/[0.2] hover:text-pv-text active:scale-[0.98]"
                     }`}
                   >
@@ -2061,7 +2061,7 @@ export default function CreatePage() {
                     }
                     className={`min-w-0 rounded-lg border px-1.5 py-2 font-display text-[11px] font-bold leading-tight transition-[border-color,background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/35 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-bg sm:px-2 sm:py-2.5 sm:text-xs ${
                       stake === amount && presetStakeHighlight
-                        ? "border-pv-emerald bg-pv-emerald/[0.12] text-pv-emerald shadow-[0_0_16px_-8px_rgba(78,222,163,0.3)]"
+                        ? "border-pv-emerald bg-pv-emerald/[0.12] text-pv-emerald shadow-[0_0_16px_-8px_rgba(216,95,95,0.3)]"
                         : "border border-black/[0.12] bg-pv-surface text-pv-muted hover:border-pv-emerald/35 hover:text-pv-emerald"
                     }`}
                   >
@@ -2071,7 +2071,7 @@ export default function CreatePage() {
                 <div
                   className={`flex min-h-[2.75rem] w-full min-w-0 items-center justify-center rounded-lg border px-1.5 py-1.5 transition-[border-color,background-color,color,box-shadow] sm:min-h-[3.25rem] sm:px-2 sm:py-2 ${
                     customStakeFocused || !isPresetStakeAmount(stake)
-                      ? "border-pv-emerald bg-pv-emerald/[0.12] text-pv-emerald shadow-[0_0_16px_-8px_rgba(78,222,163,0.3)]"
+                      ? "border-pv-emerald bg-pv-emerald/[0.12] text-pv-emerald shadow-[0_0_16px_-8px_rgba(216,95,95,0.3)]"
                       : "border border-black/[0.12] bg-pv-surface text-pv-muted"
                   }`}
                 >
@@ -2164,7 +2164,7 @@ export default function CreatePage() {
                       aria-pressed={selected}
                       className={`min-w-0 rounded-lg border px-1.5 py-2 font-display text-[11px] font-bold leading-tight transition-[border-color,background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/35 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-bg sm:px-2 sm:py-2.5 sm:text-xs ${
                         selected
-                          ? "border-pv-emerald bg-pv-emerald/[0.12] text-pv-emerald shadow-[0_0_16px_-8px_rgba(78,222,163,0.3)]"
+                          ? "border-pv-emerald bg-pv-emerald/[0.12] text-pv-emerald shadow-[0_0_16px_-8px_rgba(216,95,95,0.3)]"
                           : "border border-black/[0.12] bg-pv-surface text-pv-muted hover:border-pv-emerald/35 hover:text-pv-emerald"
                       }`}
                     >

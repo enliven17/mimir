@@ -372,7 +372,7 @@ function vsRowInsetPresenceClass(
   }
   if (vs.state !== "resolved" || !viewerAddress) return "";
   if (didUserWinVS(vs, viewerAddress)) {
-    return "shadow-[inset_3px_0_0_0_rgba(78,222,163,0.72)]";
+    return "shadow-[inset_3px_0_0_0_rgba(216,95,95,0.72)]";
   }
   if (didUserLoseVS(vs, viewerAddress)) {
     return "shadow-[inset_3px_0_0_0_rgba(248,113,113,0.52)]";

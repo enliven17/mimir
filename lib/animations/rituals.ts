@@ -63,10 +63,10 @@ export const fuseBarDecay = (progress: number): Variants => ({
    Color wash + text morph for OPEN → LOCKED → VERIFYING → PROVEN
    ───────────────────────────────────────────── */
 export const PHASE_COLORS = {
-  open: "rgba(93, 230, 255, 0.15)",
-  locked: "rgba(248, 172, 255, 0.15)",
+  open: "rgba(216,95,95, 0.15)",
+  locked: "rgba(200,71,71, 0.15)",
   verifying: "rgba(251, 191, 36, 0.15)",
-  proven: "rgba(78, 222, 163, 0.15)",
+  proven: "rgba(216,95,95, 0.15)",
 } as const;
 
 export const phaseShift: Variants = {

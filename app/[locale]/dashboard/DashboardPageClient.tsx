@@ -232,7 +232,7 @@ export default function DashboardPageClient() {
             <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3 sm:gap-4">
               <div className="flex items-center gap-1.5">
                 <div
-                  className="h-1.5 w-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(78,222,163,0.6)]"
+                  className="h-1.5 w-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(216,95,95,0.6)]"
                   aria-hidden
                 />
                 <span className="font-mono text-xs text-pv-muted">

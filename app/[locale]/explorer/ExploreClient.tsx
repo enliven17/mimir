@@ -623,7 +623,7 @@ export default function ExploreClient() {
                   aria-pressed={activeView === "open"}
                   className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 rounded-[18px] px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
                     activeView === "open"
-                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] shadow-[0_12px_32px_-20px_rgba(78,222,163,0.95)]"
+                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] shadow-[0_12px_32px_-20px_rgba(216,95,95,0.95)]"
                       : "border border-transparent bg-transparent hover:border-black/[0.08] hover:bg-black/[0.03]"
                   }`}
                 >
@@ -647,7 +647,7 @@ export default function ExploreClient() {
                   aria-pressed={activeView === "ai"}
                   className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 rounded-[18px] px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
                     activeView === "ai"
-                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] shadow-[0_12px_32px_-20px_rgba(78,222,163,0.95)]"
+                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] shadow-[0_12px_32px_-20px_rgba(216,95,95,0.95)]"
                       : "border border-transparent bg-transparent hover:border-black/[0.08] hover:bg-black/[0.03]"
                   }`}
                 >

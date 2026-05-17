@@ -21,8 +21,8 @@ const glowStyles: Record<GlowSide, React.ReactNode> = {
   ),
   both: (
     <>
-      <div className="absolute top-0 left-0 w-1/2 h-full bg-[radial-gradient(ellipse_at_0%_40%,rgba(93,230,255,0.07),transparent_65%)] pointer-events-none" />
-      <div className="absolute top-0 right-0 w-1/2 h-full bg-[radial-gradient(ellipse_at_100%_40%,rgba(248,172,255,0.07),transparent_65%)] pointer-events-none" />
+      <div className="absolute top-0 left-0 w-1/2 h-full bg-[radial-gradient(ellipse_at_0%_40%,rgba(216,95,95,0.07),transparent_65%)] pointer-events-none" />
+      <div className="absolute top-0 right-0 w-1/2 h-full bg-[radial-gradient(ellipse_at_100%_40%,rgba(200,71,71,0.07),transparent_65%)] pointer-events-none" />
     </>
   ),
   emerald: (

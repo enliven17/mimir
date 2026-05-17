@@ -15,12 +15,14 @@ const config: Config = {
           surface:  "#FBEFEF",
           surface2: "#F9DFDF",
           border:   "#F5AFAF",
-          text:     "#2A1818",   // warm near-black for readable body copy
-          muted:    "#7A5050",   // muted brown-rose for secondary text
-          // Accents (kept distinctive but darkened slightly for contrast on light)
-          cyan:     "#0EA5B5",
-          fuch:     "#C53191",
-          emerald:  "#10A36C",
+          text:     "#2A1818",
+          muted:    "#7A5050",
+          // Accents — monochromatic rose family (no green/cyan/fuch).
+          // The legacy token names (cyan/fuch/emerald) stay so existing
+          // utility classes keep working; they all resolve to rose tones now.
+          cyan:     "#D85F5F",
+          fuch:     "#C84747",
+          emerald:  "#D85F5F",
           gold:     "#B07300",
           danger:   "#B91C1C",
         },
@@ -42,13 +44,13 @@ const config: Config = {
         full:  "9999px",
       },
       boxShadow: {
-        glow:           "0 0 40px rgba(93,230,255,0.08)",
-        "glow-fuch":    "0 0 40px rgba(248,172,255,0.08)",
-        "glow-emerald": "0 0 40px rgba(78,222,163,0.08)",
-        "glow-gold":    "0 0 40px rgba(251,191,36,0.08)",
-        "glow-lg":      "0 0 60px rgba(93,230,255,0.12)",
-        "glow-fuch-lg": "0 0 60px rgba(248,172,255,0.12)",
-        "glow-emerald-lg": "0 0 60px rgba(78,222,163,0.12)",
+        glow:           "0 0 40px rgba(245,175,175,0.32)",
+        "glow-fuch":    "0 0 40px rgba(245,175,175,0.28)",
+        "glow-emerald": "0 0 40px rgba(216, 95, 95,0.18)",
+        "glow-gold":    "0 0 40px rgba(176,115,0,0.12)",
+        "glow-lg":      "0 0 60px rgba(245,175,175,0.36)",
+        "glow-fuch-lg": "0 0 60px rgba(245,175,175,0.32)",
+        "glow-emerald-lg": "0 0 60px rgba(216, 95, 95,0.22)",
       },
       keyframes: {
         fadeUp: {

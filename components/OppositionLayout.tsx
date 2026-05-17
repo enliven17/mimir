@@ -35,7 +35,7 @@ export default function OppositionLayout({
       <div
         className="absolute inset-y-0 left-0 w-1/2 pointer-events-none transition-opacity duration-500"
         style={{
-          background: `radial-gradient(ellipse 80% 60% at 0% 50%, rgba(93,230,255,${intensity}), transparent 70%)`,
+          background: `radial-gradient(ellipse 80% 60% at 0% 50%, rgba(216,95,95,${intensity}), transparent 70%)`,
         }}
       />
 
@@ -43,7 +43,7 @@ export default function OppositionLayout({
       <div
         className="absolute inset-y-0 right-0 w-1/2 pointer-events-none transition-opacity duration-500"
         style={{
-          background: `radial-gradient(ellipse 80% 60% at 100% 50%, rgba(248,172,255,${intensity}), transparent 70%)`,
+          background: `radial-gradient(ellipse 80% 60% at 100% 50%, rgba(200,71,71,${intensity}), transparent 70%)`,
         }}
       />
 

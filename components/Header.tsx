@@ -123,8 +123,19 @@ export default function Header() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [walletMenuOpen, setWalletMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const walletMenuDesktopRef = useRef<HTMLDivElement>(null);
   const walletMenuMobileRef = useRef<HTMLDivElement>(null);
+
+  // Track scroll position so the navbar can lift off the page once the user
+  // scrolls past the hero. At the top it blends into the background; once
+  // scrolled it floats as a glass pill.
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const t = useTranslations("header");
   const tc = useTranslations("common");
@@ -182,8 +193,14 @@ export default function Header() {
   }, [walletMenuOpen]);
 
   return (
-    <header className="fixed left-0 right-0 top-0 z-50 border-b border-black/[0.08] bg-pv-surface/75 pt-[env(safe-area-inset-top)] backdrop-blur-[20px]">
-      <div className="mx-auto flex h-14 max-w-[1200px] items-center justify-between px-4 sm:px-6 lg:px-8">
+    <header className="fixed left-0 right-0 top-0 z-50 pt-[env(safe-area-inset-top)]">
+      <div
+        className={`mx-auto flex h-14 max-w-[1100px] items-center justify-between px-4 transition-[background-color,border-color,box-shadow,transform,margin] duration-300 ease-out sm:px-6 ${
+          scrolled
+            ? "mt-2 rounded-2xl border border-pv-border/40 bg-pv-surface/70 px-5 shadow-[0_10px_40px_-12px_rgba(216,95,95,0.18)] backdrop-blur-[18px] sm:mt-3"
+            : "mt-0 rounded-none border border-transparent bg-transparent shadow-none backdrop-blur-0"
+        }`}
+      >
         <Link href="/" className="flex items-center gap-2.5">
           <span className="group font-display text-lg font-bold tracking-tight text-pv-emerald transition-colors duration-300 ease-in-out sm:text-xl">
             Mimir

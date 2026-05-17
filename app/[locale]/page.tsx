@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { useTranslations } from "next-intl";
@@ -271,42 +270,51 @@ export default function HomePage() {
           grid
           className="mb-6 sm:mb-8 relative w-full"
         >
-          {/* Full atmospheric backdrop — shifted right so left robot clears the text panel */}
+          {/* Animated blush backdrop — slow-moving radial gradients, no images */}
           <div className="absolute inset-0 z-0 overflow-hidden">
-            {/* Mobile-first hero image */}
-            <div className="relative h-full w-full sm:hidden" style={{ transform: "scaleX(-1)" }}>
-              <Image
-                src="/HeroMobile-2jpeg.jpeg"
-                alt=""
-                fill
-                priority
-                quality={85}
-                className="object-cover opacity-[0.62] scale-[1.08] object-[50%_100%]"
-                sizes="100vw"
-              />
-            </div>
-            {/* Desktop/tablet hero image */}
-            <div className="relative hidden h-full w-full sm:block" style={{ transform: "scaleX(-1)" }}>
-              <Image
-                src="/Hero.jpg"
-                alt=""
-                fill
-                priority
-                quality={85}
-                className="object-cover opacity-[0.62] scale-[1.03] object-[58%_23%] sm:object-[56%_23%] lg:object-[54%_21%]"
-                sizes="100vw"
-              />
-            </div>
-            {/* Center scrim — keeps text readable without killing the image */}
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_55%_at_50%_38%,rgba(14,14,14,0.75)_0%,rgba(14,14,14,0.35)_35%,transparent_68%)]" />
+            <motion.div
+              className="absolute -left-[20%] top-[10%] h-[60%] w-[70%] rounded-full opacity-70"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(245,175,175,0.55) 0%, rgba(245,175,175,0.18) 45%, transparent 70%)",
+              }}
+              animate={{
+                x: [0, 60, -30, 0],
+                y: [0, -40, 30, 0],
+                scale: [1, 1.08, 0.96, 1],
+              }}
+              transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.div
+              className="absolute -right-[15%] top-[30%] h-[55%] w-[60%] rounded-full opacity-65"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(249,223,223,0.7) 0%, rgba(251,239,239,0.25) 45%, transparent 70%)",
+              }}
+              animate={{
+                x: [0, -50, 30, 0],
+                y: [0, 35, -25, 0],
+                scale: [1, 0.93, 1.05, 1],
+              }}
+              transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.div
+              className="absolute left-[15%] bottom-[5%] h-[45%] w-[55%] rounded-full opacity-55"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(216,95,95,0.18) 0%, rgba(245,175,175,0.08) 45%, transparent 70%)",
+              }}
+              animate={{
+                x: [0, 40, -20, 0],
+                y: [0, -25, 20, 0],
+                scale: [1, 1.05, 0.97, 1],
+              }}
+              transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
+            />
 
-            {/* Feathering on edges: smooth fade so the image never looks "cut" */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-pv-bg/95 via-pv-bg/45 to-transparent sm:h-40" />
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-pv-bg via-pv-bg/45 to-transparent sm:w-32" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-pv-bg via-pv-bg/45 to-transparent sm:w-32" />
-
-            {/* Bottom edge fade */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-pv-bg/95 via-pv-bg/45 to-transparent sm:h-28" />
+            {/* Edge fade so the gradients don't bleed into surrounding sections */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-pv-bg via-pv-bg/45 to-transparent sm:h-32" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-pv-bg via-pv-bg/45 to-transparent sm:h-28" />
           </div>
 
           {/* Text panel — centered so the backdrop stays visible */}
@@ -342,7 +350,7 @@ export default function HomePage() {
                   </motion.span>
                   <motion.span
                     variants={kineticLetter}
-                    className="inline-block italic text-pv-emerald drop-shadow-[0_0_18px_rgba(78,222,163,0.5)]"
+                    className="inline-block italic text-pv-emerald drop-shadow-[0_0_18px_rgba(216,95,95,0.5)]"
                   >
                     Mimir.
                   </motion.span>
@@ -367,7 +375,7 @@ export default function HomePage() {
                 {/* Secondary CTA — fuchsia neon */}
                 <Link
                   href="/explorer"
-                  className="group relative flex items-center justify-center overflow-hidden rounded-lg border border-pv-fuch/30 bg-transparent px-7 py-3.5 font-display text-[13px] font-bold uppercase tracking-[0.14em] text-pv-fuch/80 transition-all duration-300 hover:border-pv-fuch/60 hover:bg-pv-fuch/[0.1] hover:text-pv-fuch hover:shadow-[0_0_28px_-4px_rgba(248,172,255,0.45),inset_0_0_20px_-8px_rgba(248,172,255,0.12)]"
+                  className="group relative flex items-center justify-center overflow-hidden rounded-lg border border-pv-fuch/30 bg-transparent px-7 py-3.5 font-display text-[13px] font-bold uppercase tracking-[0.14em] text-pv-fuch/80 transition-all duration-300 hover:border-pv-fuch/60 hover:bg-pv-fuch/[0.1] hover:text-pv-fuch hover:shadow-[0_0_28px_-4px_rgba(200,71,71,0.45),inset_0_0_20px_-8px_rgba(200,71,71,0.12)]"
                 >
                   <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-r from-pv-fuch/[0.1] via-transparent to-pv-fuch/[0.05]" />
                   <span className="relative">{t("heroExploreChallenges")}</span>
@@ -376,7 +384,7 @@ export default function HomePage() {
                 {/* Primary CTA — cyan neon */}
                 <Link
                   href="/vs/create"
-                  className="group relative flex items-center justify-center overflow-hidden rounded-lg border border-pv-emerald/40 bg-pv-emerald/[0.08] px-7 py-3.5 font-display text-[13px] font-bold uppercase tracking-[0.14em] text-pv-emerald transition-all duration-300 hover:border-pv-emerald/70 hover:bg-pv-emerald/[0.15] hover:text-white hover:shadow-[0_0_28px_-4px_rgba(78,222,163,0.5),inset_0_0_20px_-8px_rgba(78,222,163,0.15)]"
+                  className="group relative flex items-center justify-center overflow-hidden rounded-lg border border-pv-emerald/40 bg-pv-emerald/[0.08] px-7 py-3.5 font-display text-[13px] font-bold uppercase tracking-[0.14em] text-pv-emerald transition-all duration-300 hover:border-pv-emerald/70 hover:bg-pv-emerald/[0.15] hover:text-white hover:shadow-[0_0_28px_-4px_rgba(216,95,95,0.5),inset_0_0_20px_-8px_rgba(216,95,95,0.15)]"
                 >
                   <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-r from-pv-emerald/[0.12] via-transparent to-pv-emerald/[0.06]" />
                   <span className="relative">{t("heroChallengeSomeone")}</span>
@@ -717,7 +725,7 @@ export default function HomePage() {
           <div className="mb-10">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(78,222,163,0.6)]" />
+                <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(216,95,95,0.6)]" />
                 <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-pv-emerald">
                   {t("marketExplorerTeaser")}
                 </span>
@@ -750,7 +758,7 @@ export default function HomePage() {
         <AnimatedItem>
           <Artifact serial="PV-LEDGER" watermark="MIMIR" className="mt-4">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(78,222,163,0.6)]" />
+              <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(216,95,95,0.6)]" />
               <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald">
                 {t("recentlyProven")}
               </span>
