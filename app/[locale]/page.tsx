@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
+import Plasma from "@/components/Plasma";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import {
@@ -270,55 +271,16 @@ export default function HomePage() {
           grid
           className="mb-6 sm:mb-8 relative w-full"
         >
-          {/* Animated blush backdrop — slow-moving radial gradients, no images */}
+          {/* Plasma WebGL backdrop — fills hero, hidden when scrolled past via IntersectionObserver inside the component */}
           <div className="absolute inset-0 z-0 overflow-hidden">
-            <motion.div
-              className="absolute -left-[20%] top-[10%] h-[60%] w-[70%] rounded-full opacity-70"
-              style={{
-                background:
-                  "radial-gradient(circle, rgba(245,175,175,0.55) 0%, rgba(245,175,175,0.18) 45%, transparent 70%)",
-              }}
-              animate={{
-                x: [0, 60, -30, 0],
-                y: [0, -40, 30, 0],
-                scale: [1, 1.08, 0.96, 1],
-              }}
-              transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="absolute -right-[15%] top-[30%] h-[55%] w-[60%] rounded-full opacity-65"
-              style={{
-                background:
-                  "radial-gradient(circle, rgba(249,223,223,0.7) 0%, rgba(251,239,239,0.25) 45%, transparent 70%)",
-              }}
-              animate={{
-                x: [0, -50, 30, 0],
-                y: [0, 35, -25, 0],
-                scale: [1, 0.93, 1.05, 1],
-              }}
-              transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="absolute left-[15%] bottom-[5%] h-[45%] w-[55%] rounded-full opacity-55"
-              style={{
-                background:
-                  "radial-gradient(circle, rgba(216,95,95,0.18) 0%, rgba(245,175,175,0.08) 45%, transparent 70%)",
-              }}
-              animate={{
-                x: [0, 40, -20, 0],
-                y: [0, -25, 20, 0],
-                scale: [1, 1.05, 0.97, 1],
-              }}
-              transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
-            />
-
-            {/* Edge fade so the gradients don't bleed into surrounding sections */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-pv-bg via-pv-bg/45 to-transparent sm:h-32" />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-pv-bg via-pv-bg/45 to-transparent sm:h-28" />
+            <Plasma color="#F5AFAF" speed={0.9} scale={1} opacity={0.85} mouseInteractive={false} />
+            {/* Edge fade so the plasma doesn't bleed into surrounding sections */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-pv-bg via-pv-bg/35 to-transparent sm:h-32" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-pv-bg via-pv-bg/60 to-transparent sm:h-40" />
           </div>
 
-          {/* Text panel — centered so the backdrop stays visible */}
-          <div className="relative z-10 mx-auto flex min-h-[90vh] w-full max-w-[1200px] items-center justify-center px-4 sm:px-6 lg:px-8 pt-[env(safe-area-inset-top,0px)] sm:min-h-[inherit]">
+          {/* Text panel — full-viewport hero so scrolling reveals the rest */}
+          <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1200px] items-center justify-center px-4 sm:px-6 lg:px-8 pt-[env(safe-area-inset-top,0px)]">
             <div className="w-full max-w-[640px] pt-14 pb-28 sm:py-16 lg:py-20 text-center">
               {/* Headline — 3 lines, reduced size, payoff line smaller */}
               <motion.h1
