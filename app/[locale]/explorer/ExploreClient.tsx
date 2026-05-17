@@ -48,7 +48,7 @@ const filterPillActive = "border-pv-emerald/50 bg-pv-emerald text-pv-bg";
 const filterPillInactive =
   "border-black/[0.15] bg-transparent text-pv-muted hover:border-black/[0.28] hover:text-pv-text";
 
-type ArenaViewMode = "open" | "ai";
+type ArenaViewMode = "open" | "ai" | "closed";
 
 function getOpportunitySearchBlob(opportunity: ChallengeOpportunity) {
   return [
@@ -291,6 +291,20 @@ export default function ExploreClient() {
     [filters, openChallenges]
   );
 
+  // Closed = resolved or cancelled. Sorted newest first by id.
+  const closedChallenges = useMemo(
+    () =>
+      allVS
+        .filter((vs) => vs.state === "resolved" || vs.state === "cancelled")
+        .sort((a, b) => b.id - a.id),
+    [allVS]
+  );
+
+  const filteredClosedChallenges = useMemo(
+    () => applyExploreFilters(closedChallenges, filters),
+    [filters, closedChallenges]
+  );
+
   const filteredOpportunities = useMemo(() => {
     let next = opportunities;
 
@@ -460,7 +474,9 @@ export default function ExploreClient() {
   const activeCountLabel =
     activeView === "open"
       ? t("available", { count: filteredOpenChallenges.length })
-      : t("aiSignalsCount", { count: filteredOpportunities.length });
+      : activeView === "closed"
+        ? `${filteredClosedChallenges.length} settled`
+        : t("aiSignalsCount", { count: filteredOpportunities.length });
 
   const activeBandCopy =
     activeView === "open"
@@ -468,10 +484,61 @@ export default function ExploreClient() {
           title: t("openChallengesBandTitle"),
           hint: t("openChallengesBandHint"),
         }
-      : {
-          title: t("aiOpportunitiesBandTitle"),
-          hint: t("aiOpportunitiesBandHint"),
-        };
+      : activeView === "closed"
+        ? {
+            title: "Closed challenges",
+            hint: "Markets the oracle has settled or refunded. Each card opens to the on-chain settlement receipt.",
+          }
+        : {
+            title: t("aiOpportunitiesBandTitle"),
+            hint: t("aiOpportunitiesBandHint"),
+          };
+
+  const renderClosedChallenges = () => {
+    if (loading) {
+      return (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ArenaCardSkeleton />
+          <ArenaCardSkeleton />
+          <ArenaCardSkeleton />
+        </div>
+      );
+    }
+
+    if (filteredClosedChallenges.length === 0) {
+      return (
+        <ExploreArenaEmptyState
+          eyebrow="No settled markets yet"
+          title="The oracle hasn't closed any claims here"
+          description="Settled claims appear once the deadline passes and the oracle posts a verdict on chain."
+          ctaLabel="Open a challenge"
+          ctaHref="/vs/create"
+        />
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {filteredClosedChallenges.map((vs) => (
+          <motion.div
+            key={vs.id}
+            layout
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.22 }}
+          >
+            <ArenaCard
+              vs={vs}
+              challengersCount={getVSChallengerCount(vs)}
+              viewerAddress={address}
+              hideQualityPills
+            />
+          </motion.div>
+        ))}
+      </div>
+    );
+  };
 
   const renderOpenChallenges = () => {
     if (loading) {
@@ -662,6 +729,30 @@ export default function ExploreClient() {
                     }`}
                   >
                     {filteredOpportunities.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => switchView("closed")}
+                  aria-pressed={activeView === "closed"}
+                  className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 rounded-[18px] px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
+                    activeView === "closed"
+                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] shadow-[0_12px_32px_-20px_rgba(216,95,95,0.95)]"
+                      : "border border-transparent bg-transparent hover:border-black/[0.08] hover:bg-black/[0.03]"
+                  }`}
+                >
+                  <span className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-pv-text">
+                    Closed
+                  </span>
+                  <span
+                    className={`rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] ${
+                      activeView === "closed"
+                        ? "bg-pv-emerald text-pv-bg"
+                        : "border border-black/[0.12] bg-black/20 text-pv-muted"
+                    }`}
+                  >
+                    {filteredClosedChallenges.length}
                   </span>
                 </button>
               </div>
@@ -1077,7 +1168,7 @@ export default function ExploreClient() {
       <AnimatedItem className="relative z-0">
         <section id="arena-content" className="pb-4">
           <AnimatePresence mode="wait" initial={false}>
-            {activeView === "open" ? (
+            {activeView === "open" && (
               <motion.div
                 key="arena-open-view"
                 initial={{ opacity: 0, y: 14 }}
@@ -1087,7 +1178,8 @@ export default function ExploreClient() {
               >
                 {renderOpenChallenges()}
               </motion.div>
-            ) : (
+            )}
+            {activeView === "ai" && (
               <motion.div
                 key="arena-ai-view"
                 initial={{ opacity: 0, y: 14 }}
@@ -1096,6 +1188,17 @@ export default function ExploreClient() {
                 transition={{ duration: 0.22 }}
               >
                 {renderAiOpportunities()}
+              </motion.div>
+            )}
+            {activeView === "closed" && (
+              <motion.div
+                key="arena-closed-view"
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.22 }}
+              >
+                {renderClosedChallenges()}
               </motion.div>
             )}
           </AnimatePresence>

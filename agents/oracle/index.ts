@@ -175,9 +175,15 @@ async function fetchEvidence(url: string): Promise<string> {
 // ── LLM evaluation ────────────────────────────────────────────────────────────
 async function evaluateClaim(claim: ClaimOnChain, evidence: string): Promise<OracleVerdict> {
   const deadlineDate = new Date(Number(claim.deadline) * 1000).toISOString();
+  const nowDate      = new Date().toISOString();
   const potUsdc = microToUsdc(claim.creatorStake + claim.totalChallengerStake);
 
   const prompt = `You are Mimir, an impartial AI oracle for a USDC prediction market on Arc blockchain.
+
+## Time context (TRUST THIS, ignore your training cutoff)
+- Current UTC time: ${nowDate}
+- Claim deadline:   ${deadlineDate}
+- The deadline IS in the past. You are settling AFTER the deadline.
 
 ## Claim
 **Question:** ${claim.question}
@@ -187,15 +193,15 @@ async function evaluateClaim(claim: ClaimOnChain, evidence: string): Promise<Ora
 **Market type:** ${claim.marketType}${claim.handicapLine ? `\n**Handicap:** ${claim.handicapLine}` : ""}
 **Settlement rule:** ${claim.settlementRule || "Use the linked source to determine the outcome."}
 **Resolution URL:** ${claim.resolutionUrl}
-**Deadline:** ${deadlineDate}
 **Pot:** ${potUsdc.toFixed(2)} USDC
 
-## Web Evidence
+## Web Evidence (fetched now from the resolution URL)
 <evidence>
 ${evidence}
 </evidence>
 
-Evaluate whether Side A (creator) or Side B (challengers) is correct.
+Evaluate whether Side A (creator) or Side B (challengers) is correct based on the evidence above.
+Do NOT refuse because of date / deadline concerns — those are handled by the contract.
 
 Return JSON only:
 {
@@ -204,7 +210,7 @@ Return JSON only:
   "explanation": "<one paragraph>"
 }
 
-- UNRESOLVABLE if evidence is missing, ambiguous, or the deadline hasn't passed yet.
+- UNRESOLVABLE only if the fetched evidence is missing, ambiguous, or doesn't contain the data needed.
 - Be strict about confidence — only go above 80 when evidence is unambiguous.`;
 
   const text = await callLLM(prompt, { maxTokens: 512, jsonOnly: true });
