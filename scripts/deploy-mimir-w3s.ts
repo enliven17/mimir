@@ -26,7 +26,6 @@ import {
   parseEther,
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-// @ts-expect-error solc ships its own loose types
 import solc from "solc";
 import {
   transferNative,
