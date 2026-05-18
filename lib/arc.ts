@@ -61,6 +61,35 @@ export function getContractAddress(): `0x${string}` {
   return addr as `0x${string}`;
 }
 
+// Arc public RPC enforces `eth_getLogs` ≤ 10,000 blocks per call. We start
+// scans from the contract's deploy block and chunk in 10k batches.
+export const ARC_LOG_CHUNK = 9_999n;
+
+export function getDeployBlock(): bigint {
+  const raw = process.env.NEXT_PUBLIC_DEPLOY_BLOCK;
+  if (raw && raw.trim().length > 0) {
+    try { return BigInt(raw); } catch { /* fall through */ }
+  }
+  return 42_719_056n;
+}
+
+export async function paginatedGetLogs(
+  client: PublicClient,
+  params: Omit<Parameters<PublicClient["getLogs"]>[0], "fromBlock" | "toBlock">,
+  fromBlock: bigint,
+  toBlock?: bigint,
+): Promise<any[]> {
+  const end = toBlock ?? (await client.getBlockNumber());
+  const all: any[] = [];
+  for (let start = fromBlock; start <= end; ) {
+    const stop = start + ARC_LOG_CHUNK > end ? end : start + ARC_LOG_CHUNK;
+    const logs = await client.getLogs({ ...(params as any), fromBlock: start, toBlock: stop });
+    all.push(...logs);
+    start = stop + 1n;
+  }
+  return all;
+}
+
 export function getExplorerTxUrl(txHash: string): string {
   return `${ARC_EXPLORER_URL}/tx/${txHash}`;
 }

@@ -2,6 +2,8 @@ import Link from "next/link";
 import {
   createArcPublicClient,
   getContractAddress,
+  getDeployBlock,
+  paginatedGetLogs,
   microToUsdc,
   getExplorerAddressUrl,
   getExplorerTxUrl,
@@ -64,7 +66,8 @@ async function fetchClaims(): Promise<ClaimRow[]> {
       }),
     );
     return claims.filter((c): c is ClaimRow => c !== null);
-  } catch {
+  } catch (err) {
+    console.error("[stats] fetchClaims failed:", err);
     return [];
   }
 }
@@ -73,7 +76,7 @@ async function fetchSettlements(): Promise<Settlement[]> {
   const client  = createArcPublicClient();
   const address = getContractAddress();
   try {
-    const logs = await client.getLogs({
+    const logs = await paginatedGetLogs(client, {
       address,
       event: {
         type: "event",
@@ -86,9 +89,7 @@ async function fetchSettlements(): Promise<Settlement[]> {
           { name: "evidenceHash", type: "bytes32", indexed: false },
         ],
       } as any,
-      fromBlock: "earliest",
-      toBlock:   "latest",
-    });
+    }, getDeployBlock());
     return logs.slice(-12).reverse().map((log: any) => ({
       id:           Number(log.args.id ?? 0),
       winnerSide:   Number(log.args.winnerSide ?? 0),
@@ -98,7 +99,8 @@ async function fetchSettlements(): Promise<Settlement[]> {
       txHash:       log.transactionHash,
       blockNumber:  Number(log.blockNumber ?? 0),
     }));
-  } catch {
+  } catch (err) {
+    console.error("[stats] fetchSettlements failed:", err);
     return [];
   }
 }
@@ -122,7 +124,8 @@ async function fetchOracleAndCreator() {
       oracleBalance: oracleBal,
       ownerBalance:  ownerBal,
     };
-  } catch {
+  } catch (err) {
+    console.error("[stats] fetchOracleAndCreator failed:", err);
     return null;
   }
 }

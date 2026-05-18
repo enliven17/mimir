@@ -2,6 +2,8 @@ import Link from "next/link";
 import {
   createArcPublicClient,
   getContractAddress,
+  getDeployBlock,
+  paginatedGetLogs,
   microToUsdc,
   getExplorerAddressUrl,
   getExplorerTxUrl,
@@ -42,9 +44,10 @@ type EventRow =
 async function fetchEvents() {
   const client  = createArcPublicClient();
   const address = getContractAddress();
+  const fromBlock = getDeployBlock();
   try {
     const [created, challenged, resolved] = await Promise.all([
-      client.getLogs({
+      paginatedGetLogs(client, {
         address,
         event: {
           type: "event",
@@ -55,10 +58,8 @@ async function fetchEvents() {
             { name: "category", type: "string",  indexed: false },
           ],
         } as any,
-        fromBlock: "earliest",
-        toBlock:   "latest",
-      }),
-      client.getLogs({
+      }, fromBlock),
+      paginatedGetLogs(client, {
         address,
         event: {
           type: "event",
@@ -69,10 +70,8 @@ async function fetchEvents() {
             { name: "stake",      type: "uint256", indexed: false },
           ],
         } as any,
-        fromBlock: "earliest",
-        toBlock:   "latest",
-      }),
-      client.getLogs({
+      }, fromBlock),
+      paginatedGetLogs(client, {
         address,
         event: {
           type: "event",
@@ -85,9 +84,7 @@ async function fetchEvents() {
             { name: "evidenceHash", type: "bytes32", indexed: false },
           ],
         } as any,
-        fromBlock: "earliest",
-        toBlock:   "latest",
-      }),
+      }, fromBlock),
     ]);
 
     const rows: EventRow[] = [
@@ -120,7 +117,8 @@ async function fetchEvents() {
 
     rows.sort((a, b) => b.blockNumber - a.blockNumber);
     return rows;
-  } catch {
+  } catch (err) {
+    console.error("[agents] fetchEvents failed:", err);
     return [] as EventRow[];
   }
 }
@@ -142,7 +140,8 @@ async function fetchAgentAddresses() {
       return [oracleAddr, ownerAddr, oBal, cBal] as const;
     });
     return { oracle, owner, oracleBal: oracleBal as bigint, ownerBal: ownerBal as bigint };
-  } catch {
+  } catch (err) {
+    console.error("[agents] fetchAgentAddresses failed:", err);
     return null;
   }
 }
