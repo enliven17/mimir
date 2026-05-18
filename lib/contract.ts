@@ -1,7 +1,6 @@
 /**
  * Mimir contract client (Arc / viem)
  *
- * Replaces the GenLayer-based contract client with standard viem calls.
  * USDC is the native currency on Arc (6 decimals, like ETH on Ethereum).
  */
 import {

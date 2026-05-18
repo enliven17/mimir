@@ -9,7 +9,7 @@ description: Use when refactoring or reviewing Python functions for size, argume
 
 - Use this skill when a Python function needs to be split, simplified, or made easier to read.
 - Keep changes local and proportional unless the task explicitly asks for a larger refactor.
-- If a function change materially affects GenLayer contract behavior, keep `write-contract` as the source of truth.
+- If a function change materially affects contract behavior, keep `write-contract` as the source of truth.
 
 ## F1: Too Many Arguments
 

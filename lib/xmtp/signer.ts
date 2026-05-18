@@ -14,7 +14,7 @@ import {
   type Signer,
 } from "@xmtp/browser-sdk";
 
-/** Proveedor mínimo EIP-1193 (MetaMask, Rabby, wallet GenLayer inyectada, etc.). */
+/** Proveedor mínimo EIP-1193 (MetaMask, Rabby, wallet inyectada, etc.). */
 export type EthereumEip1193Provider = {
   request(args: { method: string; params?: unknown }): Promise<unknown>;
 };

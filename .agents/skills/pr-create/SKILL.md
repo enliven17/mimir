@@ -85,7 +85,7 @@ feat(consensus): Add validator ban detection
 → Adds monitoring for validator bans. Reports via Slack with reason and duration.
 
 docs: Add API authentication guide
-→ Documents how to authenticate with the GenLayer API.
+→ Documents how to authenticate with the API.
 
 chore(deps): Upgrade axios to fix security vulnerability
 → Fixes CVE-2024-XXXX in axios affecting API requests.
@@ -177,7 +177,7 @@ Before creating the PR, present it to the user for review:
 **Body:**
 ## Description
 
-Adds monitoring for validator bans on the GenLayer network.
+Adds monitoring for validator bans on the network.
 When a validator is banned, the system detects and reports via Slack.
 
 ## Release Notes

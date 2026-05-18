@@ -1,6 +1,6 @@
 ---
 name: linear
-description: Create and manage Linear issues using templates for the GenLayer Heartbeat project. Use when user says /linear.
+description: Create and manage Linear issues using project templates. Use when user says /linear.
 user-invocable: true
 allowed-tools: [Read, Grep, Glob, AskUserQuestion, mcp__linear-server__create_issue, mcp__linear-server__update_issue, mcp__linear-server__get_issue, mcp__linear-server__list_issues, mcp__linear-server__list_cycles, mcp__linear-server__list_teams, mcp__linear-server__list_projects, mcp__linear-server__list_issue_labels, mcp__linear-server__list_issue_statuses]
 hooks: []
@@ -8,11 +8,11 @@ hooks: []
 
 # Linear
 
-Create and manage Linear issues using the GenLayer Node issue template.
+Create and manage Linear issues using the standard issue template.
 
 ## Overview
 
-This skill handles Linear issue management for the GenLayer Node team (which also manages Heartbeat):
+This skill handles Linear issue management for the team:
 - Creates issues using the standard template format
 - Converts plans/reports into properly formatted Linear issues
 - Supports creating issues in backlog or specific cycles

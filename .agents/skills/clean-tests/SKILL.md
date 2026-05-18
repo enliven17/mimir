@@ -8,7 +8,7 @@ description: Use when improving or reviewing Python tests around an existing fea
 ## In This Repo
 
 - Use this skill to improve the shape and quality of Python tests.
-- Use `direct-tests` for fast GenLayer contract tests and `integration-tests` for environment-sensitive flows.
+- Use `direct-tests` for fast contract tests and `integration-tests` for environment-sensitive flows.
 - This skill complements those workflows by improving coverage, clarity, and failure isolation.
 
 ## T1: Test Everything That Could Break

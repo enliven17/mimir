@@ -16,7 +16,7 @@ description: Use when making small or medium Python edits and you want proportio
 - Keep cleanup proportional to the task at hand.
 - Respect the dirty worktree. Do not revert or rewrite unrelated user changes.
 - Use this skill for incremental hygiene while touching existing Python files, not for broad rewrites.
-- If the task is new GenLayer contract design or a major contract refactor, let `write-contract` lead.
+- If the task is new contract design or a major contract refactor, let `write-contract` lead.
 
 ## The Philosophy
 

@@ -25,10 +25,9 @@ dist/
 .env*.local
 
 # ========================
-# GenLayer / Blockchain
+# Blockchain / Secrets
 # ========================
 # Private keys and sensitive deploy config — NUNCA commitear
-.env.genlayer
 deploy/.env
 deploy/keystore/
 *.key
@@ -77,7 +76,6 @@ next-env.d.ts
 # Agent skills
 # ========================
 skills-lock.json
-codex-genlayer-skills-full/
 
 # ========================
 # Misc
