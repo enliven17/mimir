@@ -87,3 +87,5 @@ codex-genlayer-skills-full/
 *.tmp
 \.claude/
 artifacts/
+
+.vercel

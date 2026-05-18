@@ -1,0 +1,5 @@
+# Pin Node 20 for Railway / any Nixpacks-driven CI.
+# Many of our deps (Circle SDKs, @neondatabase/serverless, chokidar 5) need
+# Node ≥ 20, and our agent scripts use `tsx --env-file` which requires 20.6.
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm-9_x"]
