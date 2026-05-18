@@ -290,8 +290,16 @@ async function main(): Promise<void> {
   console.log(`  Interval   : every ${RUN_INTERVAL_HOURS}h`);
   console.log("═══════════════════════════════════════════════\n");
 
-  await run();
-  setInterval(run, RUN_INTERVAL_HOURS * 3600 * 1000);
+  const safeRun = async () => {
+    try {
+      await run();
+    } catch (err) {
+      console.error("[market-creator] Run failed, will retry next interval:", err);
+    }
+  };
+
+  await safeRun();
+  setInterval(safeRun, RUN_INTERVAL_HOURS * 3600 * 1000);
 }
 
 main().catch((err) => {

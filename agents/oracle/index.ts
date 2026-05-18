@@ -470,8 +470,16 @@ async function main(): Promise<void> {
   console.log(`  Auto-challenge: ${AUTO_CHALLENGE ? `YES (≥${CHALLENGE_CONFIDENCE}% confidence, ${CHALLENGE_STAKE_USDC} USDC/claim)` : "OFF (set AUTO_CHALLENGE=1 to enable)"}`);
   console.log("═══════════════════════════════════════════════\n");
 
-  await poll();
-  setInterval(poll, POLL_INTERVAL_MS);
+  const safePoll = async () => {
+    try {
+      await poll();
+    } catch (err) {
+      console.error("[oracle] Poll failed, will retry next interval:", err);
+    }
+  };
+
+  await safePoll();
+  setInterval(safePoll, POLL_INTERVAL_MS);
 }
 
 main().catch((err) => {

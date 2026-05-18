@@ -73,20 +73,31 @@ async function callGemini(
   };
   if (opts.jsonOnly) generationConfig.responseMimeType = "application/json";
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig,
-    }),
-    signal: AbortSignal.timeout(60_000),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 500)}`);
+  const TRANSIENT = new Set([408, 429, 500, 502, 503, 504]);
+  const MAX_ATTEMPTS = 4;
+  let res: Response | null = null;
+  let lastBody = "";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.ok) break;
+    lastBody = (await res.text()).slice(0, 500);
+    if (!TRANSIENT.has(res.status) || attempt === MAX_ATTEMPTS) {
+      throw new Error(`Gemini ${res.status}: ${lastBody}`);
+    }
+    const delayMs = 1000 * 2 ** (attempt - 1);
+    console.warn(`[llm] Gemini ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS}); retrying in ${delayMs}ms`);
+    await new Promise((r) => setTimeout(r, delayMs));
   }
-  const json: any = await res.json();
+
+  const json: any = await res!.json();
   const text: string = (json?.candidates?.[0]?.content?.parts ?? [])
     .map((p: any) => p?.text ?? "")
     .join("")
