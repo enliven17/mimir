@@ -782,12 +782,20 @@ export function hasVSWinner(vs: VSData) {
   );
 }
 
+// Mirrors CHALLENGE_LOCK_SECONDS from Mimir.sol — challenges must arrive at least
+// this long before the deadline, otherwise the on-chain tx reverts with
+// "Mimir: challenge window closed".
+export const VS_CHALLENGE_LOCK_SECONDS = 60;
+
 export function isVSJoinable(vs: VSData, address?: string | null) {
   if (vs.state !== "open" && vs.state !== "accepted") return false;
   if (address) {
     if (isSameAddress(vs.creator, address) || didUserChallengeVS(vs, address)) return false;
   }
-  return getVSChallengerCount(vs) < getVSConfiguredMaxChallengers(vs);
+  if (getVSChallengerCount(vs) >= getVSConfiguredMaxChallengers(vs)) return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (vs.deadline > 0 && nowSec + VS_CHALLENGE_LOCK_SECONDS > vs.deadline) return false;
+  return true;
 }
 
 export function didUserChallengeVS(vs: VSData, address?: string | null) {

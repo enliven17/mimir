@@ -1757,8 +1757,24 @@ export default function VSDetailPage() {
                 </GlassCard>
               )}
 
-              {vs.state === "open" && !isConnected && (
+              {vs.state === "open" && !isConnected && !countdown.expired && (
                 <Button onClick={connect}>{t("connectToAccept")}</Button>
+              )}
+
+              {!isSampleVS &&
+                vs.state === "open" &&
+                !hasAnyChallenger &&
+                countdown.expired && (
+                <GlassCard glass className="!rounded-2xl border border-black/[0.12]">
+                  <div className="text-sm font-semibold text-pv-text">
+                    {t("expiredNoRivalTitle")}
+                  </div>
+                  <p className="mt-1 text-sm text-pv-muted">
+                    {isCreator
+                      ? t("expiredNoRivalHintCreator")
+                      : t("expiredNoRivalHintViewer")}
+                  </p>
+                </GlassCard>
               )}
 
               {display.state === "accepted" && countdown.expired && (

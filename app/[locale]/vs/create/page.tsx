@@ -862,6 +862,20 @@ export default function CreatePage() {
         normalizedRematchMarketType !== "binary" ||
           Boolean(source.settlement_rule)
       );
+
+      // Original VS deadline is in the past (it's resolved/cancelled). Re-use the
+      // original duration if we have it, otherwise default to 1 week. Without this,
+      // clicking "Create Rematch" silently no-ops on the customDeadline guard.
+      const originalDurationSec =
+        source.created_at && source.deadline > source.created_at
+          ? source.deadline - source.created_at
+          : DEADLINE_PRESET_SECONDS["1week"];
+      const fallbackSec = Math.max(
+        DEADLINE_PRESET_SECONDS["1h"],
+        originalDurationSec,
+      );
+      applyDeadlinePreset(fallbackSec);
+
       setHydratedFromRematch(true);
       setLoadingParent(false);
     }
