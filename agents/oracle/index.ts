@@ -39,6 +39,11 @@ import {
   getOracleAddress,
 } from "../../lib/circle-w3s";
 import { MIMIR_ABI, WINNER_SIDE, STATE } from "../../lib/mimir-abi";
+import {
+  fetchEvidence as fetchEvidenceShared,
+  EvidenceFetchError,
+  type EvidenceFetcherKind,
+} from "../../lib/server/evidence-fetcher";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = 60_000;
@@ -148,27 +153,26 @@ async function fetchClaim(claimId: number): Promise<ClaimOnChain | null> {
 }
 
 // ── Fetch web evidence ────────────────────────────────────────────────────────
-async function fetchEvidence(url: string): Promise<string> {
-  if (!url?.startsWith("http")) return "(No resolution URL provided)";
+interface EvidenceResult {
+  text: string;
+  fetcher: EvidenceFetcherKind | "none";
+}
+
+async function fetchEvidence(url: string): Promise<EvidenceResult> {
+  if (!url?.startsWith("http")) {
+    return { text: "(No resolution URL provided)", fetcher: "none" };
+  }
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15_000);
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "Mimir-Oracle/1.0" },
+    const snap = await fetchEvidenceShared(url, {
+      maxChars: MAX_CONTENT_CHARS,
+      userAgent: "Mimir-Oracle/1.0",
     });
-    clearTimeout(timeout);
-    const text = await res.text();
-    const clean = text
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ").trim();
-    return clean.length > MAX_CONTENT_CHARS
-      ? clean.slice(0, MAX_CONTENT_CHARS) + "\n\n[truncated]"
-      : clean;
+    return { text: snap.text, fetcher: snap.fetcher };
   } catch (err: any) {
-    return `(Failed to fetch: ${err?.message ?? "unknown"})`;
+    const msg = err instanceof EvidenceFetchError
+      ? err.message
+      : (err?.message ?? "unknown");
+    return { text: `(Failed to fetch: ${msg})`, fetcher: "none" };
   }
 }
 
@@ -287,14 +291,37 @@ function tierVerdict(verdict: OracleVerdict): OracleVerdict {
   };
 }
 
+// Cap confidence and tag the audit trail when the evidence wasn't fetched
+// through a deterministic API (CoinGecko). Scraped HTML — even via Jina —
+// can drift, be paginated, or be partially blocked, so we don't allow a
+// firm HIGH-tier settlement off it.
+const MAX_CONFIDENCE_NON_API = 75;
+
+function applyFetcherTrust(
+  verdict: OracleVerdict,
+  fetcher: EvidenceFetcherKind | "none",
+): OracleVerdict {
+  if (fetcher === "coingecko-api") return verdict;
+  if (verdict.verdict === "UNRESOLVABLE") return verdict;
+  const cappedConfidence = Math.min(verdict.confidence, MAX_CONFIDENCE_NON_API);
+  const tag = fetcher === "jina" ? "[via-jina]" : fetcher === "direct" ? "[via-scrape]" : "[no-fetch]";
+  return {
+    ...verdict,
+    confidence: cappedConfidence,
+    explanation: `${tag} ${verdict.explanation}`.slice(0, 500),
+  };
+}
+
 // ── ROLE 1: Settle expired claim ──────────────────────────────────────────────
 async function settle(claim: ClaimOnChain): Promise<void> {
   console.log(`\n[settle] Claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
 
   const evidence     = await fetchEvidence(claim.resolutionUrl);
-  const evidenceHash = hashEvidence(evidence);
-  const rawVerdict   = await evaluateClaim(claim, evidence);
-  const verdict      = tierVerdict(rawVerdict);
+  console.log(`[settle] Evidence fetcher: ${evidence.fetcher}`);
+  const evidenceHash = hashEvidence(evidence.text);
+  const rawVerdict   = await evaluateClaim(claim, evidence.text);
+  const trusted      = applyFetcherTrust(rawVerdict, evidence.fetcher);
+  const verdict      = tierVerdict(trusted);
 
   const tierTag =
     verdict.verdict !== rawVerdict.verdict ? "REFUND" :
@@ -362,9 +389,10 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   evaluatedClaimIds.add(claim.id);
 
   const evidence = await fetchEvidence(claim.resolutionUrl);
-  const verdict  = await evaluateClaim(claim, evidence);
+  const rawVerdict = await evaluateClaim(claim, evidence.text);
+  const verdict = applyFetcherTrust(rawVerdict, evidence.fetcher);
 
-  console.log(`[challenge] Early verdict: ${verdict.verdict} (${verdict.confidence}%)`);
+  console.log(`[challenge] Early verdict: ${verdict.verdict} (${verdict.confidence}%) [fetcher=${evidence.fetcher}]`);
 
   // Only challenge if highly confident challengers will win
   if (verdict.verdict !== "CHALLENGERS_WIN" || verdict.confidence < CHALLENGE_CONFIDENCE) {

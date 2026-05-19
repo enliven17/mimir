@@ -6,6 +6,11 @@ import {
   type SourceClaimDraftResponse,
 } from "@/lib/claimDrafts";
 import { normalizeResolutionSource } from "@/lib/constants";
+import {
+  EvidenceFetchError,
+  fetchEvidence,
+  type EvidenceSnapshot,
+} from "@/lib/server/evidence-fetcher";
 
 const DEFAULT_GEMINI_MODEL = process.env.CLAIM_DRAFT_MODEL || "gemini-2.5-flash";
 const MAX_SOURCE_CHARS = 14000;
@@ -154,38 +159,6 @@ type GeminiCandidatePayload = {
   candidates?: unknown;
 };
 
-function decodeHtmlEntities(input: string) {
-  return input
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#(\d+);/g, (_, value: string) => {
-      const codePoint = Number(value);
-      return Number.isFinite(codePoint) ? String.fromCharCode(codePoint) : "";
-    });
-}
-
-function stripHtmlToText(html: string) {
-  return decodeHtmlEntities(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-      .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-  )
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractHtmlTitle(html: string) {
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  return titleMatch ? decodeHtmlEntities(titleMatch[1]).trim() : "";
-}
-
 function getHostname(sourceUrl: string) {
   try {
     return new URL(sourceUrl).hostname.replace(/^www\./i, "").toLowerCase();
@@ -258,40 +231,19 @@ export function classifySourceType(sourceUrl: string): ClaimDraftSourceType {
   return hostname ? "official" : "other";
 }
 
-async function fetchSourceSnapshot(sourceUrl: string) {
-  const response = await fetch(sourceUrl, {
-    method: "GET",
-    headers: {
-      "User-Agent": "Mimir Source Draft Bot/1.0",
-      Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
-    },
-    cache: "no-store",
-    redirect: "follow",
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Unable to fetch source (${response.status})`);
+async function fetchSourceSnapshot(sourceUrl: string): Promise<EvidenceSnapshot> {
+  try {
+    const snap = await fetchEvidence(sourceUrl, {
+      maxChars: MAX_SOURCE_CHARS,
+      userAgent: "Mimir Source Draft Bot/1.0",
+    });
+    return { ...snap, sourceUrl: normalizeResolutionSource(snap.sourceUrl) || snap.sourceUrl };
+  } catch (err) {
+    if (err instanceof EvidenceFetchError) {
+      throw new Error(err.message);
+    }
+    throw err;
   }
-
-  const contentType = response.headers.get("content-type") || "";
-  if (!/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) {
-    throw new Error("Source must be an HTML or text page");
-  }
-
-  const rawBody = await response.text();
-  const title = extractHtmlTitle(rawBody);
-  const text = stripHtmlToText(rawBody).slice(0, MAX_SOURCE_CHARS);
-
-  if (text.length < 200) {
-    throw new Error("Source does not contain enough readable text");
-  }
-
-  return {
-    sourceUrl: normalizeResolutionSource(response.url || sourceUrl),
-    title,
-    text,
-  };
 }
 
 function createDraftPrompt(args: {
