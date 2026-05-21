@@ -909,7 +909,7 @@ export async function getUserClaimSummaries(address: string): Promise<ClaimData[
 export async function getAllVSSnapshot(
   _opts?: { forceRefresh?: boolean }
 ): Promise<VSFeedSnapshot> {
-  return getAllVSDirect();
+  return getAllVSFast();
 }
 
 /** @deprecated use getUserVSFast */
