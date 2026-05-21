@@ -196,29 +196,61 @@ function getPublicClient(): PublicClient {
 }
 
 // ── Raw on-chain read ─────────────────────────────────────────────────────────
+const READ_CLAIM_RETRY_ATTEMPTS = 3;
+const READ_CLAIM_RETRY_BASE_MS = 200;
+
+async function readClaimContractTriplet(client: PublicClient, claimId: number) {
+  return Promise.all([
+    client.readContract({
+      address:      CONTRACT_ADDRESS,
+      abi:          MIMIR_ABI,
+      functionName: "getClaim",
+      args:         [BigInt(claimId)],
+    }) as Promise<readonly any[]>,
+    client.readContract({
+      address:      CONTRACT_ADDRESS,
+      abi:          MIMIR_ABI,
+      functionName: "getClaimMarketConfig",
+      args:         [BigInt(claimId)],
+    }) as Promise<readonly any[]>,
+    client.readContract({
+      address:      CONTRACT_ADDRESS,
+      abi:          MIMIR_ABI,
+      functionName: "getChallengerList",
+      args:         [BigInt(claimId)],
+    }) as Promise<[string[], bigint[]]>,
+  ]);
+}
+
 export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
   const client = getPublicClient();
+  let base: readonly any[] | null = null;
+  let market: readonly any[] | null = null;
+  let challengerData: [string[], bigint[]] | null = null;
+
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < READ_CLAIM_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      [base, market, challengerData] = await readClaimContractTriplet(client, claimId);
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      if (attempt < READ_CLAIM_RETRY_ATTEMPTS - 1) {
+        const backoff = READ_CLAIM_RETRY_BASE_MS * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, backoff));
+      }
+    }
+  }
+
+  if (lastError || !base || !market || !challengerData) {
+    if (lastError) {
+      console.warn(`[readClaimRaw] claim ${claimId} failed after ${READ_CLAIM_RETRY_ATTEMPTS} attempts`, lastError);
+    }
+    return null;
+  }
+
   try {
-    const [base, market, challengerData] = await Promise.all([
-      client.readContract({
-        address:      CONTRACT_ADDRESS,
-        abi:          MIMIR_ABI,
-        functionName: "getClaim",
-        args:         [BigInt(claimId)],
-      }) as Promise<readonly any[]>,
-      client.readContract({
-        address:      CONTRACT_ADDRESS,
-        abi:          MIMIR_ABI,
-        functionName: "getClaimMarketConfig",
-        args:         [BigInt(claimId)],
-      }) as Promise<readonly any[]>,
-      client.readContract({
-        address:      CONTRACT_ADDRESS,
-        abi:          MIMIR_ABI,
-        functionName: "getChallengerList",
-        args:         [BigInt(claimId)],
-      }) as Promise<[string[], bigint[]]>,
-    ]);
 
     const creator: string = base[0];
     if (!creator || creator === ZERO_ADDRESS) return null;
@@ -909,7 +941,7 @@ export async function getUserClaimSummaries(address: string): Promise<ClaimData[
 export async function getAllVSSnapshot(
   _opts?: { forceRefresh?: boolean }
 ): Promise<VSFeedSnapshot> {
-  return getAllVSFast();
+  return getAllVSDirect();
 }
 
 /** @deprecated use getUserVSFast */
