@@ -18,6 +18,7 @@
  * Env: CREATOR_PRIVATE_KEY, NEXT_PUBLIC_CONTRACT_ADDRESS, ANTHROPIC_API_KEY
  *      CREATOR_STAKE_USDC=2      (stake per market, default 2 USDC)
  *      MAX_CLAIMS_PER_RUN=5      (max new claims per run, default 5)
+ *      MAX_ACTIVE_CLAIMS=10      (skip run if unresolved on-chain claims ≥ this)
  *      RUN_INTERVAL_HOURS=6      (hours between runs, default 6h)
  */
 
@@ -52,6 +53,7 @@ import { MIMIR_ABI } from "../../lib/mimir-abi";
 const CONTRACT_ADDRESS    = getContractAddress();
 const CREATOR_STAKE_USDC  = Number(process.env.CREATOR_STAKE_USDC ?? "2");
 const MAX_CLAIMS_PER_RUN  = Number(process.env.MAX_CLAIMS_PER_RUN ?? "5");
+const MAX_ACTIVE_CLAIMS   = Number(process.env.MAX_ACTIVE_CLAIMS ?? "10");
 const RUN_INTERVAL_HOURS  = Number(process.env.RUN_INTERVAL_HOURS ?? "6");
 const MIN_QUALITY_SCORE   = 70; // 0-100
 
@@ -245,6 +247,28 @@ async function run(): Promise<void> {
   console.log(`[market-creator] Creator : ${CREATOR_ADDR}`);
   console.log(`[market-creator] Balance : ${microToUsdc(balance).toFixed(4)} USDC`);
 
+  // Inventory check — skip if there are already enough unresolved markets on
+  // chain. Container restarts otherwise burn LLM quota drafting a fresh batch
+  // every boot even though the marketplace is already saturated.
+  let unresolved = 0;
+  try {
+    const stats = await publicClient.readContract({
+      address:      CONTRACT_ADDRESS,
+      abi:          MIMIR_ABI,
+      functionName: "getPlatformStats",
+    }) as readonly [bigint, bigint, bigint];
+    unresolved = Number(stats[0] - stats[1]);
+  } catch (err) {
+    console.warn("[market-creator] Failed to read getPlatformStats — proceeding without inventory cap:", err);
+  }
+  console.log(`[market-creator] Unresolved on-chain: ${unresolved} (cap: ${MAX_ACTIVE_CLAIMS})`);
+  if (unresolved >= MAX_ACTIVE_CLAIMS) {
+    console.log(`[market-creator] Inventory ≥ cap — skipping this run.`);
+    return;
+  }
+  const headroom = Math.max(0, MAX_ACTIVE_CLAIMS - unresolved);
+  const toCreate = Math.min(MAX_CLAIMS_PER_RUN, headroom);
+
   // Fetch source data in parallel
   console.log("[market-creator] Fetching market data...");
   const [crypto, sports, weather] = await Promise.all([
@@ -267,7 +291,7 @@ async function run(): Promise<void> {
   });
 
   let created = 0;
-  for (const candidate of candidates.slice(0, MAX_CLAIMS_PER_RUN)) {
+  for (const candidate of candidates.slice(0, toCreate)) {
     console.log(`\n[market-creator] Creating: "${candidate.question.slice(0, 60)}..."`);
     const txHash = await createClaim(candidate);
     if (txHash) {
@@ -295,6 +319,7 @@ async function main(): Promise<void> {
   console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Stake/mkt  : ${CREATOR_STAKE_USDC} USDC`);
   console.log(`  Max/run    : ${MAX_CLAIMS_PER_RUN} claims`);
+  console.log(`  Active cap : ${MAX_ACTIVE_CLAIMS} unresolved (skip run above this)`);
   console.log(`  Interval   : every ${RUN_INTERVAL_HOURS}h`);
   console.log("═══════════════════════════════════════════════\n");
 

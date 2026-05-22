@@ -32,6 +32,24 @@ const DEFAULT_ANTHROPIC_MODEL = process.env.ORACLE_LLM_MODEL || "claude-sonnet-4
 
 let anthropicClient: Anthropic | null = null;
 
+// ── Quota cooldown gate ─────────────────────────────────────────────────────
+// When Gemini returns 429 (RESOURCE_EXHAUSTED) we set a cooldown timestamp.
+// Until it expires, callLLM short-circuits with a thrown error instead of
+// hammering the API with retries — gives the rolling-minute quota window
+// time to actually reset. Per-process (module-scoped), so each worker
+// (oracle / council / creator) tracks its own bucket independently.
+const QUOTA_COOLDOWN_MS = Number(process.env.LLM_QUOTA_COOLDOWN_MS ?? "300000"); // 5 min default
+let quotaCooldownUntil = 0;
+
+function inQuotaCooldown(): number {
+  const remaining = quotaCooldownUntil - Date.now();
+  return remaining > 0 ? remaining : 0;
+}
+
+function tripQuotaCooldown(): void {
+  quotaCooldownUntil = Date.now() + QUOTA_COOLDOWN_MS;
+}
+
 export function activeLLMProvider(): LLMProvider {
   const forced = process.env.LLM_PROVIDER?.toLowerCase();
   if (forced === "gemini" || forced === "anthropic") return forced;
@@ -58,6 +76,12 @@ export function activeLLMKeyFingerprint(): string {
 }
 
 export async function callLLM(prompt: string, opts: CallLLMOptions = {}): Promise<string> {
+  const cooldown = inQuotaCooldown();
+  if (cooldown > 0) {
+    const secs = Math.ceil(cooldown / 1000);
+    throw new Error(`LLM quota cooldown — ${secs}s remaining (set by prior 429)`);
+  }
+
   const provider = activeLLMProvider();
   const maxTokens   = opts.maxTokens   ?? 1024;
   const temperature = opts.temperature ?? 0.2;
@@ -86,7 +110,10 @@ async function callGemini(
   };
   if (opts.jsonOnly) generationConfig.responseMimeType = "application/json";
 
-  const TRANSIENT = new Set([408, 429, 500, 502, 503, 504]);
+  // 429 trips the module-wide cooldown and throws on the first hit — retrying
+  // inside the rolling-minute window just wastes attempts. Other transient
+  // codes still get exponential backoff.
+  const TRANSIENT = new Set([408, 500, 502, 503, 504]);
   const MAX_ATTEMPTS = 4;
   let res: Response | null = null;
   let lastBody = "";
@@ -102,6 +129,11 @@ async function callGemini(
     });
     if (res.ok) break;
     lastBody = (await res.text()).slice(0, 500);
+    if (res.status === 429) {
+      tripQuotaCooldown();
+      console.warn(`[llm] Gemini 429 — entering ${Math.round(QUOTA_COOLDOWN_MS / 1000)}s cooldown, skipping further calls`);
+      throw new Error(`Gemini 429: ${lastBody}`);
+    }
     if (!TRANSIENT.has(res.status) || attempt === MAX_ATTEMPTS) {
       throw new Error(`Gemini ${res.status}: ${lastBody}`);
     }
