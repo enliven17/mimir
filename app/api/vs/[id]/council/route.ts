@@ -74,9 +74,13 @@ export async function GET(
           { name: "challenger", type: "address", indexed: true },
           { name: "stake",      type: "uint256", indexed: false },
         ],
-        args: { id: BigInt(claimId) },
-      } as any,
-    }, fromBlock);
+      },
+      // `args` is a sibling of `event` in viem's getLogs filter — placing it
+      // inside the event object silently disables the indexed-topic filter
+      // and returns ChallengeChallenged logs across ALL claims, which then
+      // smear every persona's stakes onto whichever claim page is open.
+      args: { id: BigInt(claimId) },
+    } as any, fromBlock);
   } catch (err) {
     console.error("[api/vs/council] log fetch failed:", err);
   }
