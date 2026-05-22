@@ -44,6 +44,19 @@ export function activeLLMModel(): string {
   return activeLLMProvider() === "gemini" ? DEFAULT_GEMINI_MODEL : DEFAULT_ANTHROPIC_MODEL;
 }
 
+/** Redacted fingerprint of the active API key. Use in startup logs to verify
+ *  that per-worker overrides are landing — different workers should print
+ *  different suffixes. Format: `…XXXXXX (len=N)`. */
+export function activeLLMKeyFingerprint(): string {
+  const provider = activeLLMProvider();
+  const raw = provider === "gemini"
+    ? process.env.GEMINI_API_KEY
+    : process.env.ANTHROPIC_API_KEY;
+  const key = raw?.trim() ?? "";
+  if (!key) return "(missing)";
+  return `…${key.slice(-6)} (len=${key.length})`;
+}
+
 export async function callLLM(prompt: string, opts: CallLLMOptions = {}): Promise<string> {
   const provider = activeLLMProvider();
   const maxTokens   = opts.maxTokens   ?? 1024;

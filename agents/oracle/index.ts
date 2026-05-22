@@ -23,14 +23,16 @@
 
 // Worker-scoped Gemini key. When ORACLE_GEMINI_API_KEY is set we override the
 // shared GEMINI_API_KEY for this process only so the oracle, market-creator,
-// and council each consume from their own 20 RPM free-tier bucket. Must run
-// before `lib/llm.ts` is imported so the env read inside that module sees it.
-if (process.env.ORACLE_GEMINI_API_KEY?.trim()) {
-  process.env.GEMINI_API_KEY = process.env.ORACLE_GEMINI_API_KEY;
+// and council each consume from their own 20 RPM free-tier bucket. Trimmed on
+// assignment so trailing whitespace pasted into the Railway UI can't slip into
+// the Authorization header and trigger API_KEY_INVALID.
+{
+  const k = process.env.ORACLE_GEMINI_API_KEY?.trim();
+  if (k) process.env.GEMINI_API_KEY = k;
 }
 
 import { keccak256, toBytes, formatEther } from "viem";
-import { callLLM, activeLLMProvider, activeLLMModel } from "../../lib/llm";
+import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
@@ -501,7 +503,7 @@ async function main(): Promise<void> {
   console.log(`  Wallet ID  : ${ORACLE_WALLET}`);
   console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
-  console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()}`);
+  console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Poll every : ${POLL_INTERVAL_MS / 1000}s`);
   console.log(`  Auto-challenge: ${AUTO_CHALLENGE ? `YES (≥${CHALLENGE_CONFIDENCE}% confidence, ${CHALLENGE_STAKE_USDC} USDC/claim)` : "OFF (set AUTO_CHALLENGE=1 to enable)"}`);
   console.log("═══════════════════════════════════════════════\n");

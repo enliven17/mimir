@@ -30,8 +30,9 @@
 // Worker-scoped Gemini key. Falls back to the shared GEMINI_API_KEY when
 // COUNCIL_GEMINI_API_KEY is not set. See agents/oracle/index.ts for the
 // rationale: each worker gets its own 20 RPM free-tier bucket.
-if (process.env.COUNCIL_GEMINI_API_KEY?.trim()) {
-  process.env.GEMINI_API_KEY = process.env.COUNCIL_GEMINI_API_KEY;
+{
+  const k = process.env.COUNCIL_GEMINI_API_KEY?.trim();
+  if (k) process.env.GEMINI_API_KEY = k;
 }
 
 import {
@@ -41,7 +42,7 @@ import {
   microToUsdc,
 } from "../../lib/arc";
 import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
-import { activeLLMProvider, activeLLMModel } from "../../lib/llm";
+import { activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint } from "../../lib/llm";
 import {
   COUNCIL_PERSONAS,
   personaAddressEnv,
@@ -215,7 +216,7 @@ async function main(): Promise<void> {
   console.log("  Mimir Council — 10 AI personas as economic actors");
   console.log(`  Contract       : ${CONTRACT_ADDRESS}`);
   console.log(`  Network        : Arc Testnet (${arcTestnet.id})`);
-  console.log(`  LLM            : ${activeLLMProvider()} / ${activeLLMModel()}`);
+  console.log(`  LLM            : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Active personas: ${ACTIVE_PERSONAS.length} / ${COUNCIL_PERSONAS.length}`);
   console.log(`  Poll every     : ${POLL_INTERVAL_MS / 1000}s`);
   console.log("───────────────────────────────────────────────");

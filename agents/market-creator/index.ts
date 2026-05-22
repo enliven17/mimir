@@ -24,12 +24,13 @@
 // Worker-scoped Gemini key. Falls back to the shared GEMINI_API_KEY when
 // CREATOR_GEMINI_API_KEY is not set. See agents/oracle/index.ts for the
 // rationale.
-if (process.env.CREATOR_GEMINI_API_KEY?.trim()) {
-  process.env.GEMINI_API_KEY = process.env.CREATOR_GEMINI_API_KEY;
+{
+  const k = process.env.CREATOR_GEMINI_API_KEY?.trim();
+  if (k) process.env.GEMINI_API_KEY = k;
 }
 
 import { formatEther } from "viem";
-import { callLLM, activeLLMProvider, activeLLMModel } from "../../lib/llm";
+import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
@@ -291,7 +292,7 @@ async function main(): Promise<void> {
   console.log(`  Wallet ID  : ${CREATOR_WALLET}`);
   console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
-  console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()}`);
+  console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Stake/mkt  : ${CREATOR_STAKE_USDC} USDC`);
   console.log(`  Max/run    : ${MAX_CLAIMS_PER_RUN} claims`);
   console.log(`  Interval   : every ${RUN_INTERVAL_HOURS}h`);
