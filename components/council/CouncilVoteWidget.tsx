@@ -106,18 +106,20 @@ export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
           <li
             key={v.slug}
             className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 ${
-              v.staked ? `${v.accent.border} ${v.accent.bg}` : "border-pv-border/30 bg-pv-surface2/30"
+              v.staked
+                ? "border-pv-emerald/35 bg-pv-emerald/[0.05]"
+                : "border-pv-border/30 bg-pv-surface2/20"
             }`}
           >
             <div className="flex min-w-0 items-center gap-2">
-              <span className="text-base leading-none">{v.emoji}</span>
-              <span className={`truncate text-[12px] font-semibold ${v.staked ? v.accent.text : "text-pv-muted"}`}>
+              <span className="text-base leading-none grayscale opacity-75">{v.emoji}</span>
+              <span className={`truncate text-[12px] font-semibold ${v.staked ? "text-pv-text" : "text-pv-muted"}`}>
                 {v.displayName}
               </span>
             </div>
             {v.staked && v.txHash ? (
               <div className="flex shrink-0 items-center gap-1.5">
-                <span className="font-mono text-[10px] tabular-nums text-pv-text/85">
+                <span className="font-mono text-[10px] tabular-nums text-pv-emerald">
                   ✓ {v.stakeUsdc.toFixed(2)} USDC
                 </span>
                 <a

@@ -180,8 +180,8 @@ function ActorTag({
   if (actor.kind === "council") {
     const p = actor.persona;
     return (
-      <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] ${p.accent.chip}`}>
-        <span className="text-[11px] leading-none">{p.emoji}</span>
+      <span className="inline-flex items-center gap-1 rounded-md border border-pv-border/50 bg-pv-surface2/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-text/80">
+        <span className="text-[11px] leading-none grayscale opacity-75">{p.emoji}</span>
         <span>{p.displayName.replace(/^The /, "")}</span>
       </span>
     );
@@ -402,7 +402,7 @@ export default async function AgentsPage({
                       scroll={false}
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-pv-surface2/60"
                     >
-                      <span className="text-base leading-none">{persona.emoji}</span>
+                      <span className="text-base leading-none grayscale opacity-75">{persona.emoji}</span>
                       <span className="text-pv-text/90 normal-case">{persona.displayName}</span>
                     </Link>
                   ))}

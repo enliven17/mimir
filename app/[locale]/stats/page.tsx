@@ -448,8 +448,8 @@ export default async function StatsPage() {
                 : s.kind === "market-creator"
                   ? <span className="rounded border border-pv-border/60 bg-pv-surface2/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-text/80">m-creator</span>
                 : s.kind === "council" && s.persona
-                  ? <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] ${s.persona.accent.chip}`}>
-                      <span className="text-[10px] leading-none">{s.persona.emoji}</span>
+                  ? <span className="inline-flex items-center gap-1 rounded border border-pv-border/50 bg-pv-surface2/40 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-text/80">
+                      <span className="text-[10px] leading-none grayscale opacity-75">{s.persona.emoji}</span>
                       <span className="normal-case">{s.persona.displayName.replace(/^The /, "")}</span>
                     </span>
                   : <span className="rounded border border-pv-fuch/40 bg-pv-fuch/[0.10] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-fuch">human</span>;
