@@ -21,6 +21,14 @@
  *      CHALLENGE_CONFIDENCE=80 (min confidence to challenge, default 80)
  */
 
+// Worker-scoped Gemini key. When ORACLE_GEMINI_API_KEY is set we override the
+// shared GEMINI_API_KEY for this process only so the oracle, market-creator,
+// and council each consume from their own 20 RPM free-tier bucket. Must run
+// before `lib/llm.ts` is imported so the env read inside that module sees it.
+if (process.env.ORACLE_GEMINI_API_KEY?.trim()) {
+  process.env.GEMINI_API_KEY = process.env.ORACLE_GEMINI_API_KEY;
+}
+
 import { keccak256, toBytes, formatEther } from "viem";
 import { callLLM, activeLLMProvider, activeLLMModel } from "../../lib/llm";
 import {

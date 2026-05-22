@@ -21,6 +21,13 @@
  *      RUN_INTERVAL_HOURS=6      (hours between runs, default 6h)
  */
 
+// Worker-scoped Gemini key. Falls back to the shared GEMINI_API_KEY when
+// CREATOR_GEMINI_API_KEY is not set. See agents/oracle/index.ts for the
+// rationale.
+if (process.env.CREATOR_GEMINI_API_KEY?.trim()) {
+  process.env.GEMINI_API_KEY = process.env.CREATOR_GEMINI_API_KEY;
+}
+
 import { formatEther } from "viem";
 import { callLLM, activeLLMProvider, activeLLMModel } from "../../lib/llm";
 import {

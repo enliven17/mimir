@@ -27,6 +27,13 @@
  *      GEMINI_API_KEY (preferred) OR ANTHROPIC_API_KEY
  */
 
+// Worker-scoped Gemini key. Falls back to the shared GEMINI_API_KEY when
+// COUNCIL_GEMINI_API_KEY is not set. See agents/oracle/index.ts for the
+// rationale: each worker gets its own 20 RPM free-tier bucket.
+if (process.env.COUNCIL_GEMINI_API_KEY?.trim()) {
+  process.env.GEMINI_API_KEY = process.env.COUNCIL_GEMINI_API_KEY;
+}
+
 import {
   createArcPublicClient,
   arcTestnet,
