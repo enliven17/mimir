@@ -25,6 +25,9 @@
  *      CIRCLE_COUNCIL_<SLUG>_WALLET_ID + _ADDRESS for each persona,
  *      NEXT_PUBLIC_CONTRACT_ADDRESS,
  *      GEMINI_API_KEY (preferred) OR ANTHROPIC_API_KEY
+ *      COUNCIL_PERSONAS_ACTIVE (optional CSV of slugs, e.g.
+ *        "optimist,pessimist,statistician,whale_watcher,doomer" — restricts
+ *        active personas to this subset, cuts LLM load proportionally).
  */
 
 // Worker-scoped Gemini key. Falls back to the shared GEMINI_API_KEY when
@@ -77,9 +80,22 @@ if (!process.env.GEMINI_API_KEY?.trim() && !process.env.ANTHROPIC_API_KEY?.trim(
   process.exit(1);
 }
 
+// Optional CSV allowlist of persona slugs to keep active. When set, personas
+// not in the list are skipped even if their wallets exist — used to scale LLM
+// load down without re-provisioning wallets.
+const PERSONA_ALLOWLIST = (() => {
+  const raw = process.env.COUNCIL_PERSONAS_ACTIVE?.trim();
+  if (!raw) return null;
+  const slugs = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return slugs.length > 0 ? new Set(slugs) : null;
+})();
+
 // Skip personas missing wallet env (e.g. before scripts/create-wallets has run
 // for that persona). Warn once at startup, not every cycle.
 const ACTIVE_PERSONAS = COUNCIL_PERSONAS.filter((p) => {
+  if (PERSONA_ALLOWLIST && !PERSONA_ALLOWLIST.has(p.slug)) {
+    return false;
+  }
   const ok =
     !!process.env[personaWalletIdEnv(p)] && !!process.env[personaAddressEnv(p)];
   if (!ok) {

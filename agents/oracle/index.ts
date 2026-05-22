@@ -19,6 +19,9 @@
  *      AUTO_CHALLENGE=1        (enable auto-challenger, default off)
  *      CHALLENGE_STAKE_USDC=2  (stake per challenge, default 2 USDC)
  *      CHALLENGE_CONFIDENCE=80 (min confidence to challenge, default 80)
+ *      ORACLE_LLM_THROTTLE_MS=0 (min ms between LLM calls; raise to stay
+ *                                under free-tier RPM, e.g. 5000 ≈ 12 RPM)
+ *      ORACLE_POLL_INTERVAL_MS=60000 (poll cadence in ms, default 60s)
  */
 
 // Worker-scoped Gemini key. When ORACLE_GEMINI_API_KEY is set we override the
@@ -56,12 +59,29 @@ import {
 } from "../../lib/server/evidence-fetcher";
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const POLL_INTERVAL_MS      = 60_000;
+const POLL_INTERVAL_MS      = Number(process.env.ORACLE_POLL_INTERVAL_MS ?? "60000");
 const MAX_CONTENT_CHARS     = 8_000;
 const CONTRACT_ADDRESS      = getContractAddress();
 const AUTO_CHALLENGE        = process.env.AUTO_CHALLENGE === "1";
 const CHALLENGE_STAKE_USDC  = Number(process.env.CHALLENGE_STAKE_USDC ?? "2");
 const CHALLENGE_CONFIDENCE  = Number(process.env.CHALLENGE_CONFIDENCE ?? "80");
+const LLM_THROTTLE_MS       = Number(process.env.ORACLE_LLM_THROTTLE_MS ?? "0");
+
+// Module-scoped throttle gate. Free-tier Gemini is 5 RPM on new accounts and
+// the oracle has no other rate limiter — every claim in a poll fires an LLM
+// call back-to-back. ORACLE_LLM_THROTTLE_MS spreads them so RPM stays under
+// the quota (e.g. 5000ms ≈ 12 RPM, fits a 15 RPM bucket with headroom).
+let lastLlmCallAt = 0;
+async function throttledLLM(
+  ...args: Parameters<typeof callLLM>
+): Promise<string> {
+  if (LLM_THROTTLE_MS > 0) {
+    const wait = LLM_THROTTLE_MS - (Date.now() - lastLlmCallAt);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+  lastLlmCallAt = Date.now();
+  return callLLM(...args);
+}
 
 // Track challenged claims so we don't double-challenge across polls
 const challengedClaimIds = new Set<number>();
@@ -227,7 +247,7 @@ Return JSON only:
 - UNRESOLVABLE only if the fetched evidence is missing, ambiguous, or doesn't contain the data needed.
 - Be strict about confidence — only go above 80 when evidence is unambiguous.`;
 
-  const text = await callLLM(prompt, { maxTokens: 512, jsonOnly: true });
+  const text = await throttledLLM(prompt, { maxTokens: 512, jsonOnly: true });
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON");
@@ -399,6 +419,15 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   evaluatedClaimIds.add(claim.id);
 
   const evidence = await fetchEvidence(claim.resolutionUrl);
+
+  // Short-circuit: with no real evidence the LLM will return UNRESOLVABLE,
+  // which never satisfies the CHALLENGERS_WIN/≥80% bar below. Skip the
+  // wasted LLM call — saves a Gemini RPM slot per dead-evidence claim.
+  if (evidence.fetcher === "none") {
+    console.log(`[challenge] Skipping LLM — no evidence available (fetcher=none)`);
+    return;
+  }
+
   const rawVerdict = await evaluateClaim(claim, evidence.text);
   const verdict = applyFetcherTrust(rawVerdict, evidence.fetcher);
 
@@ -504,6 +533,7 @@ async function main(): Promise<void> {
   console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
   console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
+  console.log(`  Throttle   : ${LLM_THROTTLE_MS > 0 ? `${LLM_THROTTLE_MS}ms (${(60_000 / LLM_THROTTLE_MS).toFixed(1)} RPM cap)` : "OFF"}`);
   console.log(`  Poll every : ${POLL_INTERVAL_MS / 1000}s`);
   console.log(`  Auto-challenge: ${AUTO_CHALLENGE ? `YES (≥${CHALLENGE_CONFIDENCE}% confidence, ${CHALLENGE_STAKE_USDC} USDC/claim)` : "OFF (set AUTO_CHALLENGE=1 to enable)"}`);
   console.log("═══════════════════════════════════════════════\n");
