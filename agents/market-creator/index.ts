@@ -47,7 +47,7 @@ import {
   getMarketCreatorWalletId,
   getMarketCreatorAddress,
 } from "../../lib/circle-w3s";
-import { MIMIR_ABI } from "../../lib/mimir-abi";
+import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const CONTRACT_ADDRESS    = getContractAddress();
@@ -69,6 +69,7 @@ if (!process.env.GEMINI_API_KEY?.trim() && !process.env.ANTHROPIC_API_KEY?.trim(
 }
 
 const SIG_CREATE_CLAIM = buildAbiFunctionSignature("createClaim", MIMIR_ABI);
+const SIG_CANCEL_CLAIM = buildAbiFunctionSignature("cancelClaim", MIMIR_ABI);
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const publicClient   = createArcPublicClient();
@@ -238,6 +239,67 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
   }
 }
 
+// ── Cancel sweep ──────────────────────────────────────────────────────────────
+// `cancelClaim` is creator-only and only valid while the claim is still OPEN
+// (no challengers). It has no deadline guard, so we add one ourselves: only
+// cancel claims whose deadline has passed — otherwise we'd kill markets that
+// might still get a challenger. Stake is refunded by the contract on cancel.
+
+const CREATOR_ADDR_LC = CREATOR_ADDR.toLowerCase();
+
+async function cancelStaleOpenClaims(): Promise<number> {
+  let total: bigint;
+  try {
+    total = await publicClient.readContract({
+      address: CONTRACT_ADDRESS, abi: MIMIR_ABI, functionName: "claimCount",
+    }) as bigint;
+  } catch (err) {
+    console.warn("[market-creator] Failed to read claimCount for cancel sweep:", err);
+    return 0;
+  }
+
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  let cancelled = 0;
+
+  for (let id = 1; id <= Number(total); id++) {
+    let claim: any;
+    try {
+      claim = await publicClient.readContract({
+        address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
+        functionName: "getClaim", args: [BigInt(id)],
+      });
+    } catch {
+      continue;
+    }
+    if (!claim) continue;
+    const creator   = String(claim[0]).toLowerCase();
+    const deadline  = BigInt(claim[8]);
+    const state     = Number(claim[9]);
+
+    if (creator !== CREATOR_ADDR_LC) continue;
+    if (state !== STATE.OPEN) continue;
+    if (deadline > now) continue;
+
+    console.log(`[market-creator] Cancelling stale claim #${id} (expired, no challenger)`);
+    try {
+      const txHash = await executeContract({
+        walletId:             CREATOR_WALLET,
+        contractAddress:      CONTRACT_ADDRESS,
+        abiFunctionSignature: SIG_CANCEL_CLAIM,
+        abiParameters:        toCircleAbiParameters([BigInt(id)]),
+        refId:                `mc-cancel-${id}`,
+      });
+      console.log(`[market-creator] ✓ Cancelled #${id} — ${getExplorerTxUrl(txHash)}`);
+      cancelled++;
+      // brief gap to avoid nonce races
+      await new Promise((r) => setTimeout(r, 1500));
+    } catch (err) {
+      console.error(`[market-creator] Failed to cancel #${id}:`, err);
+    }
+  }
+  return cancelled;
+}
+
 // ── Main run ──────────────────────────────────────────────────────────────────
 
 async function run(): Promise<void> {
@@ -246,6 +308,14 @@ async function run(): Promise<void> {
   console.log(`\n[market-creator] ── Run at ${new Date().toISOString()}`);
   console.log(`[market-creator] Creator : ${CREATOR_ADDR}`);
   console.log(`[market-creator] Balance : ${microToUsdc(balance).toFixed(4)} USDC`);
+
+  // First sweep stale expired-OPEN claims — these are stuck holding the
+  // creator stake. Cancelling them refunds back to CREATOR_ADDR and also
+  // frees up inventory headroom for the cap check below.
+  const cancelled = await cancelStaleOpenClaims();
+  if (cancelled > 0) {
+    console.log(`[market-creator] Cancelled ${cancelled} stale claim(s) — stake refunded.`);
+  }
 
   // Inventory check — skip if there are already enough unresolved markets on
   // chain. Container restarts otherwise burn LLM quota drafting a fresh batch

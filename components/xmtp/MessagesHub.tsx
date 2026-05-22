@@ -43,8 +43,11 @@ const HUB_SHELL_WIDE =
   "mx-auto w-full max-w-[1280px] px-4 pb-16 sm:px-6 lg:px-8";
 const CONTENT_DIVIDER = "mt-6 border-t border-black/[0.06] pt-8 sm:mt-8 sm:pt-10";
 
+// Light blush surface to match the rest of the site (pv-bg #FCF8F8 / pv-surface
+// #FBEFEF). Previous dark gradient + heavy shadow + backdrop-blur fought the
+// soft palette used by Council / Stats / VS pages.
 const HUB_SPLIT_SHELL =
-  "mt-6 flex min-h-[min(72vh,680px)] flex-col overflow-hidden rounded-2xl border border-black/[0.08] bg-[linear-gradient(165deg,rgba(255,255,255,0.04),rgba(0,0,0,0.22))] shadow-[0_28px_80px_-36px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:mt-8 md:flex-row";
+  "mt-6 flex min-h-[min(72vh,680px)] flex-col overflow-hidden rounded-2xl border border-pv-border/35 bg-pv-surface/60 shadow-[0_18px_50px_-30px_rgba(120,40,40,0.18)] sm:mt-8 md:flex-row";
 
 function ChannelListSkeleton({ ariaLabel }: { ariaLabel: string }) {
   return (
@@ -57,7 +60,7 @@ function ChannelListSkeleton({ ariaLabel }: { ariaLabel: string }) {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="h-[4.75rem] rounded-xl border border-black/[0.08] bg-pv-surface2/40 animate-pulse sm:h-[5.25rem]"
+          className="h-[4.75rem] rounded-xl border border-pv-border/25 bg-pv-surface2/40 animate-pulse sm:h-[5.25rem]"
         />
       ))}
     </div>
@@ -300,13 +303,13 @@ export default function MessagesHub() {
           {!loading && !loadError && showHubSplit && (
             <AnimatedItem>
               <div className={HUB_SPLIT_SHELL}>
-                <div className="flex w-full flex-col border-b border-black/[0.06] md:max-h-[min(72vh,680px)] md:w-[400px] md:shrink-0 md:border-b-0 md:border-r md:border-black/[0.06]">
-                  <div className="border-b border-black/[0.06] bg-black/30 px-5 py-5 sm:px-6">
+                <div className="flex w-full flex-col border-b border-pv-border/30 md:max-h-[min(72vh,680px)] md:w-[400px] md:shrink-0 md:border-b-0 md:border-r md:border-pv-border/30">
+                  <div className="border-b border-pv-border/30 bg-pv-surface2/40 px-5 py-5 sm:px-6">
                     <div className="flex flex-wrap items-center gap-2.5 gap-y-2">
                       <h2 className="font-display text-lg font-bold uppercase tracking-tight text-pv-text sm:text-xl">
                         {t("title")}
                       </h2>
-                      <span className="rounded border border-black/[0.1] bg-black/[0.04] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-pv-muted">
+                      <span className="rounded border border-pv-border/30 bg-pv-bg/50 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-pv-muted">
                         {t("hubSplitBadge")}
                       </span>
                     </div>
@@ -317,7 +320,7 @@ export default function MessagesHub() {
 
                   {eligible.length > 0 && other.length > 0 ? (
                     <div
-                      className="flex border-b border-black/[0.06] bg-black/20 px-1"
+                      className="flex border-b border-pv-border/30 bg-pv-surface2/25 px-1"
                       role="tablist"
                       aria-label={t("title")}
                     >
@@ -331,7 +334,7 @@ export default function MessagesHub() {
                         className={`flex-1 px-2 py-2.5 text-center font-display text-[10px] font-bold uppercase tracking-[0.16em] transition-colors sm:tracking-[0.18em] ${
                           hubListTab === "active"
                             ? "border-b-2 border-pv-emerald bg-pv-emerald/[0.08] text-pv-emerald"
-                            : "border-b-2 border-transparent text-pv-muted hover:bg-black/[0.04] hover:text-pv-text"
+                            : "border-b-2 border-transparent text-pv-muted hover:bg-pv-surface2/40 hover:text-pv-text"
                         }`}
                       >
                         {t("sectionActive")}
@@ -346,7 +349,7 @@ export default function MessagesHub() {
                         className={`flex-1 px-2 py-2.5 text-center font-display text-[10px] font-bold uppercase tracking-[0.16em] transition-colors sm:tracking-[0.18em] ${
                           hubListTab === "pending"
                             ? "border-b-2 border-pv-emerald bg-pv-emerald/[0.08] text-pv-emerald"
-                            : "border-b-2 border-transparent text-pv-muted hover:bg-black/[0.04] hover:text-pv-text"
+                            : "border-b-2 border-transparent text-pv-muted hover:bg-pv-surface2/40 hover:text-pv-text"
                         }`}
                       >
                         {t("sectionPending")}
@@ -369,7 +372,7 @@ export default function MessagesHub() {
                     className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
                   >
                     {showActiveInColumn ? (
-                      <ul className="divide-y divide-black/[0.06]">
+                      <ul className="divide-y divide-pv-border/25">
                         {eligible.map((vs, i) => {
                           const peer = getVsXmtpPeerAddress(vs, address);
                           const vsPageHref = `/vs/${vs.id}#${VS_XMTP_CHAT_ANCHOR_ID}`;
@@ -433,7 +436,7 @@ export default function MessagesHub() {
                                       ) : null}
                                     </div>
                                   </button>
-                                  <div className="flex justify-end border-t border-black/[0.06] px-5 py-3 sm:px-6">
+                                  <div className="flex justify-end border-t border-pv-border/25 px-5 py-3 sm:px-6">
                                     <Link
                                       href={vsPageHref}
                                       className="group focus-ring inline-flex min-h-[44px] items-center gap-1 rounded-md font-display text-[10px] font-bold uppercase tracking-[0.14em] text-pv-emerald transition-colors hover:text-pv-emerald/85"
@@ -456,7 +459,7 @@ export default function MessagesHub() {
                     ) : null}
 
                     {showPendingInColumn ? (
-                      <ul className="divide-y divide-black/[0.06]">
+                      <ul className="divide-y divide-pv-border/25">
                         {other.map((vs, i) => {
                           const reason =
                             getVsXmtpUnavailableReason(vs) ?? "not_accepted";
@@ -481,8 +484,8 @@ export default function MessagesHub() {
                                         ? "border-l-amber-400/70 bg-amber-400/[0.1] ring-1 ring-inset ring-amber-400/25"
                                         : "border-l-amber-400/55 bg-amber-400/[0.04]"
                                       : isSelected
-                                        ? "border-l-white/25 bg-black/[0.06] ring-1 ring-inset ring-white/15"
-                                        : "border-l-black/[0.12] bg-transparent"
+                                        ? "border-l-pv-border/60 bg-pv-surface2/50 ring-1 ring-inset ring-pv-border/40"
+                                        : "border-l-pv-border/35 bg-transparent"
                                   }`}
                                 >
                                   <button
@@ -497,7 +500,7 @@ export default function MessagesHub() {
                                       isWaiting && !isSelected
                                         ? "hover:bg-amber-400/[0.06]"
                                         : !isWaiting && !isSelected
-                                          ? "hover:bg-black/[0.04]"
+                                          ? "hover:bg-pv-surface2/40"
                                           : ""
                                     }`}
                                   >
@@ -530,7 +533,7 @@ export default function MessagesHub() {
                                         className={`inline-flex items-center rounded border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] ${
                                           isWaiting
                                             ? "border-amber-400/35 bg-amber-400/[0.08] text-amber-200/95"
-                                            : "border-black/[0.1] bg-black/[0.04] text-pv-muted"
+                                            : "border-pv-border/30 bg-pv-bg/50 text-pv-muted"
                                         }`}
                                       >
                                         {isWaiting
@@ -542,7 +545,7 @@ export default function MessagesHub() {
                                       {t(`reason.${reason}`)}
                                     </p>
                                   </button>
-                                  <div className="flex justify-end border-t border-black/[0.06] px-5 py-3 sm:px-6">
+                                  <div className="flex justify-end border-t border-pv-border/25 px-5 py-3 sm:px-6">
                                     <Link
                                       href={`/vs/${vs.id}`}
                                       aria-label={`${t("viewVs")} — VS ${vs.id}`}
@@ -570,7 +573,7 @@ export default function MessagesHub() {
                 <div
                   ref={hubChatPanelRef}
                   id="messages-hub-chat-panel"
-                  className="flex min-h-[min(52dvh,320px)] flex-1 flex-col bg-black/[0.12] scroll-mt-20 md:min-h-0"
+                  className="flex min-h-[min(52dvh,320px)] flex-1 flex-col bg-pv-bg/55 scroll-mt-20 md:min-h-0"
                 >
                   {eligible.length === 0 ? (
                     <div className="border-b border-amber-400/25 bg-amber-400/[0.06] px-5 py-4 sm:px-6">
