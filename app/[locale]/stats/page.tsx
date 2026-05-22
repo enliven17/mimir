@@ -9,6 +9,8 @@ import {
   getExplorerTxUrl,
 } from "@/lib/arc";
 import { MIMIR_ABI } from "@/lib/mimir-abi";
+import { getPersonaForAddress } from "@/lib/council-resolver";
+import type { PersonaSpec } from "@/agents/council/personas";
 
 export const revalidate = 30;
 
@@ -78,7 +80,8 @@ interface StakerRow {
   firstTxHash:    string;
   claimsCreated:  number;
   challengesMade: number;
-  kind:           "oracle" | "market-creator" | "human";
+  kind:           "oracle" | "market-creator" | "council" | "human";
+  persona?:       PersonaSpec;
 }
 
 async function fetchStakers(oracleAddr?: string, creatorAddr?: string): Promise<StakerRow[]> {
@@ -135,6 +138,7 @@ async function fetchStakers(oracleAddr?: string, creatorAddr?: string): Promise<
         else                       existing.challengesMade += 1;
         return;
       }
+      const persona = getPersonaForAddress(addr);
       byAddr.set(addr, {
         address: addr,
         firstBlock:     blockNumber,
@@ -144,7 +148,9 @@ async function fetchStakers(oracleAddr?: string, creatorAddr?: string): Promise<
         kind:
           addr === oracleLower  ? "oracle" :
           addr === creatorLower ? "market-creator" :
+          persona               ? "council" :
                                   "human",
+        persona: persona ?? undefined,
       });
     };
 
@@ -295,7 +301,8 @@ export default async function StatsPage() {
     fetchOracleAndCreator(),
   ]);
   const stakers = await fetchStakers(agentInfo?.oracle, agentInfo?.owner);
-  const humanStakers = stakers.filter((s) => s.kind === "human");
+  const humanStakers   = stakers.filter((s) => s.kind === "human");
+  const councilStakers = stakers.filter((s) => s.kind === "council");
 
   const totalClaims    = claims.length;
   const totalResolved  = settlements.length;
@@ -336,7 +343,7 @@ export default async function StatsPage() {
       {/* Headline KPIs */}
       <section className="mb-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Kpi tone="accent" label="Total wagered" value={`${totalWageredUsdc.toFixed(2)} USDC`} sub="creator + challenger stakes" />
-        <Kpi label="Unique stakers" value={stakers.length} sub={`${humanStakers.length} human · ${stakers.length - humanStakers.length} agent`} />
+        <Kpi label="Unique stakers" value={stakers.length} sub={`${humanStakers.length} human · ${councilStakers.length} council · ${stakers.length - humanStakers.length - councilStakers.length} other agent`} />
         <Kpi label="Claims resolved" value={totalResolved} sub={`${openClaims} open · ${totalClaims} total`} />
         <Kpi label="Oracle accuracy" value={`${accuracyPct}%`} sub="settlements at ≥ 80% confidence" />
         <Kpi label="Refund rate" value={`${refundPct}%`} sub="draw / unresolvable" />
@@ -433,12 +440,18 @@ export default async function StatsPage() {
               const tone =
                 s.kind === "oracle"         ? "border-pv-emerald/40 bg-pv-emerald/[0.06]" :
                 s.kind === "market-creator" ? "border-pv-border/50 bg-pv-surface2/40" :
+                s.kind === "council" && s.persona ? `${s.persona.accent.border} ${s.persona.accent.bg}` :
                                               "border-pv-fuch/30 bg-pv-fuch/[0.04]";
               const badge =
                 s.kind === "oracle"
                   ? <span className="rounded border border-pv-emerald/40 bg-pv-emerald/[0.10] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-emerald">oracle</span>
                 : s.kind === "market-creator"
                   ? <span className="rounded border border-pv-border/60 bg-pv-surface2/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-text/80">m-creator</span>
+                : s.kind === "council" && s.persona
+                  ? <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] ${s.persona.accent.chip}`}>
+                      <span className="text-[10px] leading-none">{s.persona.emoji}</span>
+                      <span className="normal-case">{s.persona.displayName.replace(/^The /, "")}</span>
+                    </span>
                   : <span className="rounded border border-pv-fuch/40 bg-pv-fuch/[0.10] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-fuch">human</span>;
               return (
                 <li

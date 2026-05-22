@@ -145,7 +145,7 @@ export default function Header() {
 
   const NAV_ITEMS = useMemo(() => {
     const items: Array<{
-      href: "/vs/create" | "/explorer" | "/dashboard" | "/messages" | "/stats" | "/bridge" | "/agents";
+      href: "/vs/create" | "/explorer" | "/dashboard" | "/messages" | "/stats" | "/bridge" | "/agents" | "/council";
       label: string;
       accent: boolean;
       mobileLabel?: string;
@@ -154,6 +154,7 @@ export default function Header() {
       { href: "/explorer", label: t("explore"), accent: false },
       { href: "/dashboard", label: t("myVS"), accent: false },
       { href: "/bridge", label: "Bridge", accent: false },
+      { href: "/council", label: "Council", accent: false },
       { href: "/agents", label: "Agents", accent: false },
       { href: "/stats", label: "Stats", accent: false },
     ];
@@ -197,7 +198,7 @@ export default function Header() {
     <header className="fixed left-0 right-0 top-0 z-50 pt-[env(safe-area-inset-top)]">
       <div
         className={`mx-auto flex h-14 max-w-[1100px] items-center justify-between px-4 transition-[background-color,border-color,box-shadow,transform,margin] duration-300 ease-out sm:px-6 ${
-          scrolled
+          scrolled || mobileOpen
             ? "mt-2 rounded-2xl border border-pv-border/40 bg-pv-surface/70 px-5 shadow-[0_10px_40px_-12px_rgba(216,95,95,0.18)] backdrop-blur-[18px] sm:mt-3"
             : "mt-0 rounded-none border border-transparent bg-transparent shadow-none backdrop-blur-0"
         }`}
@@ -316,7 +317,7 @@ export default function Header() {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-black/[0.08] md:hidden"
+            className="overflow-hidden border-t border-b border-black/[0.08] bg-pv-surface/95 backdrop-blur-xl md:hidden"
           >
             <LayoutGroup id="mobile-header-nav">
               <nav

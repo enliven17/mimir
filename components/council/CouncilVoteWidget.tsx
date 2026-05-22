@@ -1,0 +1,140 @@
+"use client";
+
+/**
+ * CouncilVoteWidget
+ *
+ * Inline panel for the /vs/[id] page that shows where each of the 10
+ * council personas stands on a single claim. Reads /api/vs/[id]/council
+ * (pure on-chain) and renders a grid: persona pill + ✓/✗ + stake amount.
+ *
+ * No LLM calls happen here — the worker decides off-band and the result
+ * shows up as a real ClaimChallenged event.
+ */
+
+import { useEffect, useState } from "react";
+import { getExplorerTxUrl } from "@/lib/arc";
+
+interface PersonaVote {
+  slug:        string;
+  displayName: string;
+  emoji:       string;
+  archetype:   string;
+  accent: {
+    border: string;
+    bg:     string;
+    text:   string;
+    chip:   string;
+  };
+  staked:      boolean;
+  stakeUsdc:   number;
+  txHash:      string | null;
+  blockNumber: number | null;
+}
+
+interface CouncilResponse {
+  claimId:     number;
+  total:       number;
+  stakedCount: number;
+  totalUsdc:   number;
+  votes:       PersonaVote[];
+}
+
+export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
+  const [data, setData] = useState<CouncilResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/vs/${claimId}/council`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<CouncilResponse>;
+      })
+      .then((body) => {
+        if (cancelled) return;
+        setData(body);
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setError(err.message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [claimId]);
+
+  if (loading) {
+    return (
+      <section className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-5">
+        <div className="text-[11px] font-mono uppercase tracking-[0.18em] text-pv-muted">Council verdict</div>
+        <div className="mt-2 text-sm text-pv-muted">Reading on-chain stakes…</div>
+      </section>
+    );
+  }
+
+  if (error || !data) {
+    return null; // fail-quiet — the claim page still works without this widget
+  }
+
+  if (data.total === 0) {
+    return null; // no council in this deploy
+  }
+
+  return (
+    <section className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-5">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <div className="text-[11px] font-mono uppercase tracking-[0.18em] text-pv-emerald">Council verdict</div>
+          <p className="mt-0.5 text-[12px] text-pv-muted">
+            Where each of the {data.total} AI personas stands on this claim. ✓ means they staked the challenger side.
+          </p>
+        </div>
+        <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-pv-muted">
+          {data.stakedCount} of {data.total} staked · {data.totalUsdc.toFixed(2)} USDC
+        </div>
+      </div>
+
+      <ul className="grid gap-1.5 sm:grid-cols-2">
+        {data.votes.map((v) => (
+          <li
+            key={v.slug}
+            className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 ${
+              v.staked ? `${v.accent.border} ${v.accent.bg}` : "border-pv-border/30 bg-pv-surface2/30"
+            }`}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-base leading-none">{v.emoji}</span>
+              <span className={`truncate text-[12px] font-semibold ${v.staked ? v.accent.text : "text-pv-muted"}`}>
+                {v.displayName}
+              </span>
+            </div>
+            {v.staked && v.txHash ? (
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="font-mono text-[10px] tabular-nums text-pv-text/85">
+                  ✓ {v.stakeUsdc.toFixed(2)} USDC
+                </span>
+                <a
+                  href={getExplorerTxUrl(v.txHash)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-[10px] text-pv-muted hover:text-pv-emerald"
+                >
+                  tx ↗
+                </a>
+              </div>
+            ) : (
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-pv-muted">— abstain</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

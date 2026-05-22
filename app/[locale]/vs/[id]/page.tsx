@@ -61,6 +61,7 @@ import ClaimStrengthCard from "@/components/ClaimStrengthCard";
 import SettlementExplanationCard from "@/components/SettlementExplanationCard";
 import ResolutionTerminal from "@/components/ResolutionTerminal";
 import VsXmtpPanel from "@/components/xmtp/VsXmtpPanel";
+import CouncilVoteWidget from "@/components/council/CouncilVoteWidget";
 import Stage from "@/components/Stage";
 import LiveDeadline from "@/components/LiveDeadline";
 import { AnimatePresence } from "framer-motion";
@@ -1381,6 +1382,14 @@ export default function VSDetailPage() {
               </div>
             </AnimatedItem>
           </>
+        )}
+
+        {vsId > 0 && (
+          <AnimatedItem>
+            <div className="mb-6 sm:mb-8">
+              <CouncilVoteWidget claimId={vsId} />
+            </div>
+          </AnimatedItem>
         )}
 
         {((actionLoading === "resolve" && willTriggerResolution) ||

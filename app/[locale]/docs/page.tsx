@@ -58,9 +58,9 @@ function ArchitectureDiagram() {
       <g>
         <rect x="210" y="200" width="220" height="120" rx="16" fill={C.surface} stroke={C.border} strokeWidth="1.5" />
         <text x="320" y="228" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">RAILWAY · WORKERS</text>
-        <text x="320" y="256" textAnchor="middle" fontSize="14" fontWeight="700" fill={C.text}>oracle + market-creator</text>
-        <text x="320" y="278" textAnchor="middle" fontSize="11" fill={C.muted}>poll, evaluate, settle</text>
-        <text x="320" y="298" textAnchor="middle" fontSize="11" fill={C.muted}>sign via Circle W3S</text>
+        <text x="320" y="252" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>oracle · creator · council</text>
+        <text x="320" y="272" textAnchor="middle" fontSize="11" fill={C.muted}>12 agents, all W3S-signed</text>
+        <text x="320" y="290" textAnchor="middle" fontSize="11" fill={C.muted}>poll, evaluate, stake, settle</text>
       </g>
 
       {/* Arc */}
@@ -385,10 +385,10 @@ export default function DocsPage() {
             writes are user-signed via wagmi/viem.
           </li>
           <li>
-            <strong className="text-pv-text">Workers (Railway).</strong> The oracle
-            and market-creator agents run as long-lived Node processes. Vercel
-            functions time out before a polling cycle can finish — Railway is the
-            right home.
+            <strong className="text-pv-text">Workers (Railway).</strong> Three
+            long-lived Node processes: the oracle (settler), the market-creator,
+            and the ten-persona Mimir Council. Vercel functions time out before
+            a polling cycle can finish — Railway is the right home.
           </li>
           <li>
             <strong className="text-pv-text">Data (Neon Postgres).</strong> A
@@ -436,13 +436,15 @@ export default function DocsPage() {
 
       <Section id="agents" eyebrow="05" title="The agents">
         <p>
-          Two background processes run continuously. Neither holds a local private
-          key — both sign through Circle&apos;s Programmable Wallets.
+          Twelve background processes run continuously: the oracle, the
+          market-creator, and ten council personas. None of them holds a local
+          private key — every agent signs through Circle&apos;s Programmable
+          Wallets.
         </p>
-        <DiagramFrame caption="Oracle decision tree. The poll loop reads every claim once a minute; ACTIVE+expired claims go to the settler, OPEN+live claims go to the optional Kelly-sized challenger.">
+        <DiagramFrame caption="Oracle decision tree. The poll loop reads every claim once a minute; ACTIVE+expired claims go to the settler, OPEN+live claims go to the optional Kelly-sized challenger. The council follows the same shape, one persona at a time.">
           <AgentLoopDiagram />
         </DiagramFrame>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Card title="Oracle agent">
             Reads expired ACTIVE claims, fetches the evidence URL, asks the LLM for
             a verdict + confidence + one-sentence explanation, and submits{" "}
@@ -459,6 +461,20 @@ export default function DocsPage() {
             scores each for quality, and creates the highest-scoring ones on chain
             with its own creator-side stake. Opening a claim is an economic
             commitment, not a free tweet.
+          </Card>
+          <Card title="The Mimir Council (×10)">
+            Ten AI personas — optimist, pessimist, contrarian, statistician,
+            whale-watcher, crypto maxi, sports pundit, weatherman, doomer, yapper —
+            each with its own W3S wallet and its own way of reading a market.
+            Two are pure rule-based (no LLM); three are category specialists; the
+            rest run the oracle&apos;s evaluation prompt with a personality prefix.
+            They only call{" "}
+            <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">challengeClaim</code>;
+            settlement stays with the oracle. See{" "}
+            <Link href="/council" className="text-pv-emerald underline-offset-2 hover:underline">
+              /council
+            </Link>
+            {" "}for the full roster.
           </Card>
         </div>
       </Section>

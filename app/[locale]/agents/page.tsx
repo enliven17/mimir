@@ -9,6 +9,11 @@ import {
   getExplorerTxUrl,
 } from "@/lib/arc";
 import { MIMIR_ABI } from "@/lib/mimir-abi";
+import {
+  classifyActor,
+  getActiveCouncilPersonas,
+  getPersonaForAddress,
+} from "@/lib/council-resolver";
 
 export const revalidate = 20;
 
@@ -160,22 +165,26 @@ const SIDE_LABEL: Record<number, string> = {
   4: "unresolvable · refunded",
 };
 
-type ActorKind = "oracle" | "market-creator" | "human";
-
-function classifyActor(addr: string, oracle?: string, creator?: string): ActorKind {
-  const norm = addr.toLowerCase();
-  if (norm === oracle?.toLowerCase()) return "oracle";
-  if (norm === creator?.toLowerCase()) return "market-creator";
-  return "human";
-}
-
-function ActorTag({ addr, oracle, creator }: { addr: string; oracle?: string; creator?: string }) {
-  const kind = classifyActor(addr, oracle, creator);
-  if (kind === "oracle") {
+function ActorTag({
+  addr,
+  oracle,
+  creator,
+}: { addr: string; oracle?: string; creator?: string }) {
+  const actor = classifyActor(addr, oracle, creator);
+  if (actor.kind === "oracle") {
     return <span className="inline-flex items-center rounded-md border border-pv-emerald/40 bg-pv-emerald/[0.08] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-emerald">oracle</span>;
   }
-  if (kind === "market-creator") {
+  if (actor.kind === "market-creator") {
     return <span className="inline-flex items-center rounded-md border border-pv-border/60 bg-pv-surface2/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-text/80">market-creator</span>;
+  }
+  if (actor.kind === "council") {
+    const p = actor.persona;
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] ${p.accent.chip}`}>
+        <span className="text-[11px] leading-none">{p.emoji}</span>
+        <span>{p.displayName.replace(/^The /, "")}</span>
+      </span>
+    );
   }
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -194,12 +203,9 @@ function tierPill(c: number) {
 
 /* ── Page ────────────────────────────────────────────────────────────────── */
 
-type FilterKey = "all" | "agents" | "humans";
-
-function parseFilter(raw: string | string[] | undefined): FilterKey {
+function parseFilter(raw: string | string[] | undefined): string {
   const v = Array.isArray(raw) ? raw[0] : raw;
-  if (v === "agents" || v === "humans") return v;
-  return "all";
+  return v ?? "all";
 }
 
 export default async function AgentsPage({
@@ -213,23 +219,48 @@ export default async function AgentsPage({
     searchParams ?? Promise.resolve({} as { filter?: string | string[] }),
   ]);
   const filter = parseFilter(sp?.filter);
+  const councilPersonas = getActiveCouncilPersonas();
 
   const isOracle  = (a: string) => !!agentInfo && a.toLowerCase() === agentInfo.oracle.toLowerCase();
   const isCreator = (a: string) => !!agentInfo && a.toLowerCase() === agentInfo.owner.toLowerCase();
-  const isAgentEvent = (e: EventRow) =>
-    e.kind === "resolved" ||
-    (e.kind === "challenged" && isOracle(e.actor)) ||
-    (e.kind === "created" && isCreator(e.actor));
+  const isCouncil = (a: string) => getPersonaForAddress(a) !== null;
+  /** Resolved events have no .actor (oracle implied); created/challenged carry the staker address. */
+  const eventActor = (e: EventRow): string | null =>
+    e.kind === "resolved" ? null : e.actor;
+  const isAgentEvent = (e: EventRow) => {
+    if (e.kind === "resolved") return true;
+    const a = eventActor(e);
+    if (!a) return false;
+    if (e.kind === "challenged") return isOracle(a) || isCouncil(a);
+    if (e.kind === "created")    return isCreator(a);
+    return false;
+  };
   const isHumanEvent = (e: EventRow) => !isAgentEvent(e);
 
-  const agentEvents = events.filter(isAgentEvent);
-  const humanEvents = events.filter(isHumanEvent);
-  const visibleEvents =
-    filter === "agents" ? agentEvents :
-    filter === "humans" ? humanEvents :
-    events;
+  const agentEvents   = events.filter(isAgentEvent);
+  const humanEvents   = events.filter(isHumanEvent);
+  const councilEvents = events.filter((e) => {
+    const a = eventActor(e);
+    return a !== null && isCouncil(a);
+  });
 
-  // Unique human stakers (creator OR challenger sides, excluding the two agent addresses)
+  // Per-persona filter slugs come in as filter=persona:<slug>
+  const personaFilter = filter.startsWith("persona:") ? filter.slice("persona:".length) : null;
+  const visibleEvents = (() => {
+    if (personaFilter) {
+      const matchAddr = councilPersonas.find((p) => p.persona.slug === personaFilter)?.address.toLowerCase();
+      if (!matchAddr) return [];
+      return events.filter((e) => {
+        const a = eventActor(e);
+        return a !== null && a.toLowerCase() === matchAddr;
+      });
+    }
+    if (filter === "agents")  return agentEvents;
+    if (filter === "humans")  return humanEvents;
+    if (filter === "council") return councilEvents;
+    return events;
+  })();
+
   const humanStakerSet = new Set<string>();
   for (const e of humanEvents) {
     if (e.kind === "created" || e.kind === "challenged") {
@@ -257,6 +288,11 @@ export default async function AgentsPage({
           <span className="rounded-md border border-pv-emerald/35 bg-pv-emerald/[0.06] px-2 py-1 text-pv-emerald">
             {agentEvents.length} agent
           </span>
+          {councilEvents.length > 0 && (
+            <span className="rounded-md border border-amber-400/35 bg-amber-400/[0.06] px-2 py-1 text-amber-700">
+              {councilEvents.length} council ({councilPersonas.length} personas)
+            </span>
+          )}
           <span className="rounded-md border border-pv-fuch/35 bg-pv-fuch/[0.06] px-2 py-1 text-pv-fuch">
             {humanEvents.length} human · {humanStakerCount} unique
           </span>
@@ -323,12 +359,13 @@ export default async function AgentsPage({
       <section>
         <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="font-display text-xl font-bold tracking-tight text-pv-text">Live feed</h2>
-          <nav className="flex gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em]">
-            {([
+          <nav className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em]">
+            {[
               { key: "all",     label: `All · ${events.length}` },
               { key: "agents",  label: `Agents · ${agentEvents.length}` },
+              { key: "council", label: `Council · ${councilEvents.length}` },
               { key: "humans",  label: `Humans · ${humanEvents.length}` },
-            ] as const).map(({ key, label }) => {
+            ].map(({ key, label }) => {
               const active = filter === key;
               const href = key === "all" ? "?" : `?filter=${key}`;
               return (
@@ -346,6 +383,32 @@ export default async function AgentsPage({
                 </Link>
               );
             })}
+            {councilPersonas.length > 0 && (
+              <details className="relative">
+                <summary className={`cursor-pointer list-none rounded-md border px-2 py-1 transition-colors ${
+                  personaFilter
+                    ? "border-pv-emerald bg-pv-emerald/[0.10] text-pv-emerald"
+                    : "border-pv-border/40 bg-pv-surface2/40 text-pv-muted hover:border-pv-emerald/40 hover:text-pv-text"
+                }`}>
+                  {personaFilter
+                    ? councilPersonas.find((p) => p.persona.slug === personaFilter)?.persona.displayName.replace(/^The /, "") ?? "Persona"
+                    : "Pick persona ▾"}
+                </summary>
+                <div className="absolute right-0 z-10 mt-1 min-w-[200px] rounded-lg border border-pv-border/50 bg-pv-surface p-1 shadow-lg">
+                  {councilPersonas.map(({ persona }) => (
+                    <Link
+                      key={persona.slug}
+                      href={`?filter=persona:${persona.slug}`}
+                      scroll={false}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-pv-surface2/60"
+                    >
+                      <span className="text-base leading-none">{persona.emoji}</span>
+                      <span className="text-pv-text/90 normal-case">{persona.displayName}</span>
+                    </Link>
+                  ))}
+                </div>
+              </details>
+            )}
           </nav>
         </div>
         {visibleEvents.length === 0 ? (

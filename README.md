@@ -163,7 +163,9 @@ Several details matter for trust:
 
 ## Agents as economic actors
 
-Two background agents run continuously. Both sign transactions through W3S; neither holds a local private key.
+**Twelve** background agents run continuously: the oracle (settler + optional auto-challenger), the market-creator, and the ten-persona Mimir Council. None of them holds a local private key — every transaction is signed through Circle's Programmable Wallets.
+
+> **Deep dive:** see [`docs/COUNCIL.md`](docs/COUNCIL.md) for the full council architecture, persona-by-persona strategy, and rate-limit design.
 
 ### Oracle agent (`agents/oracle/index.ts`)
 
@@ -197,6 +199,24 @@ stateDiagram-v2
 Runs every 6 hours. Fetches public data feeds (CoinGecko, ESPN, OpenWeather), asks the LLM to draft 1–5 verifiable claim candidates, scores each candidate for quality, and creates the highest-scoring ones on-chain — staking the creator side from its own balance. This means **opening a claim is itself an economic commitment from an AI agent**, not a free tweet.
 
 The agent treats curation as the scarce resource. The default cap is 5 markets per run with a quality floor of 70/100, so the surface stays sparse and challenge-ready rather than noisy.
+
+### The Mimir Council (`agents/council/index.ts`)
+
+Ten distinct AI personas, each with its own W3S-managed wallet and its own way of looking at a market. The roster is intentionally heterogenous so different views show up on the same claim:
+
+| Persona | What they do |
+|---|---|
+| 🌞 Optimist · 🌧️ Pessimist · 💀 Doomer | LLM-biased — the oracle's evaluation prompt with a personality prefix that nudges the model's read. |
+| 📊 Statistician | LLM-biased with a 90% confidence floor — rare but decisive bets. |
+| 🔁 Contrarian · 🐋 Whale-Watcher | Pure rule-based, never call the LLM. Contrarian stakes the smaller pool; Whale-Watcher copies the biggest individual challenger. |
+| ₿ Crypto Maximalist · 🏈 Sports Pundit · 🌤️ Weatherman | Category specialists — only evaluate claims in their domain. |
+| 🗣️ Yapper | Micro-stakes (0.5 USDC) at a low 60% confidence threshold for maximum market presence. |
+
+Personas can only call `challengeClaim` (settlement stays with the oracle, market creation stays with the market-creator). A persona that agrees with the creator simply abstains. Decisions are made through the same Kelly-sized, evidence-hashed pipeline the oracle uses — just with persona-specific prompt biases and a shared per-cycle evidence cache so ten personas don't re-fetch the same URL.
+
+The council surfaces in the UI on [`/council`](app/[locale]/council/page.tsx) (full roster + balances + bets), in the [`/agents`](app/[locale]/agents/page.tsx) live feed with persona badges and a per-persona dropdown, in the [`/stats`](app/[locale]/stats/page.tsx) "First N stakers" wall, and as a `Council verdict` card on every claim detail page that lists each persona's stake or abstention.
+
+See [`docs/COUNCIL.md`](docs/COUNCIL.md) for the full architecture, rate-limit strategy, and env reference.
 
 ---
 
@@ -328,7 +348,11 @@ mimir/
 │       └── vs/                           # feed, detail, sync routes
 ├── agents/
 │   ├── oracle/index.ts                   # settler + Kelly auto-challenger
-│   └── market-creator/index.ts           # autonomous market author
+│   ├── market-creator/index.ts           # autonomous market author
+│   └── council/                          # 10 AI personas as economic actors
+│       ├── index.ts                      # worker entry, staggered + rate-limited
+│       ├── personas.ts                   # 10 persona configs (bios, biases, accents)
+│       └── shared/                       # runner, evidence cache, rule evaluators, persona-LLM
 ├── contracts/
 │   └── Mimir.sol                         # the only contract; deployed on Arc
 ├── lib/
@@ -546,6 +570,11 @@ Every env var lives in `.env.example`. Quick reference:
 | `DATABASE_URL`                    | optional (Neon)          | Read-index cache. Pages that need it fail gracefully if absent                     |
 | `CRON_SECRET`                     | optional                 | Vercel cron shared secret                                                          |
 | `NEXT_PUBLIC_FEATURE_XMTP`        | optional                 | Toggle the XMTP inbox feature                                                      |
+| `CIRCLE_COUNCIL_<SLUG>_WALLET_ID` | council (worker)         | Per-persona W3S wallet ID; created by `npm run council:create-wallets`             |
+| `CIRCLE_COUNCIL_<SLUG>_ADDRESS`   | council (worker, UI)     | Per-persona EVM address; used to label on-chain events with the right persona      |
+| `COUNCIL_POLL_INTERVAL_MS`        | council (worker)         | Cycle interval (default 180_000 = 3 min)                                            |
+| `COUNCIL_MAX_CLAIMS`              | council (worker)         | Max claims per cycle, deadline-sorted (default 12). Lower to ease Gemini quota.    |
+| `COUNCIL_LLM_THROTTLE_MS`         | council (worker)         | Min ms between LLM calls (default 4500 ≈ 13 req/min worst case)                   |
 
 ---
 
@@ -555,9 +584,11 @@ Every env var lives in `.env.example`. Quick reference:
 | -------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `npm run dev`                                | Next.js dev server                                                                 |
 | `npm run build` / `npm start`                | Production build / serve                                                           |
-| `npm run workers`                            | Run **both** agent workers in parallel (Railway entry point)                       |
+| `npm run workers`                            | Run **all three** agent workers in parallel (Railway entry point: oracle + market-creator + council) |
 | `npm run oracle`                             | Run only the oracle (settler; optionally `AUTO_CHALLENGE=1`)                       |
 | `npm run market-creator`                     | Run only the market-creator                                                        |
+| `npm run council`                            | Run only the 10-persona Mimir Council worker                                       |
+| `npm run council:create-wallets`             | One-time provisioning of the 10 W3S persona wallets                                |
 | `npm run test:smoke`                         | Node-native smoke tests (API validation, XMTP, db-index, etc.)                     |
 | `npm run warm:vs-index`                      | Rebuild the Neon read-index from current on-chain state                            |
 | `npm run seed` / `npm run seed:dry`          | Seed demo claims (live / dry-run)                                                  |
