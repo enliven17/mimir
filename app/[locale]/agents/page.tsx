@@ -160,15 +160,29 @@ const SIDE_LABEL: Record<number, string> = {
   4: "unresolvable · refunded",
 };
 
-function ActorTag({ addr, oracle, creator }: { addr: string; oracle?: string; creator?: string }) {
+type ActorKind = "oracle" | "market-creator" | "human";
+
+function classifyActor(addr: string, oracle?: string, creator?: string): ActorKind {
   const norm = addr.toLowerCase();
-  if (norm === oracle?.toLowerCase()) {
+  if (norm === oracle?.toLowerCase()) return "oracle";
+  if (norm === creator?.toLowerCase()) return "market-creator";
+  return "human";
+}
+
+function ActorTag({ addr, oracle, creator }: { addr: string; oracle?: string; creator?: string }) {
+  const kind = classifyActor(addr, oracle, creator);
+  if (kind === "oracle") {
     return <span className="inline-flex items-center rounded-md border border-pv-emerald/40 bg-pv-emerald/[0.08] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-emerald">oracle</span>;
   }
-  if (norm === creator?.toLowerCase()) {
+  if (kind === "market-creator") {
     return <span className="inline-flex items-center rounded-md border border-pv-border/60 bg-pv-surface2/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-text/80">market-creator</span>;
   }
-  return <span className="font-mono text-[11px] text-pv-muted">{shortAddr(addr)}</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex items-center rounded-md border border-pv-fuch/40 bg-pv-fuch/[0.08] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-fuch">human</span>
+      <span className="font-mono text-[11px] text-pv-muted">{shortAddr(addr)}</span>
+    </span>
+  );
 }
 
 function tierPill(c: number) {
@@ -180,40 +194,76 @@ function tierPill(c: number) {
 
 /* ── Page ────────────────────────────────────────────────────────────────── */
 
-export default async function AgentsPage() {
-  const [events, agentInfo] = await Promise.all([fetchEvents(), fetchAgentAddresses()]);
+type FilterKey = "all" | "agents" | "humans";
 
-  // Agent-specific filters
-  const isOracle    = (a: string) => agentInfo && a.toLowerCase() === agentInfo.oracle.toLowerCase();
-  const isCreator   = (a: string) => agentInfo && a.toLowerCase() === agentInfo.owner.toLowerCase();
-  const agentEvents = events.filter((e) =>
+function parseFilter(raw: string | string[] | undefined): FilterKey {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  if (v === "agents" || v === "humans") return v;
+  return "all";
+}
+
+export default async function AgentsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ filter?: string | string[] }>;
+}) {
+  const [events, agentInfo, sp] = await Promise.all([
+    fetchEvents(),
+    fetchAgentAddresses(),
+    searchParams ?? Promise.resolve({} as { filter?: string | string[] }),
+  ]);
+  const filter = parseFilter(sp?.filter);
+
+  const isOracle  = (a: string) => !!agentInfo && a.toLowerCase() === agentInfo.oracle.toLowerCase();
+  const isCreator = (a: string) => !!agentInfo && a.toLowerCase() === agentInfo.owner.toLowerCase();
+  const isAgentEvent = (e: EventRow) =>
     e.kind === "resolved" ||
     (e.kind === "challenged" && isOracle(e.actor)) ||
-    (e.kind === "created" && isCreator(e.actor)),
-  );
+    (e.kind === "created" && isCreator(e.actor));
+  const isHumanEvent = (e: EventRow) => !isAgentEvent(e);
 
-  const oracleSettlements   = events.filter((e) => e.kind === "resolved").length;
-  const oracleChallenges    = events.filter((e) => e.kind === "challenged" && isOracle(e.actor)).length;
+  const agentEvents = events.filter(isAgentEvent);
+  const humanEvents = events.filter(isHumanEvent);
+  const visibleEvents =
+    filter === "agents" ? agentEvents :
+    filter === "humans" ? humanEvents :
+    events;
+
+  // Unique human stakers (creator OR challenger sides, excluding the two agent addresses)
+  const humanStakerSet = new Set<string>();
+  for (const e of humanEvents) {
+    if (e.kind === "created" || e.kind === "challenged") {
+      humanStakerSet.add(e.actor.toLowerCase());
+    }
+  }
+  const humanStakerCount = humanStakerSet.size;
+
+  const oracleSettlements    = events.filter((e) => e.kind === "resolved").length;
+  const oracleChallenges     = events.filter((e) => e.kind === "challenged" && isOracle(e.actor)).length;
   const creatorMarketsOpened = events.filter((e) => e.kind === "created" && isCreator(e.actor)).length;
-  const creatorAvgStake = (() => {
-    const created = events.filter((e) => e.kind === "created" && isCreator(e.actor));
-    if (created.length === 0) return 0;
-    // No stake in ClaimCreated event — leave as 0 or hide
-    return 0;
-  })();
 
   return (
     <main className="mx-auto max-w-[1100px] px-4 py-10 sm:px-6 lg:px-8">
       <header className="mb-8 space-y-1.5">
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-pv-emerald">Agent activity log</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-pv-emerald">Activity log</p>
         <h1 className="font-display text-3xl font-bold tracking-tight text-pv-text sm:text-4xl">
-          What the AI agents have actually done
+          AI agents and humans, side by side
         </h1>
         <p className="max-w-2xl text-sm text-pv-muted">
-          Live on-chain event feed for Mimir&apos;s two autonomous agents. Every
-          row is a real transaction signed through Circle&apos;s Programmable
-          Wallets. Cached for 20 seconds.
+          Every row is a real on-chain transaction. Agents sign through Circle&apos;s
+          Programmable Wallets; humans through their own wallets. Cached for 20 seconds.
         </p>
+        <div className="flex flex-wrap items-center gap-2 pt-2 text-[11px] font-mono uppercase tracking-[0.16em]">
+          <span className="rounded-md border border-pv-emerald/35 bg-pv-emerald/[0.06] px-2 py-1 text-pv-emerald">
+            {agentEvents.length} agent
+          </span>
+          <span className="rounded-md border border-pv-fuch/35 bg-pv-fuch/[0.06] px-2 py-1 text-pv-fuch">
+            {humanEvents.length} human · {humanStakerCount} unique
+          </span>
+          <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
+            {events.length} total
+          </span>
+        </div>
       </header>
 
       {/* Agent profiles */}
@@ -271,17 +321,44 @@ export default async function AgentsPage() {
 
       {/* Combined live feed */}
       <section>
-        <div className="mb-4 flex items-baseline justify-between">
-          <h2 className="font-display text-xl font-bold tracking-tight text-pv-text">Live agent feed</h2>
-          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-pv-muted">{agentEvents.length} agent events · {events.length} total</span>
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="font-display text-xl font-bold tracking-tight text-pv-text">Live feed</h2>
+          <nav className="flex gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em]">
+            {([
+              { key: "all",     label: `All · ${events.length}` },
+              { key: "agents",  label: `Agents · ${agentEvents.length}` },
+              { key: "humans",  label: `Humans · ${humanEvents.length}` },
+            ] as const).map(({ key, label }) => {
+              const active = filter === key;
+              const href = key === "all" ? "?" : `?filter=${key}`;
+              return (
+                <Link
+                  key={key}
+                  href={href}
+                  scroll={false}
+                  className={`rounded-md border px-2 py-1 transition-colors ${
+                    active
+                      ? "border-pv-emerald bg-pv-emerald/[0.10] text-pv-emerald"
+                      : "border-pv-border/40 bg-pv-surface2/40 text-pv-muted hover:border-pv-emerald/40 hover:text-pv-text"
+                  }`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
         </div>
-        {agentEvents.length === 0 ? (
+        {visibleEvents.length === 0 ? (
           <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-8 text-center text-sm text-pv-muted">
-            No on-chain agent activity yet. Once the oracle settles or the market-creator opens a claim, events stream here.
+            {filter === "humans"
+              ? "No human stakers yet. Be the first — open a claim from /vs/create or challenge an open market."
+              : filter === "agents"
+              ? "No on-chain agent activity yet. Once the oracle settles or the market-creator opens a claim, events stream here."
+              : "No on-chain activity yet."}
           </div>
         ) : (
           <ul className="space-y-3">
-            {agentEvents.map((e, i) => (
+            {visibleEvents.map((e, i) => (
               <li key={`${e.kind}-${e.claimId}-${e.txHash}-${i}`} className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-4">
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-pv-muted">block #{e.blockNumber}</span>

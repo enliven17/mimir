@@ -72,6 +72,106 @@ async function fetchClaims(): Promise<ClaimRow[]> {
   }
 }
 
+interface StakerRow {
+  address:        string;
+  firstBlock:     number;
+  firstTxHash:    string;
+  claimsCreated:  number;
+  challengesMade: number;
+  kind:           "oracle" | "market-creator" | "human";
+}
+
+async function fetchStakers(oracleAddr?: string, creatorAddr?: string): Promise<StakerRow[]> {
+  const client  = createArcPublicClient();
+  const address = getContractAddress();
+  const fromBlock = getDeployBlock();
+  try {
+    const [created, challenged] = await Promise.all([
+      paginatedGetLogs(client, {
+        address,
+        event: {
+          type: "event",
+          name: "ClaimCreated",
+          inputs: [
+            { name: "id",       type: "uint256", indexed: true },
+            { name: "creator",  type: "address", indexed: true },
+            { name: "category", type: "string",  indexed: false },
+          ],
+        } as any,
+      }, fromBlock),
+      paginatedGetLogs(client, {
+        address,
+        event: {
+          type: "event",
+          name: "ClaimChallenged",
+          inputs: [
+            { name: "id",         type: "uint256", indexed: true },
+            { name: "challenger", type: "address", indexed: true },
+            { name: "stake",      type: "uint256", indexed: false },
+          ],
+        } as any,
+      }, fromBlock),
+    ]);
+
+    const oracleLower  = oracleAddr?.toLowerCase();
+    const creatorLower = creatorAddr?.toLowerCase();
+    const byAddr = new Map<string, StakerRow>();
+
+    const upsert = (
+      rawAddr: string,
+      blockNumber: number,
+      txHash: string,
+      bump: "created" | "challenged",
+    ) => {
+      const addr = rawAddr.toLowerCase();
+      if (!addr || addr === "0x0000000000000000000000000000000000000000") return;
+      const existing = byAddr.get(addr);
+      if (existing) {
+        if (blockNumber < existing.firstBlock) {
+          existing.firstBlock  = blockNumber;
+          existing.firstTxHash = txHash;
+        }
+        if (bump === "created")    existing.claimsCreated  += 1;
+        else                       existing.challengesMade += 1;
+        return;
+      }
+      byAddr.set(addr, {
+        address: addr,
+        firstBlock:     blockNumber,
+        firstTxHash:    txHash,
+        claimsCreated:  bump === "created"    ? 1 : 0,
+        challengesMade: bump === "challenged" ? 1 : 0,
+        kind:
+          addr === oracleLower  ? "oracle" :
+          addr === creatorLower ? "market-creator" :
+                                  "human",
+      });
+    };
+
+    for (const log of created as any[]) {
+      upsert(
+        String(log.args.creator ?? ""),
+        Number(log.blockNumber ?? 0),
+        log.transactionHash,
+        "created",
+      );
+    }
+    for (const log of challenged as any[]) {
+      upsert(
+        String(log.args.challenger ?? ""),
+        Number(log.blockNumber ?? 0),
+        log.transactionHash,
+        "challenged",
+      );
+    }
+
+    return Array.from(byAddr.values()).sort((a, b) => a.firstBlock - b.firstBlock);
+  } catch (err) {
+    console.error("[stats] fetchStakers failed:", err);
+    return [];
+  }
+}
+
 async function fetchSettlements(): Promise<Settlement[]> {
   const client  = createArcPublicClient();
   const address = getContractAddress();
@@ -194,6 +294,8 @@ export default async function StatsPage() {
     fetchSettlements(),
     fetchOracleAndCreator(),
   ]);
+  const stakers = await fetchStakers(agentInfo?.oracle, agentInfo?.owner);
+  const humanStakers = stakers.filter((s) => s.kind === "human");
 
   const totalClaims    = claims.length;
   const totalResolved  = settlements.length;
@@ -232,8 +334,9 @@ export default async function StatsPage() {
       </header>
 
       {/* Headline KPIs */}
-      <section className="mb-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <section className="mb-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Kpi tone="accent" label="Total wagered" value={`${totalWageredUsdc.toFixed(2)} USDC`} sub="creator + challenger stakes" />
+        <Kpi label="Unique stakers" value={stakers.length} sub={`${humanStakers.length} human · ${stakers.length - humanStakers.length} agent`} />
         <Kpi label="Claims resolved" value={totalResolved} sub={`${openClaims} open · ${totalClaims} total`} />
         <Kpi label="Oracle accuracy" value={`${accuracyPct}%`} sub="settlements at ≥ 80% confidence" />
         <Kpi label="Refund rate" value={`${refundPct}%`} sub="draw / unresolvable" />
@@ -310,6 +413,64 @@ export default async function StatsPage() {
           </div>
         </section>
       )}
+
+      {/* First stakers wall */}
+      <section className="mb-10">
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-display text-xl font-bold tracking-tight text-pv-text">First {Math.min(100, stakers.length)} stakers</h2>
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-pv-muted">
+            ordered by first on-chain stake · earliest first
+          </span>
+        </div>
+        {stakers.length === 0 ? (
+          <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-8 text-center text-sm text-pv-muted">
+            No stakers yet. The first wallet to create or challenge a claim takes seat #1.
+          </div>
+        ) : (
+          <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {stakers.slice(0, 100).map((s, i) => {
+              const seat = i + 1;
+              const tone =
+                s.kind === "oracle"         ? "border-pv-emerald/40 bg-pv-emerald/[0.06]" :
+                s.kind === "market-creator" ? "border-pv-border/50 bg-pv-surface2/40" :
+                                              "border-pv-fuch/30 bg-pv-fuch/[0.04]";
+              const badge =
+                s.kind === "oracle"
+                  ? <span className="rounded border border-pv-emerald/40 bg-pv-emerald/[0.10] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-emerald">oracle</span>
+                : s.kind === "market-creator"
+                  ? <span className="rounded border border-pv-border/60 bg-pv-surface2/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-text/80">m-creator</span>
+                  : <span className="rounded border border-pv-fuch/40 bg-pv-fuch/[0.10] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-pv-fuch">human</span>;
+              return (
+                <li
+                  key={s.address}
+                  className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${tone}`}
+                >
+                  <span className="w-8 shrink-0 text-right font-mono text-[12px] font-bold tabular-nums text-pv-muted">#{seat}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      {badge}
+                      <a
+                        href={getExplorerAddressUrl(s.address)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="truncate font-mono text-[11px] text-pv-text/85 hover:text-pv-emerald"
+                      >
+                        {s.address.slice(0, 6)}…{s.address.slice(-4)} ↗
+                      </a>
+                    </div>
+                    <div className="mt-0.5 font-mono text-[10px] text-pv-muted">
+                      {s.claimsCreated > 0 && <>opened {s.claimsCreated}</>}
+                      {s.claimsCreated > 0 && s.challengesMade > 0 && <> · </>}
+                      {s.challengesMade > 0 && <>challenged {s.challengesMade}</>}
+                      {" · block #"}{s.firstBlock}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
 
       {/* Recent settlements feed */}
       <section className="mb-10">
