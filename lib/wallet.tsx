@@ -1,10 +1,14 @@
 "use client";
 
 /**
- * Wallet context — powered by wagmi
+ * Wallet context — powered by wagmi + ConnectKit
  *
- * Supports MetaMask, Coinbase Wallet, Phantom, and any injected wallet.
- * Keeps the same useWallet() API so the rest of the app is unchanged.
+ * Supports MetaMask, Coinbase Wallet, Rainbow, Phantom, Trust, Brave, OKX,
+ * and any EIP-6963 injected wallet. WalletConnect QR adds 380+ mobile
+ * wallets when NEXT_PUBLIC_WC_PROJECT_ID is set.
+ *
+ * Keeps the same useWallet() API so the rest of the app is unchanged —
+ * connect() now opens the ConnectKit modal instead of guessing a connector.
  */
 import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import {
@@ -13,6 +17,7 @@ import {
   useDisconnect,
   useSwitchChain,
 } from "wagmi";
+import { useModal } from "connectkit";
 import { arcTestnet } from "./arc";
 
 interface WalletCtx {
@@ -45,6 +50,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { connect, connectors, isPending, error: connectError } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
+  const { setOpen: setConnectKitOpen } = useModal();
 
   const isCorrectNetwork = !chain || chain.id === arcTestnet.id;
 
@@ -69,14 +75,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isConnected, chain, switchChain]);
 
+  // Opens ConnectKit's modal — lets the user pick from every connector wagmi
+  // knows about (injected + Coinbase + WalletConnect QR + EIP-6963 discovery).
+  // We no longer guess a connector for them; that lost users whose wallet
+  // wasn't MetaMask/Coinbase and never tripped the WalletConnect QR path.
   const connectWithFirstAvailable = async () => {
-    // Try MetaMask first, then Coinbase, then any injected
-    const preferred = connectors.find((c) => c.id === "metaMask")
-      ?? connectors.find((c) => c.id === "coinbaseWallet")
-      ?? connectors[0];
-    if (preferred) {
-      connect({ connector: preferred });
-    }
+    setConnectKitOpen(true);
   };
 
   const switchNetwork = async () => {
