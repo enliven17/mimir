@@ -90,24 +90,55 @@ interface ClaimCandidate {
   sourceType:       string;
 }
 
+interface SportEvent {
+  id:            string;
+  name:          string;
+  startDate:     string;  // ISO 8601
+  startMs:       number;  // epoch ms (NaN if unparseable)
+  resolutionUrl: string;
+  status:        string;
+}
+
+interface CryptoEvent {
+  id:            string;  // coingecko slug (e.g. "bitcoin")
+  name:          string;
+  symbol:        string;
+  resolutionUrl: string;
+  priceUsd:      number;
+}
+
 // ── Source fetchers ───────────────────────────────────────────────────────────
 
-async function fetchCryptoEvents(): Promise<string> {
+async function fetchCryptoEvents(): Promise<{ text: string; events: CryptoEvent[] }> {
   try {
     const res = await fetch(
       "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&sparkline=false",
       { headers: { "User-Agent": "Mimir-MarketCreator/1.0" } }
     );
     const coins = await res.json() as any[];
-    return coins.map((c: any) =>
-      `${c.name} (${c.symbol.toUpperCase()}): $${c.current_price.toFixed(2)}, 24h change: ${c.price_change_percentage_24h?.toFixed(1)}%, market cap: $${(c.market_cap / 1e9).toFixed(1)}B`
+    const events: CryptoEvent[] = (Array.isArray(coins) ? coins : []).map((c: any) => ({
+      id:            String(c.id ?? ""),
+      name:          String(c.name ?? ""),
+      symbol:        String(c.symbol ?? "").toUpperCase(),
+      // CoinGecko URLs with /coins/<slug> hit the deterministic API path in
+      // lib/server/evidence-fetcher.ts. Always use the slug, never the symbol.
+      resolutionUrl: c.id ? `https://www.coingecko.com/en/coins/${c.id}` : "",
+      priceUsd:      Number(c.current_price ?? 0),
+    })).filter((e) => e.id && e.resolutionUrl);
+
+    const text = events.map((c) =>
+      `${c.name} (${c.symbol}, slug=${c.id}): $${c.priceUsd.toFixed(2)}`
     ).join("\n");
+    return { text: text || "Crypto data unavailable", events };
   } catch {
-    return "BTC: ~$95,000, ETH: ~$3,500, SOL: ~$180 (live data unavailable)";
+    return {
+      text: "BTC: ~$95,000, ETH: ~$3,500, SOL: ~$180 (live data unavailable)",
+      events: [],
+    };
   }
 }
 
-async function fetchSportsEvents(): Promise<string> {
+async function fetchSportsEvents(): Promise<{ text: string; events: SportEvent[] }> {
   try {
     // ESPN's public API for upcoming events (no key required for basic data)
     const res = await fetch(
@@ -115,15 +146,48 @@ async function fetchSportsEvents(): Promise<string> {
       { headers: { "User-Agent": "Mimir-MarketCreator/1.0" } }
     );
     const data = await res.json() as any;
-    const events = (data.events ?? []).slice(0, 5);
-    if (events.length === 0) return "No current NBA events found";
-    return events.map((e: any) => {
-      const comps = e.competitions?.[0]?.competitors ?? [];
-      const teams = comps.map((c: any) => `${c.team.displayName} (${c.score ?? "?"})}`).join(" vs ");
-      return `${e.name}: ${teams} — ${e.status?.type?.description ?? "scheduled"}`;
-    }).join("\n");
-  } catch {
-    return "Sports data temporarily unavailable";
+    const all = (data.events ?? []) as any[];
+
+    // Only consider scheduled, not-started games. Live games make deadline
+    // math uncertain; finished games already have a known result and would
+    // resolve immediately on the oracle's next poll. Both are dead inventory.
+    const scheduled = all.filter((e: any) => {
+      const type = e.status?.type;
+      return type?.state === "pre" && !type?.completed;
+    }).slice(0, 8);
+
+    if (scheduled.length === 0) {
+      return { text: "No upcoming NBA games found", events: [] };
+    }
+
+    const events: SportEvent[] = scheduled.map((e: any) => {
+      // Prefer the boxscore URL — it carries the final score post-game and
+      // is the cleanest source for the oracle to resolve from. Fall back to
+      // the summary URL, then construct from gameId as a last resort.
+      const links    = Array.isArray(e.links) ? e.links : [];
+      const boxscore = links.find((l: any) => Array.isArray(l.rel) && l.rel.includes("boxscore"))?.href;
+      const summary  = links.find((l: any) => Array.isArray(l.rel) && l.rel.includes("summary"))?.href;
+      const resolutionUrl = boxscore || summary || `https://www.espn.com/nba/boxscore/_/gameId/${e.id}`;
+      const startMs  = Date.parse(String(e.date ?? ""));
+
+      return {
+        id:            String(e.id ?? ""),
+        name:          String(e.name ?? "NBA game"),
+        startDate:     String(e.date ?? ""),
+        startMs,
+        resolutionUrl,
+        status:        String(e.status?.type?.detail ?? "scheduled"),
+      };
+    }).filter((ev) => ev.id && ev.resolutionUrl);
+
+    const text = events
+      .map((ev) => `${ev.name} — tips off ${ev.startDate} — ${ev.status}`)
+      .join("\n");
+
+    return { text, events };
+  } catch (err) {
+    console.warn("[market-creator] ESPN fetch failed:", err);
+    return { text: "Sports data temporarily unavailable", events: [] };
   }
 }
 
@@ -139,30 +203,55 @@ async function fetchWeatherEvents(): Promise<string> {
 
 // ── Claude drafts claims ──────────────────────────────────────────────────────
 
+// Sports games need their result + ESPN boxscore page settled before the
+// oracle can read a final score. Two-hour NBA game + ~2h boxscore lag buffer.
+const SPORTS_POST_GAME_BUFFER_MS = 4 * 3600 * 1000;
+
 async function draftClaimCandidates(sourceData: {
-  crypto: string;
-  sports: string;
-  weather: string;
+  cryptoText:   string;
+  cryptoEvents: CryptoEvent[];
+  sportsText:   string;
+  sportsEvents: SportEvent[];
+  weather:      string;
 }): Promise<ClaimCandidate[]> {
-  const now     = new Date();
-  const prompt  = `You are Mimir, an AI that creates high-quality prediction market claims for a USDC market on Arc blockchain.
+  const now = new Date();
+
+  const allowedUrlsList = [
+    ...sourceData.sportsEvents.map((e) =>
+      `- [sports] "${e.name}" (gameId=${e.id}, tipoff=${e.startDate}) → ${e.resolutionUrl}`
+    ),
+    ...sourceData.cryptoEvents.map((c) =>
+      `- [crypto] "${c.name}" (${c.symbol}) → ${c.resolutionUrl}`
+    ),
+  ].join("\n");
+
+  const prompt = `You are Mimir, an AI that creates high-quality prediction market claims for a USDC market on Arc blockchain.
 
 ## Current Data Sources
 
 ### Crypto Markets (from CoinGecko)
-${sourceData.crypto}
+${sourceData.cryptoText}
 
-### Sports Events (from ESPN)
-${sourceData.sports}
+### Upcoming NBA Games (from ESPN — scheduled, not yet started)
+${sourceData.sportsText}
 
 ### Weather Opportunity
 ${sourceData.weather}
 
+## ALLOWED RESOLUTION URLs (CRITICAL — read carefully)
+For sports and crypto candidates you MUST copy one of the URLs below verbatim into
+"resolutionUrl". Do NOT invent, modify, shorten, or guess URLs — if no URL matches
+the topic you want, skip that topic. URLs not on this list will be rejected and
+the candidate will be dropped before it reaches the chain.
+
+${allowedUrlsList || "(no allowed URLs available this run — skip sports/crypto candidates)"}
+
 ## Task
 Create ${MAX_CLAIMS_PER_RUN} prediction market claim candidates. Each must be:
-- **Verifiable**: resolvable from a specific public URL
+- **Verifiable**: resolvable from one of the URLs listed above
 - **Binary or near-binary**: clear winner/loser outcome
 - **Time-bounded**: deadline between 2-72 hours from now (${now.toISOString()})
+- **For NBA games**: deadlineHours MUST place the deadline AT LEAST 4 hours AFTER the listed tipoff time. Never create a market on a game that has already started or already finished.
 - **Specific**: no vague language like "probably" or "might"
 
 For each candidate, provide:
@@ -170,7 +259,7 @@ For each candidate, provide:
   "question": "Will [specific thing] happen by [specific date/time]?",
   "creatorPosition": "Yes — [brief reason]",
   "counterPosition": "No — [brief reason]",
-  "resolutionUrl": "https://...",  // exact URL
+  "resolutionUrl": "<one of the URLs listed above, EXACTLY>",
   "category": "crypto" | "sports" | "weather" | "culture",
   "marketType": "binary",
   "settlementRule": "Resolve YES if [exact condition] at the resolution URL at deadline.",
@@ -182,15 +271,64 @@ For each candidate, provide:
 Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
 
   const text = await callLLM(prompt, { maxTokens: 2000, jsonOnly: true });
+  let candidates: ClaimCandidate[];
   try {
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error("No JSON array in response");
-    const candidates = JSON.parse(jsonMatch[0]) as ClaimCandidate[];
-    return candidates.filter((c) => c.qualityScore >= MIN_QUALITY_SCORE);
+    candidates = JSON.parse(jsonMatch[0]) as ClaimCandidate[];
   } catch (err) {
     console.warn("[market-creator] Failed to parse candidates:", err);
     return [];
   }
+
+  // Allowlist enforcement — the LLM still hallucinates URLs sometimes even
+  // with a strict prompt. Drop the candidate here rather than letting the
+  // oracle waste an LLM call on an unresolvable claim. Sports gets an extra
+  // deadline-vs-tipoff guard so we don't create markets whose deadline falls
+  // before the game ends.
+  const sportsUrls = new Map(sourceData.sportsEvents.map((e) => [e.resolutionUrl, e]));
+  const cryptoUrls = new Set(sourceData.cryptoEvents.map((c) => c.resolutionUrl));
+  const nowMs      = Date.now();
+
+  return candidates.filter((c) => {
+    if (typeof c?.qualityScore !== "number" || c.qualityScore < MIN_QUALITY_SCORE) {
+      return false;
+    }
+    const cat = String(c.category ?? "").toLowerCase();
+    const url = String(c.resolutionUrl ?? "");
+
+    if (cat === "sports") {
+      const game = sportsUrls.get(url);
+      if (!game) {
+        console.warn(`[market-creator] Drop sports candidate — URL not in allowlist: ${url}`);
+        return false;
+      }
+      const deadlineMs = nowMs + Number(c.deadlineHours ?? 0) * 3600 * 1000;
+      const minDeadline = Number.isFinite(game.startMs)
+        ? game.startMs + SPORTS_POST_GAME_BUFFER_MS
+        : nowMs;
+      if (deadlineMs < minDeadline) {
+        console.warn(
+          `[market-creator] Drop sports candidate — deadline ${new Date(deadlineMs).toISOString()} ` +
+          `is before tipoff+4h (${new Date(minDeadline).toISOString()})`
+        );
+        return false;
+      }
+      return true;
+    }
+
+    if (cat === "crypto") {
+      if (!cryptoUrls.has(url)) {
+        console.warn(`[market-creator] Drop crypto candidate — URL not in allowlist: ${url}`);
+        return false;
+      }
+      return true;
+    }
+
+    // weather / culture / other: no allowlist — let it through. The oracle's
+    // own evidence fetcher + low-confidence refund path handles these.
+    return true;
+  });
 }
 
 // ── Create claim on-chain ─────────────────────────────────────────────────────
@@ -346,9 +484,19 @@ async function run(): Promise<void> {
     fetchSportsEvents(),
     fetchWeatherEvents(),
   ]);
+  console.log(
+    `[market-creator] Sources: crypto=${crypto.events.length} pairs, ` +
+    `sports=${sports.events.length} scheduled games`
+  );
 
   console.log("[market-creator] Drafting claim candidates with Claude...");
-  const candidates = await draftClaimCandidates({ crypto, sports, weather });
+  const candidates = await draftClaimCandidates({
+    cryptoText:   crypto.text,
+    cryptoEvents: crypto.events,
+    sportsText:   sports.text,
+    sportsEvents: sports.events,
+    weather,
+  });
 
   if (candidates.length === 0) {
     console.log("[market-creator] No high-quality candidates this run.");
