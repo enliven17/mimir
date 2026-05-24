@@ -377,27 +377,34 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
   }
 }
 
-// ── Cancel sweep ──────────────────────────────────────────────────────────────
+// ── Cancel sweep + joinable count ─────────────────────────────────────────────
 // `cancelClaim` is creator-only and only valid while the claim is still OPEN
 // (no challengers). It has no deadline guard, so we add one ourselves: only
 // cancel claims whose deadline has passed — otherwise we'd kill markets that
 // might still get a challenger. Stake is refunded by the contract on cancel.
+//
+// The same single-pass walk also counts JOINABLE claims (state ∈ {OPEN,ACTIVE}
+// && deadline > now). This is the right inventory signal — getPlatformStats
+// returns `claimCount - totalResolved`, which lumps CANCELLED and abandoned
+// expired-OPEN claims (created by other addresses, no challenger, no
+// cancellation rights) into "unresolved" and falsely saturates the cap.
 
 const CREATOR_ADDR_LC = CREATOR_ADDR.toLowerCase();
 
-async function cancelStaleOpenClaims(): Promise<number> {
+async function sweepAndCount(): Promise<{ cancelled: number; joinable: number }> {
   let total: bigint;
   try {
     total = await publicClient.readContract({
       address: CONTRACT_ADDRESS, abi: MIMIR_ABI, functionName: "claimCount",
     }) as bigint;
   } catch (err) {
-    console.warn("[market-creator] Failed to read claimCount for cancel sweep:", err);
-    return 0;
+    console.warn("[market-creator] Failed to read claimCount for sweep:", err);
+    return { cancelled: 0, joinable: 0 };
   }
 
   const now = BigInt(Math.floor(Date.now() / 1000));
   let cancelled = 0;
+  let joinable = 0;
 
   for (let id = 1; id <= Number(total); id++) {
     let claim: any;
@@ -410,9 +417,13 @@ async function cancelStaleOpenClaims(): Promise<number> {
       continue;
     }
     if (!claim) continue;
-    const creator   = String(claim[0]).toLowerCase();
-    const deadline  = BigInt(claim[8]);
-    const state     = Number(claim[9]);
+    const creator  = String(claim[0]).toLowerCase();
+    const deadline = BigInt(claim[8]);
+    const state    = Number(claim[9]);
+
+    if ((state === STATE.OPEN || state === STATE.ACTIVE) && deadline > now) {
+      joinable++;
+    }
 
     if (creator !== CREATOR_ADDR_LC) continue;
     if (state !== STATE.OPEN) continue;
@@ -435,7 +446,7 @@ async function cancelStaleOpenClaims(): Promise<number> {
       console.error(`[market-creator] Failed to cancel #${id}:`, err);
     }
   }
-  return cancelled;
+  return { cancelled, joinable };
 }
 
 // ── Main run ──────────────────────────────────────────────────────────────────
@@ -447,34 +458,22 @@ async function run(): Promise<void> {
   console.log(`[market-creator] Creator : ${CREATOR_ADDR}`);
   console.log(`[market-creator] Balance : ${microToUsdc(balance).toFixed(4)} USDC`);
 
-  // First sweep stale expired-OPEN claims — these are stuck holding the
-  // creator stake. Cancelling them refunds back to CREATOR_ADDR and also
-  // frees up inventory headroom for the cap check below.
-  const cancelled = await cancelStaleOpenClaims();
+  // Single-pass sweep: cancels creator's stale expired-OPEN claims AND counts
+  // joinable inventory (state ∈ {OPEN,ACTIVE} && deadline > now) on the same
+  // claim walk. Joinable count drives the cap — getPlatformStats was wrong
+  // here because it counted CANCELLED and abandoned expired-OPEN claims as
+  // "unresolved" and deadlocked the creator at the cap forever.
+  const { cancelled, joinable } = await sweepAndCount();
   if (cancelled > 0) {
     console.log(`[market-creator] Cancelled ${cancelled} stale claim(s) — stake refunded.`);
   }
 
-  // Inventory check — skip if there are already enough unresolved markets on
-  // chain. Container restarts otherwise burn LLM quota drafting a fresh batch
-  // every boot even though the marketplace is already saturated.
-  let unresolved = 0;
-  try {
-    const stats = await publicClient.readContract({
-      address:      CONTRACT_ADDRESS,
-      abi:          MIMIR_ABI,
-      functionName: "getPlatformStats",
-    }) as readonly [bigint, bigint, bigint];
-    unresolved = Number(stats[0] - stats[1]);
-  } catch (err) {
-    console.warn("[market-creator] Failed to read getPlatformStats — proceeding without inventory cap:", err);
-  }
-  console.log(`[market-creator] Unresolved on-chain: ${unresolved} (cap: ${MAX_ACTIVE_CLAIMS})`);
-  if (unresolved >= MAX_ACTIVE_CLAIMS) {
+  console.log(`[market-creator] Joinable on-chain: ${joinable} (cap: ${MAX_ACTIVE_CLAIMS})`);
+  if (joinable >= MAX_ACTIVE_CLAIMS) {
     console.log(`[market-creator] Inventory ≥ cap — skipping this run.`);
     return;
   }
-  const headroom = Math.max(0, MAX_ACTIVE_CLAIMS - unresolved);
+  const headroom = Math.max(0, MAX_ACTIVE_CLAIMS - joinable);
   const toCreate = Math.min(MAX_CLAIMS_PER_RUN, headroom);
 
   // Fetch source data in parallel
