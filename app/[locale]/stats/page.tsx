@@ -37,6 +37,11 @@ interface ClaimRow {
   confidence:           number;
 }
 
+// Concurrency cap for the per-claim getClaim fan-out. Arc testnet RPC throttles
+// (HTTP 429) when slammed with `Promise.all` over 100+ IDs. 5 workers keeps the
+// burst tiny while still finishing a 100-claim page in well under a second.
+const STATS_READ_CONCURRENCY = 5;
+
 async function fetchClaims(): Promise<ClaimRow[]> {
   const client  = createArcPublicClient();
   const address = getContractAddress();
@@ -45,27 +50,39 @@ async function fetchClaims(): Promise<ClaimRow[]> {
     const count = await client.readContract({
       address, abi: MIMIR_ABI, functionName: "claimCount",
     }) as bigint;
-    const ids = Array.from({ length: Number(count) }, (_, i) => i + 1);
-    const claims = await Promise.all(
-      ids.map(async (id) => {
-        try {
-          const base = await client.readContract({
-            address, abi: MIMIR_ABI, functionName: "getClaim", args: [BigInt(id)],
-          }) as readonly any[];
-          return {
-            id,
-            creator:              base[0] as string,
-            question:             base[1] as string,
-            creatorStake:         BigInt(base[5]),
-            totalChallengerStake: BigInt(base[6]),
-            state:                Number(base[9]),
-            winnerSide:           Number(base[10]),
-            confidence:           Number(base[12]),
-          };
-        } catch {
-          return null;
-        }
-      }),
+    const total = Number(count);
+    const claims: (ClaimRow | null)[] = new Array(total);
+
+    async function readOne(id: number): Promise<ClaimRow | null> {
+      try {
+        const base = await client.readContract({
+          address, abi: MIMIR_ABI, functionName: "getClaim", args: [BigInt(id)],
+        }) as readonly any[];
+        return {
+          id,
+          creator:              base[0] as string,
+          question:             base[1] as string,
+          creatorStake:         BigInt(base[5]),
+          totalChallengerStake: BigInt(base[6]),
+          state:                Number(base[9]),
+          winnerSide:           Number(base[10]),
+          confidence:           Number(base[12]),
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    let cursor = 0;
+    async function worker() {
+      while (true) {
+        const idx = cursor++;
+        if (idx >= total) return;
+        claims[idx] = await readOne(idx + 1);
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(STATS_READ_CONCURRENCY, total) }, () => worker()),
     );
     return claims.filter((c): c is ClaimRow => c !== null);
   } catch (err) {

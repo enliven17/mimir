@@ -47,8 +47,18 @@ export const wagmiConfig = createConfig({
         })]
       : []),
   ],
+  // JSON-RPC batching + retry on Arc keeps the browser from getting throttled
+  // (HTTP 429) when wagmi's react-query layer fans out useReadContract calls
+  // — every claim card on the feed page would otherwise issue its own POST.
+  // Other chains use viem defaults (a single retry, no batch) since they're
+  // only touched during the CCTP bridge handshake.
   transports: {
-    [arcTestnet.id]:     http(getArcRpcUrl()),
+    [arcTestnet.id]: http(getArcRpcUrl(), {
+      batch: { batchSize: 200, wait: 16 },
+      retryCount: 3,
+      retryDelay: 300,
+      timeout: 20_000,
+    }),
     [sepolia.id]:        http(),
     [baseSepolia.id]:    http(),
     [avalancheFuji.id]:  http(),

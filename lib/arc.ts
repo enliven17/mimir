@@ -99,11 +99,28 @@ export function getExplorerAddressUrl(address: string): string {
 }
 
 // ── viem clients ──────────────────────────────────────────────────────────────
+// Arc public RPC returns HTTP 429 when slammed with 100+ parallel single-call
+// readContracts (a 100-claim feed × 3 reads per claim = 300 simultaneous
+// POSTs). viem's JSON-RPC batch transport bundles all eth_call requests that
+// fire within `wait` ms into one POST body, which drops the request count by
+// ~100x and keeps us under the throttle. retryCount/retryDelay also smooth
+// over the rare 429 that still slips through.
+const ARC_HTTP_OPTS = {
+  batch: { batchSize: 200, wait: 16 } as const,
+  retryCount: 3,
+  retryDelay: 300,
+  timeout: 20_000,
+};
+
 export function createArcPublicClient(): PublicClient {
   return createPublicClient({
     chain: arcTestnet,
-    transport: http(getArcRpcUrl()),
+    transport: http(getArcRpcUrl(), ARC_HTTP_OPTS),
   }) as PublicClient;
+}
+
+export function createArcHttpTransport() {
+  return http(getArcRpcUrl(), ARC_HTTP_OPTS);
 }
 
 export function createArcWalletClient(provider: unknown): WalletClient {
@@ -118,7 +135,7 @@ export function createArcWalletClientWithKey(privateKey: string): WalletClient {
   return createWalletClient({
     chain: arcTestnet,
     account,
-    transport: http(getArcRpcUrl()),
+    transport: http(getArcRpcUrl(), ARC_HTTP_OPTS),
   });
 }
 

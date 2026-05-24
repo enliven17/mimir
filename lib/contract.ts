@@ -184,15 +184,63 @@ function mapWinnerSide(n: number): ClaimData["winner_side"] {
 }
 
 // ── viem public client (singleton per process) ────────────────────────────────
+// Uses the same JSON-RPC batching transport as createArcPublicClient — see
+// lib/arc.ts ARC_HTTP_OPTS for the rationale.
 let _publicClient: PublicClient | null = null;
 function getPublicClient(): PublicClient {
   if (!_publicClient) {
     _publicClient = createPublicClient({
       chain: arcTestnet,
-      transport: http(getArcRpcUrl()),
+      transport: http(getArcRpcUrl(), {
+        batch: { batchSize: 200, wait: 16 },
+        retryCount: 3,
+        retryDelay: 300,
+        timeout: 20_000,
+      }),
     }) as PublicClient;
   }
   return _publicClient;
+}
+
+// ── Bulk-read concurrency limiter ─────────────────────────────────────────────
+// Arc testnet RPC returns 429 when hit with hundreds of parallel readContract
+// calls. Every claim costs 3 RPC calls (getClaim + getClaimMarketConfig +
+// getChallengerList), so `Promise.all` over 100+ claims = ~300 parallel
+// requests = throttled.
+//
+// We funnel all bulk claim reads through this helper instead. Default of 5
+// keeps peak concurrency at ~15 (5 claims × 3 calls), well within any sane
+// RPC rate limit. Tuneable via NEXT_PUBLIC_RPC_READ_CONCURRENCY if Arc gets
+// generous.
+const READ_CONCURRENCY = (() => {
+  const raw = Number(
+    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RPC_READ_CONCURRENCY) || "5"
+  );
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 5;
+})();
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  fn: (item: T, index: number) => Promise<R>,
+  concurrency = READ_CONCURRENCY,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+async function readClaimsRange(startId: number, count: number): Promise<(ClaimData | null)[]> {
+  const ids = Array.from({ length: count }, (_, i) => startId + i);
+  return mapWithConcurrency(ids, (id) => readClaimRaw(id));
 }
 
 // ── Raw on-chain read ─────────────────────────────────────────────────────────
@@ -332,8 +380,7 @@ export async function getClaimCount(): Promise<number> {
 }
 
 export async function getVSSummaries(startId: number, limit: number): Promise<VSData[]> {
-  const ids = Array.from({ length: limit }, (_, i) => startId + i);
-  const results = await Promise.all(ids.map((id) => readClaimRaw(id)));
+  const results = await readClaimsRange(startId, limit);
   return (results.filter(Boolean) as ClaimData[]).map(mapClaimToVS);
 }
 
@@ -341,9 +388,7 @@ export async function getUserVSSummaries(address: string): Promise<VSData[]> {
   const count = await getClaimCount();
   if (count <= 0) return [];
 
-  const all = await Promise.all(
-    Array.from({ length: count }, (_, i) => readClaimRaw(i + 1))
-  );
+  const all = await readClaimsRange(1, count);
 
   const addr = address.toLowerCase();
   return all
@@ -402,14 +447,14 @@ export async function getAllVSDirect(): Promise<VSFeedSnapshot> {
   const count = await getClaimCount();
   if (count <= 0) return { items: [], cache: makeLiveFreshness() };
 
-  const PAGE = 50;
-  const pages = await Promise.all(
-    Array.from({ length: Math.ceil(count / PAGE) }, (_, i) =>
-      getVSSummaries(i * PAGE + 1, PAGE)
-    )
-  );
+  // Single concurrency-limited read across all IDs — paginating then
+  // Promise.all-ing pages just multiplied the concurrent request burst by
+  // page-count and was the main 429 source on Arc.
+  const all = await readClaimsRange(1, count);
   return {
-    items: pages.flat().sort((a, b) => b.id - a.id),
+    items: (all.filter(Boolean) as ClaimData[])
+      .map(mapClaimToVS)
+      .sort((a, b) => b.id - a.id),
     cache: makeLiveFreshness(),
   };
 }
@@ -887,9 +932,7 @@ export async function acceptVS(
 export async function getOpenVSSummaries(): Promise<VSData[]> {
   const count = await getClaimCount();
   if (count <= 0) return [];
-  const all = await Promise.all(
-    Array.from({ length: count }, (_, i) => readClaimRaw(i + 1))
-  );
+  const all = await readClaimsRange(1, count);
   return (all.filter(Boolean) as ClaimData[])
     .filter((c) => (c.state === "open" || c.state === "active") && !c.is_private)
     .map(mapClaimToVS);
@@ -897,8 +940,7 @@ export async function getOpenVSSummaries(): Promise<VSData[]> {
 
 /** Returns paginated claims as ClaimData (for server-side indexer). */
 export async function getClaimSummaries(startId: number, limit: number): Promise<ClaimData[]> {
-  const ids = Array.from({ length: limit }, (_, i) => startId + i);
-  const results = await Promise.all(ids.map((id) => readClaimRaw(id)));
+  const results = await readClaimsRange(startId, limit);
   return results.filter(Boolean) as ClaimData[];
 }
 
@@ -914,9 +956,7 @@ export async function getClaimWithAccess(
 export async function getOpenClaimSummaries(): Promise<ClaimData[]> {
   const count = await getClaimCount();
   if (count <= 0) return [];
-  const all = await Promise.all(
-    Array.from({ length: count }, (_, i) => readClaimRaw(i + 1))
-  );
+  const all = await readClaimsRange(1, count);
   return (all.filter(Boolean) as ClaimData[]).filter(
     (c) => (c.state === "open" || c.state === "active") && !c.is_private
   );
@@ -926,9 +966,7 @@ export async function getOpenClaimSummaries(): Promise<ClaimData[]> {
 export async function getUserClaimSummaries(address: string): Promise<ClaimData[]> {
   const count = await getClaimCount();
   if (count <= 0) return [];
-  const all = await Promise.all(
-    Array.from({ length: count }, (_, i) => readClaimRaw(i + 1))
-  );
+  const all = await readClaimsRange(1, count);
   const addr = address.toLowerCase();
   return (all.filter(Boolean) as ClaimData[]).filter((c) => {
     const isCreator    = c.creator.toLowerCase() === addr;
