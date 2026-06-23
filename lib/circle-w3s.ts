@@ -194,6 +194,78 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// ── EIP-712 typed-data signing (for x402 nanopayments) ──────────────────────────
+// x402's "exact"/batched schemes pay by signing an EIP-3009 transferWithAuthorization
+// off-chain. We delegate that signature to W3S so the paying agent still holds no
+// local key — the entity secret never leaves this process, only a fresh ciphertext
+// travels to Circle per request (same model as executeContract).
+
+export interface Eip712TypedData {
+  domain: Record<string, unknown>;
+  types: Record<string, Array<{ name: string; type: string }>>;
+  primaryType: string;
+  message: Record<string, unknown>;
+}
+
+interface SignatureResponse {
+  data: { signature: string };
+}
+
+/**
+ * Build the canonical EIP-712 `data` string Circle's /sign/typedData expects.
+ * x402 signers hand us {domain,types,primaryType,message} WITHOUT the
+ * EIP712Domain type entry, so we synthesize it from whichever domain fields
+ * are present (order matters for the domain separator hash).
+ */
+export function buildEip712Payload(td: Eip712TypedData): string {
+  const domainFieldTypes: Record<string, string> = {
+    name: "string",
+    version: "string",
+    chainId: "uint256",
+    verifyingContract: "address",
+    salt: "bytes32",
+  };
+  const eip712Domain = Object.keys(domainFieldTypes)
+    .filter((k) => td.domain[k] !== undefined)
+    .map((k) => ({ name: k, type: domainFieldTypes[k] }));
+
+  // EIP-712 uint256 fields arrive as BigInt (amount, validAfter, validBefore,
+  // nonce…). JSON can't serialize BigInt, and Circle expects them as decimal
+  // strings in the typed-data JSON — so stringify them on the way out.
+  return JSON.stringify(
+    {
+      types: { EIP712Domain: eip712Domain, ...td.types },
+      domain: td.domain,
+      primaryType: td.primaryType,
+      message: td.message,
+    },
+    (_key, value) => (typeof value === "bigint" ? value.toString() : value),
+  );
+}
+
+/**
+ * Sign EIP-712 typed data with a W3S developer-controlled wallet.
+ * Returns the 0x-prefixed signature.
+ */
+export async function signTypedDataW3S(
+  walletId: string,
+  typedData: Eip712TypedData,
+  memo?: string,
+): Promise<`0x${string}`> {
+  const ciphertext = await encryptEntitySecret();
+  const resp = await circleFetch<SignatureResponse>(
+    "POST",
+    "/developer/sign/typedData",
+    {
+      walletId,
+      data: buildEip712Payload(typedData),
+      entitySecretCiphertext: ciphertext,
+      ...(memo ? { memo } : {}),
+    },
+  );
+  return resp.data.signature as `0x${string}`;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
