@@ -10,6 +10,30 @@ The agents that run Mimir do not hold private keys. They sign every transaction 
 
 ---
 
+## Lepton hackathon — what's new since Arc
+
+Mimir won the Arc/Agora hackathon as a macro-stake claim market. For Lepton (nanopayments theme), the agents became **paying and selling economic actors at sub-cent granularity** via **x402** + **Circle Gateway Nanopayments** — settled in test USDC on Arc, signed through W3S (**no local private keys**, the property Circle's own `GatewayClient` can't keep).
+
+| New since Arc | What it does | Endpoint / script | Proven |
+| --- | --- | --- | --- |
+| **Paying oracle** | Oracle pays per-fetch for paywalled evidence (HTTP 402), budgeting a fraction of the claim pot — the agent *decides* what evidence is worth buying | `lib/x402.ts`, `lib/server/evidence-fetcher.ts` | ✅ live |
+| **Premium data API** | Sells price snapshots per call ($0.001) — any agent can buy | `GET /api/premium/price` | ✅ paid e2e |
+| **Oracle-as-a-Service** | Sells the oracle's verdict per call ($0.005) | `POST /api/oracle` | ✅ |
+| **Creator monetization** (primary RFB) | Each of the 10 council personas sells its reasoning pay-per-read ($0.001); **revenue settles into that persona's own wallet** | `GET /api/council/reasoning` | ✅ paid → persona wallet |
+| **Gateway deposit via W3S** | Enables gasless batched payments without a private key | `npm run gateway:deposit` | ✅ 5 USDC deposited |
+| **Agent-to-agent payment** | One Mimir agent buys from another, real USDC flowing | `npm run x402:demo` | ✅ |
+| **Traction generator** | Drives real nanopayments for the traction story | `npm run x402:traffic` | ✅ 10/10 settled |
+| **Revenue dashboard** | Live USDC earned, paying agents, per-endpoint | `/revenue` | ✅ |
+
+**Architecture:** the buyer signs the x402 EIP-3009 authorization through W3S `signTypedData` (no key), the seller side runs Circle's Gateway middleware which settles through Circle's hosted facilitator on Arc testnet. See `lib/x402.ts` (buy) and `lib/x402-server.ts` (sell).
+
+```
+oracle ──$0.001 USDC──►  /api/premium/price  ──►  Gateway facilitator  ──►  settled on Arc
+(W3S signs, no key)      (Circle Gateway mw)      (Circle hosted)            (payer=oracle)
+```
+
+---
+
 ## Table of contents
 
 - [What it does](#what-it-does)
