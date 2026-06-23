@@ -36,7 +36,22 @@ const CLOUDFLARE_MARKERS = [
   "attention required! | cloudflare",
 ] as const;
 
-export type EvidenceFetcherKind = "coingecko-api" | "direct" | "jina";
+export type EvidenceFetcherKind = "coingecko-api" | "direct" | "jina" | "x402-paid";
+
+/** What the agent paid to obtain a paywalled (x402) evidence source. */
+export interface EvidencePayment {
+  /** Price in the asset's atomic units (USDC = 6dp). */
+  priceAtomic: string;
+  asset: string;
+  /** Decoded settlement receipt from the X-PAYMENT-RESPONSE header, if any. */
+  settlement: unknown | null;
+}
+
+/** Budgeted paying fetch injected by the caller (oracle wires lib/x402). */
+export type PaidFetch = (
+  url: string,
+  init?: RequestInit,
+) => Promise<{ response: Response; payment: EvidencePayment | null }>;
 
 export interface EvidenceSnapshot {
   /** Normalized final URL (after redirects when applicable). */
@@ -49,6 +64,8 @@ export interface EvidenceSnapshot {
   fetchedAt: number;
   /** Which path produced this snapshot. Callers can use this to gate trust. */
   fetcher: EvidenceFetcherKind;
+  /** Set when the source was paywalled and the agent paid via x402. */
+  payment?: EvidencePayment;
 }
 
 export class EvidenceFetchError extends Error {
@@ -67,6 +84,13 @@ export interface FetchEvidenceOptions {
   timeoutMs?: number;
   /** When true, skip the Jina fallback and let direct failures bubble up. */
   disableJinaFallback?: boolean;
+  /**
+   * When set, a 402 Payment Required from the source is paid via this budgeted
+   * fetch (x402 nanopayment) instead of failing. The caller owns the budget cap
+   * and the W3S signer — see lib/x402.ts fetchWithBudget. Absent → 402 behaves
+   * like any other error (falls through to Jina / failure).
+   */
+  paidFetch?: PaidFetch;
 }
 
 export async function fetchEvidence(
@@ -106,6 +130,13 @@ async function fetchGenericSnapshot(
   const userAgent = opts.userAgent ?? "Mimir-Bot/1.0 (+https://mimir.app)";
 
   const direct = await tryDirectFetch(url, { timeoutMs, userAgent });
+
+  // Paywalled source: the agent pays the x402 nanopayment and re-fetches.
+  if (direct.statusCode === 402 && opts.paidFetch) {
+    const paid = await fetchViaX402(url, opts.paidFetch, { maxChars });
+    if (paid) return paid;
+    // Payment declined (over budget) or unparseable — fall through to failure.
+  }
 
   if (direct.ok && !looksLikeCloudflareInterstitial(direct.body)) {
     const text = stripHtml(direct.body).slice(0, maxChars);
@@ -174,6 +205,40 @@ async function tryDirectFetch(
   } catch {
     return { ok: false, body: "", finalUrl };
   }
+}
+
+// ── x402 paid path ─────────────────────────────────────────────────────────
+// Hit when a source replies 402 and the caller supplied a budgeted paying fetch.
+// Returns null (not throw) when payment was declined or yielded no usable body,
+// so the generic path can fall through to its normal failure handling.
+async function fetchViaX402(
+  url: URL,
+  paidFetch: PaidFetch,
+  args: { maxChars: number },
+): Promise<EvidenceSnapshot | null> {
+  let paid: { response: Response; payment: EvidencePayment | null };
+  try {
+    paid = await paidFetch(url.toString());
+  } catch {
+    return null; // X402BudgetExceeded or network error — agent walked away
+  }
+  if (!paid.response.ok) return null;
+
+  const raw = await paid.response.text();
+  const contentType = paid.response.headers.get("content-type") || "";
+  const text = (/(html|xml)/i.test(contentType) ? stripHtml(raw) : raw)
+    .trim()
+    .slice(0, args.maxChars);
+  if (text.length < 1) return null;
+
+  return {
+    sourceUrl: url.toString(),
+    title: /(html|xml)/i.test(contentType) ? extractTitle(raw) : "",
+    text,
+    fetchedAt: Date.now(),
+    fetcher: "x402-paid",
+    ...(paid.payment ? { payment: paid.payment } : {}),
+  };
 }
 
 async function fetchViaJina(

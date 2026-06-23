@@ -56,7 +56,9 @@ import {
   fetchEvidence as fetchEvidenceShared,
   EvidenceFetchError,
   type EvidenceFetcherKind,
+  type EvidencePayment,
 } from "../../lib/server/evidence-fetcher";
+import { fetchWithBudget, usdcToAtomic } from "../../lib/x402";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = Number(process.env.ORACLE_POLL_INTERVAL_MS ?? "60000");
@@ -66,6 +68,14 @@ const AUTO_CHALLENGE        = process.env.AUTO_CHALLENGE === "1";
 const CHALLENGE_STAKE_USDC  = Number(process.env.CHALLENGE_STAKE_USDC ?? "2");
 const CHALLENGE_CONFIDENCE  = Number(process.env.CHALLENGE_CONFIDENCE ?? "80");
 const LLM_THROTTLE_MS       = Number(process.env.ORACLE_LLM_THROTTLE_MS ?? "0");
+
+// x402 paid-evidence config. The oracle becomes a PAYING agent: when a resolution
+// source answers 402, it buys the data with a sub-cent USDC nanopayment — but
+// only up to a budget tied to what's actually at stake on the claim.
+const PAY_EVIDENCE        = process.env.PAY_EVIDENCE !== "0"; // on by default
+const EVIDENCE_POOL_BPS   = Number(process.env.EVIDENCE_POOL_BPS ?? "50");   // 0.5% of pot
+const EVIDENCE_MAX_USDC   = Number(process.env.EVIDENCE_MAX_USDC ?? "0.05"); // hard ceiling
+const EVIDENCE_MIN_USDC   = Number(process.env.EVIDENCE_MIN_USDC ?? "0.001");// floor (still pay tiny sources)
 
 // Module-scoped throttle gate. Free-tier Gemini is 5 RPM on new accounts and
 // the oracle has no other rate limiter — every claim in a poll fires an LLM
@@ -186,18 +196,59 @@ async function fetchClaim(claimId: number): Promise<ClaimOnChain | null> {
 interface EvidenceResult {
   text: string;
   fetcher: EvidenceFetcherKind | "none";
+  payment?: EvidencePayment;
 }
 
-async function fetchEvidence(url: string): Promise<EvidenceResult> {
+/**
+ * How much the oracle is willing to pay for evidence on THIS claim: a fraction
+ * of the pot, clamped between a floor and a hard ceiling. The bigger the stakes,
+ * the more it'll pay to read the truth — but never more than EVIDENCE_MAX_USDC.
+ * This is the agent's spending judgement, in code.
+ */
+function evidenceBudgetUsdc(claim: ClaimOnChain): number {
+  const potUsdc = microToUsdc(claim.creatorStake + claim.totalChallengerStake);
+  const fraction = (potUsdc * EVIDENCE_POOL_BPS) / 10_000;
+  return Math.min(EVIDENCE_MAX_USDC, Math.max(EVIDENCE_MIN_USDC, fraction));
+}
+
+async function fetchEvidence(claim: ClaimOnChain): Promise<EvidenceResult> {
+  const url = claim.resolutionUrl;
   if (!url?.startsWith("http")) {
     return { text: "(No resolution URL provided)", fetcher: "none" };
   }
+
+  // Wire the budgeted paying fetch only when payment is enabled. Evidence-fetcher
+  // calls it solely on a 402; free sources never trigger a payment.
+  const budgetUsdc = evidenceBudgetUsdc(claim);
+  const maxAtomic = usdcToAtomic(budgetUsdc);
+  const paidFetch = PAY_EVIDENCE
+    ? async (u: string, init?: RequestInit) => {
+        const r = await fetchWithBudget(
+          u,
+          { walletId: ORACLE_WALLET, address: ORACLE_ADDR },
+          maxAtomic,
+          init,
+        );
+        return {
+          response: r.response,
+          payment: r.payment
+            ? {
+                priceAtomic: r.payment.priceAtomic.toString(),
+                asset: r.payment.asset,
+                settlement: r.payment.settlement,
+              }
+            : null,
+        };
+      }
+    : undefined;
+
   try {
     const snap = await fetchEvidenceShared(url, {
       maxChars: MAX_CONTENT_CHARS,
       userAgent: "Mimir-Oracle/1.0",
+      paidFetch,
     });
-    return { text: snap.text, fetcher: snap.fetcher };
+    return { text: snap.text, fetcher: snap.fetcher, payment: snap.payment };
   } catch (err: any) {
     const msg = err instanceof EvidenceFetchError
       ? err.message
@@ -346,8 +397,12 @@ function applyFetcherTrust(
 async function settle(claim: ClaimOnChain): Promise<void> {
   console.log(`\n[settle] Claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
 
-  const evidence     = await fetchEvidence(claim.resolutionUrl);
+  const evidence     = await fetchEvidence(claim);
   console.log(`[settle] Evidence fetcher: ${evidence.fetcher}`);
+  if (evidence.payment) {
+    const usdc = Number(evidence.payment.priceAtomic) / 1_000_000;
+    console.log(`[settle] 💸 Paid ${usdc} ${evidence.payment.asset} for evidence (x402 nanopayment)`);
+  }
   const evidenceHash = hashEvidence(evidence.text);
   const rawVerdict   = await evaluateClaim(claim, evidence.text);
   const trusted      = applyFetcherTrust(rawVerdict, evidence.fetcher);
@@ -418,7 +473,7 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   console.log(`\n[challenge] Evaluating claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
   evaluatedClaimIds.add(claim.id);
 
-  const evidence = await fetchEvidence(claim.resolutionUrl);
+  const evidence = await fetchEvidence(claim);
 
   // Short-circuit: with no real evidence the LLM will return UNRESOLVABLE,
   // which never satisfies the CHALLENGERS_WIN/≥80% bar below. Skip the
