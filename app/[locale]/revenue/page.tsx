@@ -33,8 +33,6 @@ function short(addr: string | null): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
-// Arc testnet explorer. A settlement tx id that's a 0x hash links to the
-// on-chain receipt; non-hash ids (Circle settlement ids) render as plain text.
 const ARCSCAN = "https://testnet.arcscan.app";
 function isTxHash(id: string | null): id is string {
   return !!id && /^0x[0-9a-fA-F]{64}$/.test(id);
@@ -65,40 +63,38 @@ export default function RevenuePage() {
   }, []);
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">x402 Revenue</h1>
-      <p className="mt-1 text-sm text-neutral-400">
+    <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <h1 className="font-display text-2xl font-bold tracking-tight text-pv-text">x402 Revenue</h1>
+      <p className="mt-1.5 font-mono text-[13px] text-pv-muted">
         Live USDC nanopayments flowing into Mimir&apos;s paid endpoints. Refreshes every 5s.
       </p>
 
-      {err && <p className="mt-6 text-sm text-red-400">Couldn&apos;t load: {err}</p>}
+      {err && <p className="mt-6 font-mono text-sm text-pv-danger">Couldn&apos;t load: {err}</p>}
 
-      {!data && !err && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
+      {!data && !err && <p className="mt-6 font-mono text-sm text-pv-muted">Loading…</p>}
 
       {data && (
         <>
-          <section className="mt-8 grid grid-cols-3 gap-4">
+          <section className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Stat label="Paid calls" value={data.totalCalls.toLocaleString()} />
-            <Stat label="Total earned" value={`$${data.totalUsd.toFixed(6)}`} />
+            <Stat label="Total earned" value={`$${data.totalUsd.toFixed(6)}`} accent />
             <Stat label="Paying agents" value={data.uniquePayers.toLocaleString()} />
           </section>
 
           <section className="mt-10">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-400">
-              By endpoint
-            </h2>
-            <div className="mt-3 divide-y divide-neutral-800 rounded-lg border border-neutral-800">
+            <h2 className="label">By endpoint</h2>
+            <div className="card mt-3 divide-y divide-black/[0.08]">
               {data.byResource.length === 0 && (
-                <p className="px-4 py-6 text-sm text-neutral-500">
-                  No payments yet — run <code className="text-neutral-300">npm run x402:demo</code>.
+                <p className="px-4 py-6 font-mono text-sm text-pv-muted">
+                  No payments yet — run <code className="text-pv-text">npm run x402:demo</code>.
                 </p>
               )}
               {data.byResource.map((r) => (
                 <div key={r.resource} className="flex items-center justify-between px-4 py-3">
-                  <code className="text-sm text-neutral-200">{r.resource}</code>
+                  <code className="font-mono text-sm text-pv-text">{r.resource}</code>
                   <div className="text-right text-sm">
-                    <span className="text-neutral-100">${r.usd.toFixed(6)}</span>
-                    <span className="ml-3 text-neutral-500">{r.calls} calls</span>
+                    <span className="font-mono font-semibold text-pv-text">${r.usd.toFixed(6)}</span>
+                    <span className="ml-3 font-mono text-pv-muted">{r.calls} calls</span>
                   </div>
                 </div>
               ))}
@@ -106,52 +102,50 @@ export default function RevenuePage() {
           </section>
 
           <section className="mt-10">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-400">
-              Recent payments
-            </h2>
-            <div className="mt-3 overflow-hidden rounded-lg border border-neutral-800">
+            <h2 className="label">Recent payments</h2>
+            <div className="card mt-3 overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-900/50 text-left text-neutral-400">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">When</th>
-                    <th className="px-4 py-2 font-medium">Endpoint</th>
-                    <th className="px-4 py-2 font-medium">Payer</th>
-                    <th className="px-4 py-2 text-right font-medium">USDC</th>
-                    <th className="px-4 py-2 text-right font-medium">Receipt</th>
+                <thead className="border-b border-black/[0.08] text-left">
+                  <tr className="font-mono text-[11px] uppercase tracking-[0.12em] text-pv-muted">
+                    <th className="px-4 py-2.5 font-bold">When</th>
+                    <th className="px-4 py-2.5 font-bold">Endpoint</th>
+                    <th className="px-4 py-2.5 font-bold">Payer</th>
+                    <th className="px-4 py-2.5 text-right font-bold">USDC</th>
+                    <th className="px-4 py-2.5 text-right font-bold">Receipt</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-800">
+                <tbody className="divide-y divide-black/[0.06]">
                   {data.recent.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-neutral-500">
+                      <td colSpan={5} className="px-4 py-8 text-center font-mono text-pv-muted">
                         Waiting for the first payment…
                       </td>
                     </tr>
                   )}
                   {data.recent.map((e, i) => (
-                    <tr key={`${e.txId ?? i}-${e.at}`}>
-                      <td className="px-4 py-2 text-neutral-400">
+                    <tr key={`${e.txId ?? i}-${e.at}`} className="transition-colors hover:bg-pv-surface2/40">
+                      <td className="px-4 py-2.5 font-mono text-pv-muted">
                         {new Date(e.at).toLocaleTimeString()}
                       </td>
-                      <td className="px-4 py-2">
-                        <code className="text-neutral-300">{e.resource}</code>
+                      <td className="px-4 py-2.5">
+                        <code className="font-mono text-pv-text">{e.resource}</code>
                       </td>
-                      <td className="px-4 py-2 font-mono text-neutral-400">{short(e.payer)}</td>
-                      <td className="px-4 py-2 text-right text-neutral-100">
+                      <td className="px-4 py-2.5 font-mono text-pv-muted">{short(e.payer)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-semibold text-pv-text">
                         ${e.priceUsd.toFixed(6)}
                       </td>
-                      <td className="px-4 py-2 text-right font-mono">
+                      <td className="px-4 py-2.5 text-right font-mono">
                         {isTxHash(e.txId) ? (
                           <a
                             href={`${ARCSCAN}/tx/${e.txId}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-emerald-400 hover:text-emerald-300 hover:underline"
+                            className="text-pv-emerald underline-offset-2 hover:underline"
                           >
                             {short(e.txId)} ↗
                           </a>
                         ) : (
-                          <span className="text-neutral-600">{short(e.txId)}</span>
+                          <span className="text-pv-muted/60">{short(e.txId)}</span>
                         )}
                       </td>
                     </tr>
@@ -166,11 +160,17 @@ export default function RevenuePage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="rounded-lg border border-neutral-800 px-4 py-5">
-      <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-neutral-50">{value}</div>
+    <div className="card px-4 py-5">
+      <div className="label mb-0">{label}</div>
+      <div
+        className={`mt-2 font-display text-2xl font-bold tracking-tight ${
+          accent ? "text-pv-emerald" : "text-pv-text"
+        }`}
+      >
+        {value}
+      </div>
     </div>
   );
 }

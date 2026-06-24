@@ -241,7 +241,7 @@ export default function Header() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`chip relative text-[13px] transition-all ${
+                    className={`chip relative whitespace-nowrap text-[13px] transition-all ${
                       item.accent
                         ? "border-pv-emerald/[0.28] bg-pv-emerald/[0.08] text-pv-emerald"
                         : isActive
