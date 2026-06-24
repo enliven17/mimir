@@ -38,16 +38,18 @@ interface Seed {
   hours: number;
 }
 
-// Deterministic, near-term, resolvable claims across categories.
+// Deterministic, near-term, resolvable claims. Resolution URLs use the
+// coingecko.com/coins/<id> shape the evidence-fetcher resolves via its
+// deterministic CoinGecko API handler (coingecko-api → full-trust settlement).
 const SEEDS: Seed[] = [
-  { question: "Will BTC be above $40,000 at the deadline?", a: "Yes, BTC ≥ $40k", b: "No, BTC < $40k", url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", category: "crypto", rule: "CoinGecko BTC/USD spot at deadline.", hours: 6 },
-  { question: "Will ETH be above $2,000 at the deadline?", a: "Yes, ETH ≥ $2k", b: "No, ETH < $2k", url: "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", category: "crypto", rule: "CoinGecko ETH/USD spot at deadline.", hours: 6 },
-  { question: "Will SOL be above $100 at the deadline?", a: "Yes, SOL ≥ $100", b: "No, SOL < $100", url: "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", category: "crypto", rule: "CoinGecko SOL/USD spot at deadline.", hours: 12 },
-  { question: "Will USDC hold its $1.00 peg (≥ $0.999) at the deadline?", a: "Yes, peg holds", b: "No, depeg below $0.999", url: "https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies=usd", category: "defi", rule: "CoinGecko USDC/USD spot at deadline.", hours: 24 },
-  { question: "Will BNB be above $500 at the deadline?", a: "Yes, BNB ≥ $500", b: "No, BNB < $500", url: "https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd", category: "crypto", rule: "CoinGecko BNB/USD spot at deadline.", hours: 24 },
-  { question: "Will the total crypto market cap be above $2T at the deadline?", a: "Yes, ≥ $2T", b: "No, < $2T", url: "https://api.coingecko.com/api/v3/global", category: "crypto", rule: "CoinGecko global total_market_cap.usd at deadline.", hours: 48 },
-  { question: "Will DOGE be above $0.10 at the deadline?", a: "Yes, DOGE ≥ $0.10", b: "No, DOGE < $0.10", url: "https://api.coingecko.com/api/v3/simple/price?ids=dogecoin&vs_currencies=usd", category: "crypto", rule: "CoinGecko DOGE/USD spot at deadline.", hours: 48 },
-  { question: "Will AVAX be above $30 at the deadline?", a: "Yes, AVAX ≥ $30", b: "No, AVAX < $30", url: "https://api.coingecko.com/api/v3/simple/price?ids=avalanche-2&vs_currencies=usd", category: "crypto", rule: "CoinGecko AVAX/USD spot at deadline.", hours: 72 },
+  { question: "Will BTC be above $40,000 at the deadline?", a: "Yes, BTC ≥ $40k", b: "No, BTC < $40k", url: "https://www.coingecko.com/en/coins/bitcoin", category: "crypto", rule: "CoinGecko BTC/USD spot at deadline.", hours: 6 },
+  { question: "Will ETH be above $2,000 at the deadline?", a: "Yes, ETH ≥ $2k", b: "No, ETH < $2k", url: "https://www.coingecko.com/en/coins/ethereum", category: "crypto", rule: "CoinGecko ETH/USD spot at deadline.", hours: 6 },
+  { question: "Will SOL be above $100 at the deadline?", a: "Yes, SOL ≥ $100", b: "No, SOL < $100", url: "https://www.coingecko.com/en/coins/solana", category: "crypto", rule: "CoinGecko SOL/USD spot at deadline.", hours: 12 },
+  { question: "Will USDC hold its $1.00 peg (≥ $0.999) at the deadline?", a: "Yes, peg holds", b: "No, depeg below $0.999", url: "https://www.coingecko.com/en/coins/usd-coin", category: "defi", rule: "CoinGecko USDC/USD spot at deadline.", hours: 24 },
+  { question: "Will BNB be above $500 at the deadline?", a: "Yes, BNB ≥ $500", b: "No, BNB < $500", url: "https://www.coingecko.com/en/coins/binancecoin", category: "crypto", rule: "CoinGecko BNB/USD spot at deadline.", hours: 24 },
+  { question: "Will ADA be above $0.50 at the deadline?", a: "Yes, ADA ≥ $0.50", b: "No, ADA < $0.50", url: "https://www.coingecko.com/en/coins/cardano", category: "crypto", rule: "CoinGecko ADA/USD spot at deadline.", hours: 48 },
+  { question: "Will DOGE be above $0.10 at the deadline?", a: "Yes, DOGE ≥ $0.10", b: "No, DOGE < $0.10", url: "https://www.coingecko.com/en/coins/dogecoin", category: "crypto", rule: "CoinGecko DOGE/USD spot at deadline.", hours: 48 },
+  { question: "Will AVAX be above $30 at the deadline?", a: "Yes, AVAX ≥ $30", b: "No, AVAX < $30", url: "https://www.coingecko.com/en/coins/avalanche-2", category: "crypto", rule: "CoinGecko AVAX/USD spot at deadline.", hours: 72 },
 ];
 
 async function main() {
