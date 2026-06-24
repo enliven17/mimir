@@ -534,7 +534,10 @@ async function sendBrowserTx(
     abi:          MIMIR_ABI,
     functionName: functionName as any,
     args:         args as any,
-    value:        valueMicro,
+    // value cast: with functionName widened to `any`, viem unions all ABI
+    // entries and collapses `value` to `undefined` (nonpayable fns like
+    // withdraw exist alongside payable createClaim/challengeClaim).
+    value:        valueMicro as any,
     account:      accounts[0] as `0x${string}`,
     chain:        arcTestnet,
   });
@@ -576,7 +579,7 @@ async function sendServerTx(
     abi:          MIMIR_ABI,
     functionName: functionName as any,
     args:         args as any,
-    value:        valueMicro,
+    value:        valueMicro as any, // see sendBrowserTx: widened union collapses value to undefined
     account,
     chain:        arcTestnet,
   });
