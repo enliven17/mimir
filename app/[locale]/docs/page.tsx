@@ -244,6 +244,146 @@ function BridgeDiagram() {
   );
 }
 
+/* ── 5. x402 nanopayment flow ────────────────────────────────────────────── */
+function NanopaymentDiagram() {
+  return (
+    <svg viewBox="0 0 1080 240" className="h-auto w-full" role="img" aria-label="x402 nanopayment flow">
+      <defs>
+        <marker id="arrow-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill={C.accent} />
+        </marker>
+      </defs>
+
+      {/* Payer · oracle */}
+      <g>
+        <rect x="20" y="70" width="180" height="100" rx="16" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
+        <text x="110" y="96" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">PAYER · ORACLE</text>
+        <text x="110" y="120" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>W3S signs</text>
+        <text x="110" y="142" textAnchor="middle" fontSize="11" fill={C.muted}>no local key</text>
+      </g>
+
+      {/* Paid endpoint */}
+      <g>
+        <rect x="248" y="70" width="190" height="100" rx="16" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="343" y="96" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">HTTP 402</text>
+        <text x="343" y="118" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>/api/premium/price</text>
+        <text x="343" y="140" textAnchor="middle" fontSize="11" fill={C.muted}>quote $0.001 USDC</text>
+      </g>
+
+      {/* Circle Gateway facilitator */}
+      <g>
+        <rect x="486" y="70" width="200" height="100" rx="16" fill={C.bg} stroke={C.accent} strokeWidth="1.8" strokeDasharray="5 3" />
+        <text x="586" y="96" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">CIRCLE GATEWAY</text>
+        <text x="586" y="118" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>facilitator</text>
+        <text x="586" y="140" textAnchor="middle" fontSize="11" fill={C.muted}>verify + settle</text>
+      </g>
+
+      {/* Settled on Arc */}
+      <g>
+        <rect x="734" y="70" width="150" height="100" rx="16" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
+        <text x="809" y="96" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">ARC TESTNET</text>
+        <text x="809" y="118" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>settled</text>
+        <text x="809" y="140" textAnchor="middle" fontSize="11" fill={C.muted}>sub-cent USDC</text>
+      </g>
+
+      {/* Neon → /revenue */}
+      <g>
+        <rect x="932" y="70" width="130" height="100" rx="16" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="997" y="96" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">NEON</text>
+        <text x="997" y="118" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>x402_payments</text>
+        <text x="997" y="140" textAnchor="middle" fontSize="11" fill={C.muted}>→ /revenue</text>
+      </g>
+
+      <line x1="200" y1="120" x2="246" y2="120" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-d)" />
+      <line x1="438" y1="120" x2="484" y2="120" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-d)" />
+      <line x1="686" y1="120" x2="732" y2="120" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-d)" />
+      <line x1="884" y1="120" x2="930" y2="120" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-d)" />
+
+      <text x="223" y="108" textAnchor="middle" fontSize="10" fontWeight="600" fill={C.muted}>request</text>
+      <text x="461" y="108" textAnchor="middle" fontSize="10" fontWeight="600" fill={C.muted}>pay</text>
+      <text x="709" y="108" textAnchor="middle" fontSize="10" fontWeight="600" fill={C.muted}>onchain</text>
+      <text x="907" y="108" textAnchor="middle" fontSize="10" fontWeight="600" fill={C.muted}>record</text>
+    </svg>
+  );
+}
+
+/* ── 6. Council-as-jury settlement ───────────────────────────────────────── */
+function JuryDiagram() {
+  return (
+    <svg viewBox="0 0 900 420" className="h-auto w-full" role="img" aria-label="Council-as-jury settlement flow">
+      <defs>
+        <marker id="arrow-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill={C.accent} />
+        </marker>
+      </defs>
+
+      {/* 1 deadline */}
+      <g>
+        <rect x="30" y="40" width="200" height="70" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="130" y="68" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">01 · TRIGGER</text>
+        <text x="130" y="90" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>deadline reached</text>
+      </g>
+
+      {/* 2 fetch evidence */}
+      <g>
+        <rect x="30" y="150" width="200" height="70" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="130" y="178" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">02 · READ</text>
+        <text x="130" y="200" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>oracle fetches evidence</text>
+      </g>
+
+      {/* 3 buy votes */}
+      <g>
+        <rect x="300" y="120" width="280" height="130" rx="16" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
+        <text x="440" y="148" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent} letterSpacing="2">03 · BUY N VERDICTS (x402)</text>
+        <text x="440" y="172" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>GET /api/council/vote</text>
+        <text x="440" y="194" textAnchor="middle" fontSize="11" fill={C.muted}>$0.001 → each persona&apos;s wallet</text>
+        <text x="440" y="214" textAnchor="middle" fontSize="11" fill={C.muted}>rule-based abstain · specialists in-category</text>
+        <text x="440" y="234" textAnchor="middle" fontSize="11" fill={C.muted}>quorum = 3 decisive votes (default)</text>
+      </g>
+
+      {/* Groq fallback note */}
+      <g>
+        <rect x="630" y="50" width="240" height="64" rx="12" fill={C.bg} stroke={C.border} strokeWidth="1.5" strokeDasharray="4 3" />
+        <text x="750" y="74" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">LLM FALLBACK</text>
+        <text x="750" y="96" textAnchor="middle" fontSize="11" fill={C.text}>Groq (Llama) on Gemini 429</text>
+      </g>
+
+      {/* 4 tally */}
+      <g>
+        <rect x="650" y="135" width="220" height="100" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="760" y="162" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">04 · TALLY</text>
+        <text x="760" y="188" textAnchor="middle" fontSize="18" fontWeight="700" fill={C.text}>7 – 2</text>
+        <text x="760" y="210" textAnchor="middle" fontSize="11" fill={C.muted}>consensus → evidenceHash</text>
+      </g>
+
+      {/* solo fallback */}
+      <g>
+        <rect x="300" y="290" width="280" height="64" rx="12" fill={C.bg} stroke={C.border} strokeWidth="1.5" strokeDasharray="4 3" />
+        <text x="440" y="314" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">BELOW QUORUM</text>
+        <text x="440" y="336" textAnchor="middle" fontSize="11" fill={C.text}>fall back to solo oracle verdict</text>
+      </g>
+
+      {/* 5 resolveClaim */}
+      <g>
+        <rect x="630" y="280" width="240" height="100" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
+        <text x="750" y="307" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent} letterSpacing="2">05 · ON-CHAIN</text>
+        <text x="750" y="333" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>resolveClaim()</text>
+        <text x="750" y="353" textAnchor="middle" fontSize="11" fill={C.muted}>verdict + evidenceHash</text>
+        <text x="750" y="371" textAnchor="middle" fontSize="11" fill={C.muted}>→ payout</text>
+      </g>
+
+      {/* Arrows */}
+      <line x1="130" y1="110" x2="130" y2="148" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+      <line x1="230" y1="185" x2="298" y2="185" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+      <line x1="580" y1="185" x2="648" y2="185" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+      <line x1="760" y1="235" x2="760" y2="278" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+      <line x1="440" y1="250" x2="440" y2="288" stroke={C.accent} strokeWidth="1.5" strokeDasharray="3 3" markerEnd="url(#arrow-e)" />
+      <line x1="580" y1="322" x2="628" y2="322" stroke={C.accent} strokeWidth="1.5" strokeDasharray="3 3" markerEnd="url(#arrow-e)" />
+      <line x1="690" y1="114" x2="700" y2="133" stroke={C.accent} strokeWidth="1.3" strokeDasharray="3 3" />
+    </svg>
+  );
+}
+
 /* ── Section primitives ──────────────────────────────────────────────────── */
 function Section({ id, eyebrow, title, children }: { id?: string; eyebrow: string; title: string; children: React.ReactNode }) {
   return (
@@ -316,9 +456,10 @@ export default function DocsPage() {
           <TocLink href="#lifecycle" label="4. The claim lifecycle" />
           <TocLink href="#agents" label="5. The agents" />
           <TocLink href="#circle" label="6. The Circle stack" />
-          <TocLink href="#contract" label="7. Smart contract terms" />
-          <TocLink href="#play" label="8. How to play" />
-          <TocLink href="#faq" label="9. FAQ" />
+          <TocLink href="#lepton" label="7. What's new since Arc (Lepton)" />
+          <TocLink href="#contract" label="8. Smart contract terms" />
+          <TocLink href="#play" label="9. How to play" />
+          <TocLink href="#faq" label="10. FAQ" />
         </div>
       </nav>
 
@@ -511,7 +652,119 @@ export default function DocsPage() {
         </DiagramFrame>
       </Section>
 
-      <Section id="contract" eyebrow="07" title="Smart contract terms">
+      <Section id="lepton" eyebrow="07" title="What's new since Arc (Lepton nanopayments)">
+        <p>
+          After the Arc / Agora hackathon, Mimir grew an economic layer of its own.
+          Agents stopped being purely operational and became market participants —
+          they pay each other sub-cent amounts for data and verdicts, sell their own
+          outputs, and every settled cent is recorded and shown live. This is the
+          &ldquo;Lepton&rdquo; era: nanopayments over HTTP 402, settled on Arc through
+          Circle Gateway, signed entirely through W3S.
+        </p>
+
+        <Card title="Agents as paying + selling economic actors (x402)">
+          Agents pay-per-request over the HTTP <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">402 Payment Required</code>{" "}
+          status in sub-cent USDC, settled through Circle Gateway and signed via W3S —
+          there is no local private key anywhere in the loop. Paid endpoints today:{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">GET /api/premium/price</code> ($0.001),{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">POST /api/oracle</code> ($0.005), and{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">GET /api/council/reasoning</code> ($0.001, paid
+          directly to each persona&apos;s own wallet). The same agent can sit on both
+          sides — buying a price quote, selling its reasoning.
+        </Card>
+
+        <DiagramFrame caption="x402 nanopayment flow. The payer (oracle) signs through W3S with no local key; the paid endpoint quotes a sub-cent price, Circle Gateway acts as facilitator, the transfer settles on Arc, and the receipt is recorded to Neon and shown live at /revenue.">
+          <NanopaymentDiagram />
+        </DiagramFrame>
+
+        <Card title="Council-as-jury settlement">
+          At settlement the oracle no longer decides alone. It <em>buys</em> each
+          eligible council persona&apos;s verdict via an x402 nanopayment —{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">$0.001</code> straight to that persona&apos;s
+          wallet through{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">GET /api/council/vote</code> — tallies the
+          votes into the on-chain verdict, and commits the consensus tally into the
+          claim&apos;s{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">evidenceHash</code>. A quorum (default three
+          decisive votes) is required; below quorum it falls back to a solo oracle
+          verdict. Rule-based personas abstain, and category specialists only vote
+          inside their own category.
+        </Card>
+
+        <DiagramFrame caption="Council-as-jury settlement. At the deadline the oracle reads evidence, buys N persona verdicts over x402 ($0.001 → each persona wallet), tallies them (e.g. 7–2), and commits the consensus to evidenceHash before resolveClaim() pays out. Groq (Llama) backs the council through Gemini 429 windows; below quorum the oracle resolves solo.">
+          <JuryDiagram />
+        </DiagramFrame>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card title="Subscription pass">
+            One{" "}
+            <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">POST /api/council/subscribe</code>{" "}
+            nanopayment ($0.01) returns an HMAC-signed pass that unlocks a time-boxed
+            window of free council reads — the recurring-access tier on top of the
+            per-read x402 model.
+          </Card>
+          <Card title="Durable revenue ledger">
+            Every settled nanopayment is recorded to Neon (the{" "}
+            <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">x402_payments</code> table) and shown live
+            at <Link href="/revenue" className="text-pv-emerald underline-offset-2 hover:underline">/revenue</Link>.
+            Each receipt links to the paying agent&apos;s on-chain account and to the
+            Circle Gateway Wallet settlement contract on ArcScan.
+          </Card>
+          <Card title="Gateway deposit via W3S">
+            <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">approve</code> +{" "}
+            <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">deposit</code> into Circle&apos;s Gateway
+            Wallet, signed entirely through W3S — enabling gasless, batched payments
+            with no local private key.
+          </Card>
+          <Card title="Pull-payment safety (contract v2)">
+            <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">resolveClaim</code> payouts are pushed, but
+            a failed push parks the amount in{" "}
+            <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">pendingWithdrawals</code> (claimable via{" "}
+            <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">withdraw()</code>) instead of reverting the
+            whole settlement — so one uncooperative recipient can&apos;t freeze
+            everyone else&apos;s payout.
+          </Card>
+          <Card title="Multi-category markets">
+            The market-creator now opens claims for crypto (CoinGecko), World Cup
+            soccer and NBA (ESPN), stocks (stockanalysis.com), and weather — not just
+            crypto.
+          </Card>
+          <Card title="Resilient LLM">
+            Groq (Llama) is an always-on fallback so the council keeps voting through
+            Gemini rate-limit (<code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">429</code>) windows.
+          </Card>
+        </div>
+
+        <div className="rounded-2xl border border-pv-border/40 bg-pv-surface/70 p-5">
+          <h3 className="mb-2 font-bold tracking-tight text-pv-text">Contracts</h3>
+          <ul className="space-y-2 text-sm leading-relaxed text-pv-text/80">
+            <li>
+              <strong className="text-pv-text">v2 (live).</strong>{" "}
+              <a
+                className="break-all font-mono text-xs text-pv-emerald underline-offset-2 hover:underline"
+                href="https://testnet.arcscan.app/address/0x50036154a3bc51f2e7d604a2fbc596f02bb555a1"
+                target="_blank"
+                rel="noreferrer"
+              >
+                0x50036154a3bc51f2e7d604a2fbc596f02bb555a1
+              </a>
+            </li>
+            <li>
+              <strong className="text-pv-text">v1 (legacy, immutable — 181 claims / 104 resolved).</strong>{" "}
+              <a
+                className="break-all font-mono text-xs text-pv-emerald underline-offset-2 hover:underline"
+                href="https://testnet.arcscan.app/address/0x8c7016b1124983fb00dc022d88e3de997cdb5873"
+                target="_blank"
+                rel="noreferrer"
+              >
+                0x8c7016b1124983fb00dc022d88e3de997cdb5873
+              </a>
+            </li>
+          </ul>
+        </div>
+      </Section>
+
+      <Section id="contract" eyebrow="08" title="Smart contract terms">
         <p>
           A few terms that show up in the UI and on chain:
         </p>
@@ -536,7 +789,7 @@ export default function DocsPage() {
         </div>
       </Section>
 
-      <Section id="play" eyebrow="08" title="How to play">
+      <Section id="play" eyebrow="09" title="How to play">
         <ol className="list-decimal space-y-3 pl-5 text-pv-text/85">
           <li>
             <strong className="text-pv-text">Get testnet USDC.</strong>{" "}
@@ -569,7 +822,7 @@ export default function DocsPage() {
         </ol>
       </Section>
 
-      <Section id="faq" eyebrow="09" title="FAQ">
+      <Section id="faq" eyebrow="10" title="FAQ">
         <div className="space-y-5">
           <Card title="Do I need MetaMask?">
             Any injected EVM wallet works (MetaMask, Coinbase Wallet, Rabby,
