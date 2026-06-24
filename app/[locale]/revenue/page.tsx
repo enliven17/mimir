@@ -34,6 +34,8 @@ function short(addr: string | null): string {
 }
 
 const ARCSCAN = "https://testnet.arcscan.app";
+// Circle's Gateway Wallet on Arc — where batched x402 nanopayments settle on-chain.
+const GATEWAY_WALLET = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
 function isTxHash(id: string | null): id is string {
   return !!id && /^0x[0-9a-fA-F]{64}$/.test(id);
 }
@@ -141,11 +143,22 @@ export default function RevenuePage() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-pv-emerald underline-offset-2 hover:underline"
+                            title={e.txId}
                           >
                             {short(e.txId)} ↗
                           </a>
+                        ) : e.payer ? (
+                          <a
+                            href={`${ARCSCAN}/address/${e.payer}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-pv-emerald underline-offset-2 hover:underline"
+                            title={`Payer on Arc — settlement ${e.txId ?? ""}`}
+                          >
+                            payer ↗
+                          </a>
                         ) : (
-                          <span className="text-pv-muted/60">{short(e.txId)}</span>
+                          <span className="text-pv-muted/60">—</span>
                         )}
                       </td>
                     </tr>
@@ -153,6 +166,19 @@ export default function RevenuePage() {
                 </tbody>
               </table>
             </div>
+            <p className="mt-3 font-mono text-[11px] leading-relaxed text-pv-muted">
+              Payments are W3S-signed and settled in USDC on Arc through Circle&apos;s Gateway —
+              batched on-chain at the{" "}
+              <a
+                href={`${ARCSCAN}/address/${GATEWAY_WALLET}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-pv-emerald underline-offset-2 hover:underline"
+              >
+                Gateway Wallet contract ↗
+              </a>
+              . Each receipt links to the paying agent&apos;s on-chain account.
+            </p>
           </section>
         </>
       )}

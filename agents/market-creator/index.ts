@@ -107,6 +107,12 @@ interface CryptoEvent {
   priceUsd:      number;
 }
 
+interface StockEvent {
+  symbol:        string;  // ticker (e.g. "AAPL")
+  name:          string;
+  resolutionUrl: string;  // stockanalysis.com page (oracle scrapes price/day change)
+}
+
 // ── Source fetchers ───────────────────────────────────────────────────────────
 
 async function fetchCryptoEvents(): Promise<{ text: string; events: CryptoEvent[] }> {
@@ -138,57 +144,93 @@ async function fetchCryptoEvents(): Promise<{ text: string; events: CryptoEvent[
   }
 }
 
-async function fetchSportsEvents(): Promise<{ text: string; events: SportEvent[] }> {
+// Generic ESPN scoreboard reader. Pulls scheduled (not-started) games for any
+// sport/league. Live games make deadline math uncertain and finished games
+// resolve immediately — both are dead inventory, so we keep only `pre` state.
+async function fetchEspnScoreboard(
+  url: string,
+  fallbackName: string,
+  matchPath: string,
+): Promise<SportEvent[]> {
   try {
-    // ESPN's public API for upcoming events (no key required for basic data)
-    const res = await fetch(
-      "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
-      { headers: { "User-Agent": "Mimir-MarketCreator/1.0" } }
-    );
-    const data = await res.json() as any;
+    const res = await fetch(url, { headers: { "User-Agent": "Mimir-MarketCreator/1.0" } });
+    const data = (await res.json()) as any;
     const all = (data.events ?? []) as any[];
+    const scheduled = all
+      .filter((e: any) => e.status?.type?.state === "pre" && !e.status?.type?.completed)
+      .slice(0, 6);
 
-    // Only consider scheduled, not-started games. Live games make deadline
-    // math uncertain; finished games already have a known result and would
-    // resolve immediately on the oracle's next poll. Both are dead inventory.
-    const scheduled = all.filter((e: any) => {
-      const type = e.status?.type;
-      return type?.state === "pre" && !type?.completed;
-    }).slice(0, 8);
-
-    if (scheduled.length === 0) {
-      return { text: "No upcoming NBA games found", events: [] };
-    }
-
-    const events: SportEvent[] = scheduled.map((e: any) => {
-      // Prefer the boxscore URL — it carries the final score post-game and
-      // is the cleanest source for the oracle to resolve from. Fall back to
-      // the summary URL, then construct from gameId as a last resort.
-      const links    = Array.isArray(e.links) ? e.links : [];
-      const boxscore = links.find((l: any) => Array.isArray(l.rel) && l.rel.includes("boxscore"))?.href;
-      const summary  = links.find((l: any) => Array.isArray(l.rel) && l.rel.includes("summary"))?.href;
-      const resolutionUrl = boxscore || summary || `https://www.espn.com/nba/boxscore/_/gameId/${e.id}`;
-      const startMs  = Date.parse(String(e.date ?? ""));
-
-      return {
-        id:            String(e.id ?? ""),
-        name:          String(e.name ?? "NBA game"),
-        startDate:     String(e.date ?? ""),
-        startMs,
-        resolutionUrl,
-        status:        String(e.status?.type?.detail ?? "scheduled"),
-      };
-    }).filter((ev) => ev.id && ev.resolutionUrl);
-
-    const text = events
-      .map((ev) => `${ev.name} — tips off ${ev.startDate} — ${ev.status}`)
-      .join("\n");
-
-    return { text, events };
+    return scheduled
+      .map((e: any) => {
+        const links = Array.isArray(e.links) ? e.links : [];
+        // Prefer a post-game page (summary/boxscore/recap) — it carries the
+        // final result the oracle reads. Fall back to a constructed match URL.
+        const post = links.find(
+          (l: any) =>
+            Array.isArray(l.rel) &&
+            (l.rel.includes("summary") || l.rel.includes("boxscore") || l.rel.includes("recap")),
+        )?.href;
+        const resolutionUrl = post || `https://www.espn.com/${matchPath}/_/gameId/${e.id}`;
+        return {
+          id:            String(e.id ?? ""),
+          name:          String(e.name ?? fallbackName),
+          startDate:     String(e.date ?? ""),
+          startMs:       Date.parse(String(e.date ?? "")),
+          resolutionUrl,
+          status:        String(e.status?.type?.detail ?? "scheduled"),
+        };
+      })
+      .filter((ev) => ev.id && ev.resolutionUrl);
   } catch (err) {
-    console.warn("[market-creator] ESPN fetch failed:", err);
-    return { text: "Sports data temporarily unavailable", events: [] };
+    console.warn(`[market-creator] ESPN fetch failed (${url}):`, err);
+    return [];
   }
+}
+
+async function fetchSportsEvents(): Promise<{ text: string; events: SportEvent[] }> {
+  // World Cup first (timely + high interest), then NBA. The off-season sport
+  // simply returns nothing and drops out.
+  const [worldCup, nba] = await Promise.all([
+    fetchEspnScoreboard(
+      "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard",
+      "World Cup match",
+      "soccer/match",
+    ),
+    fetchEspnScoreboard(
+      "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
+      "NBA game",
+      "nba/boxscore",
+    ),
+  ]);
+
+  const events = [...worldCup, ...nba].slice(0, 8);
+  if (events.length === 0) return { text: "No upcoming games found", events: [] };
+
+  const text = events.map((ev) => `${ev.name} — starts ${ev.startDate} — ${ev.status}`).join("\n");
+  return { text, events };
+}
+
+// A fixed roster of liquid large-caps. No live price feed is needed: claims are
+// framed as intraday direction ("up on the day at the deadline?"), which the
+// oracle reads off the stockanalysis.com page's day-change. Markets closed →
+// the LLM still drafts forward-looking ones; low-confidence ones refund.
+const STOCK_TICKERS: Array<{ symbol: string; name: string }> = [
+  { symbol: "AAPL", name: "Apple" },
+  { symbol: "NVDA", name: "NVIDIA" },
+  { symbol: "TSLA", name: "Tesla" },
+  { symbol: "MSFT", name: "Microsoft" },
+  { symbol: "GOOGL", name: "Alphabet" },
+  { symbol: "AMZN", name: "Amazon" },
+];
+
+function fetchStockEvents(): { text: string; events: StockEvent[] } {
+  const events: StockEvent[] = STOCK_TICKERS.map((s) => ({
+    symbol:        s.symbol,
+    name:          s.name,
+    resolutionUrl: `https://stockanalysis.com/stocks/${s.symbol.toLowerCase()}/`,
+  }));
+  const text = events.map((e) => `${e.name} (${e.symbol}) → ${e.resolutionUrl}`).join("\n");
+  return { text, events };
 }
 
 async function fetchWeatherEvents(): Promise<string> {
@@ -212,16 +254,21 @@ async function draftClaimCandidates(sourceData: {
   cryptoEvents: CryptoEvent[];
   sportsText:   string;
   sportsEvents: SportEvent[];
+  stocksText:   string;
+  stocksEvents: StockEvent[];
   weather:      string;
 }): Promise<ClaimCandidate[]> {
   const now = new Date();
 
   const allowedUrlsList = [
     ...sourceData.sportsEvents.map((e) =>
-      `- [sports] "${e.name}" (gameId=${e.id}, tipoff=${e.startDate}) → ${e.resolutionUrl}`
+      `- [sports] "${e.name}" (gameId=${e.id}, starts=${e.startDate}) → ${e.resolutionUrl}`
     ),
     ...sourceData.cryptoEvents.map((c) =>
       `- [crypto] "${c.name}" (${c.symbol}) → ${c.resolutionUrl}`
+    ),
+    ...sourceData.stocksEvents.map((s) =>
+      `- [stocks] "${s.name}" (${s.symbol}) → ${s.resolutionUrl}`
     ),
   ].join("\n");
 
@@ -232,8 +279,11 @@ async function draftClaimCandidates(sourceData: {
 ### Crypto Markets (from CoinGecko)
 ${sourceData.cryptoText}
 
-### Upcoming NBA Games (from ESPN — scheduled, not yet started)
+### Upcoming Matches (from ESPN — World Cup soccer + NBA, scheduled, not yet started)
 ${sourceData.sportsText}
+
+### Stocks (large-caps — resolve intraday direction from the page)
+${sourceData.stocksText}
 
 ### Weather Opportunity
 ${sourceData.weather}
@@ -251,7 +301,8 @@ Create ${MAX_CLAIMS_PER_RUN} prediction market claim candidates. Each must be:
 - **Verifiable**: resolvable from one of the URLs listed above
 - **Binary or near-binary**: clear winner/loser outcome
 - **Time-bounded**: deadline between 2-72 hours from now (${now.toISOString()})
-- **For NBA games**: deadlineHours MUST place the deadline AT LEAST 4 hours AFTER the listed tipoff time. Never create a market on a game that has already started or already finished.
+- **For sports (World Cup / NBA)**: deadlineHours MUST place the deadline AT LEAST 4 hours AFTER the listed start time. Never create a market on a game that has already started or finished. Frame as match outcome (e.g. "Will Brazil beat Scotland?").
+- **For stocks**: frame as intraday direction resolvable from the page (e.g. "Will AAPL close up on the day?") — do NOT invent a specific price target you can't verify.
 - **Specific**: no vague language like "probably" or "might"
 
 For each candidate, provide:
@@ -260,12 +311,12 @@ For each candidate, provide:
   "creatorPosition": "Yes — [brief reason]",
   "counterPosition": "No — [brief reason]",
   "resolutionUrl": "<one of the URLs listed above, EXACTLY>",
-  "category": "crypto" | "sports" | "weather" | "culture",
+  "category": "crypto" | "sports" | "stocks" | "weather" | "culture",
   "marketType": "binary",
   "settlementRule": "Resolve YES if [exact condition] at the resolution URL at deadline.",
   "deadlineHours": <2-72>,
   "qualityScore": <0-100>,  // your confidence this claim is clear and verifiable
-  "sourceType": "coingecko" | "espn" | "weather" | "custom"
+  "sourceType": "coingecko" | "espn" | "stockanalysis" | "weather" | "custom"
 }
 
 Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
@@ -288,6 +339,7 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
   // before the game ends.
   const sportsUrls = new Map(sourceData.sportsEvents.map((e) => [e.resolutionUrl, e]));
   const cryptoUrls = new Set(sourceData.cryptoEvents.map((c) => c.resolutionUrl));
+  const stocksUrls = new Set(sourceData.stocksEvents.map((s) => s.resolutionUrl));
   const nowMs      = Date.now();
 
   return candidates.filter((c) => {
@@ -320,6 +372,14 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
     if (cat === "crypto") {
       if (!cryptoUrls.has(url)) {
         console.warn(`[market-creator] Drop crypto candidate — URL not in allowlist: ${url}`);
+        return false;
+      }
+      return true;
+    }
+
+    if (cat === "stocks") {
+      if (!stocksUrls.has(url)) {
+        console.warn(`[market-creator] Drop stocks candidate — URL not in allowlist: ${url}`);
         return false;
       }
       return true;
@@ -483,17 +543,20 @@ async function run(): Promise<void> {
     fetchSportsEvents(),
     fetchWeatherEvents(),
   ]);
+  const stocks = fetchStockEvents();
   console.log(
     `[market-creator] Sources: crypto=${crypto.events.length} pairs, ` +
-    `sports=${sports.events.length} scheduled games`
+    `sports=${sports.events.length} games, stocks=${stocks.events.length} tickers`
   );
 
-  console.log("[market-creator] Drafting claim candidates with Claude...");
+  console.log("[market-creator] Drafting claim candidates...");
   const candidates = await draftClaimCandidates({
     cryptoText:   crypto.text,
     cryptoEvents: crypto.events,
     sportsText:   sports.text,
     sportsEvents: sports.events,
+    stocksText:   stocks.text,
+    stocksEvents: stocks.events,
     weather,
   });
 

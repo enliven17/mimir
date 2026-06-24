@@ -16,7 +16,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-export type LLMProvider = "gemini" | "anthropic";
+export type LLMProvider = "gemini" | "anthropic" | "groq";
 
 export interface CallLLMOptions {
   /** Max output tokens. Defaults to 1024. */
@@ -29,6 +29,8 @@ export interface CallLLMOptions {
 
 const DEFAULT_GEMINI_MODEL    = process.env.ORACLE_LLM_MODEL || "gemini-2.5-flash";
 const DEFAULT_ANTHROPIC_MODEL = process.env.ORACLE_LLM_MODEL || "claude-sonnet-4-6";
+// Groq is the always-on fallback so the council never stalls on a Gemini 429.
+const DEFAULT_GROQ_MODEL      = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 
 let anthropicClient: Anthropic | null = null;
 
@@ -52,14 +54,16 @@ function tripQuotaCooldown(): void {
 
 export function activeLLMProvider(): LLMProvider {
   const forced = process.env.LLM_PROVIDER?.toLowerCase();
-  if (forced === "gemini" || forced === "anthropic") return forced;
+  if (forced === "gemini" || forced === "anthropic" || forced === "groq") return forced;
   if (process.env.GEMINI_API_KEY?.trim())    return "gemini";
   if (process.env.ANTHROPIC_API_KEY?.trim()) return "anthropic";
-  throw new Error("No LLM API key configured. Set GEMINI_API_KEY or ANTHROPIC_API_KEY.");
+  if (process.env.GROQ_API_KEY?.trim())      return "groq";
+  throw new Error("No LLM API key configured. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or GROQ_API_KEY.");
 }
 
 export function activeLLMModel(): string {
-  return activeLLMProvider() === "gemini" ? DEFAULT_GEMINI_MODEL : DEFAULT_ANTHROPIC_MODEL;
+  const p = activeLLMProvider();
+  return p === "gemini" ? DEFAULT_GEMINI_MODEL : p === "groq" ? DEFAULT_GROQ_MODEL : DEFAULT_ANTHROPIC_MODEL;
 }
 
 /** Redacted fingerprint of the active API key. Use in startup logs to verify
@@ -69,6 +73,8 @@ export function activeLLMKeyFingerprint(): string {
   const provider = activeLLMProvider();
   const raw = provider === "gemini"
     ? process.env.GEMINI_API_KEY
+    : provider === "groq"
+    ? process.env.GROQ_API_KEY
     : process.env.ANTHROPIC_API_KEY;
   const key = raw?.trim() ?? "";
   if (!key) return "(missing)";
@@ -76,19 +82,66 @@ export function activeLLMKeyFingerprint(): string {
 }
 
 export async function callLLM(prompt: string, opts: CallLLMOptions = {}): Promise<string> {
+  const provider = activeLLMProvider();
+  const o = {
+    maxTokens:   opts.maxTokens   ?? 1024,
+    temperature: opts.temperature ?? 0.2,
+    jsonOnly:    opts.jsonOnly    ?? false,
+  };
+  const hasGroq = !!process.env.GROQ_API_KEY?.trim();
+
+  // Gemini cooling down from a prior 429 → go straight to Groq instead of
+  // stalling (the whole point of the fallback: the council keeps voting).
   const cooldown = inQuotaCooldown();
-  if (cooldown > 0) {
-    const secs = Math.ceil(cooldown / 1000);
-    throw new Error(`LLM quota cooldown — ${secs}s remaining (set by prior 429)`);
+  if (provider === "gemini" && cooldown > 0) {
+    if (hasGroq) {
+      console.warn(`[llm] Gemini in cooldown (${Math.ceil(cooldown / 1000)}s) → Groq fallback`);
+      return callGroq(prompt, o);
+    }
+    throw new Error(`LLM quota cooldown — ${Math.ceil(cooldown / 1000)}s remaining (set by prior 429)`);
   }
 
-  const provider = activeLLMProvider();
-  const maxTokens   = opts.maxTokens   ?? 1024;
-  const temperature = opts.temperature ?? 0.2;
-  const jsonOnly    = opts.jsonOnly    ?? false;
+  try {
+    if (provider === "gemini") return await callGemini(prompt, o);
+    if (provider === "groq")   return await callGroq(prompt, o);
+    return await callAnthropic(prompt, o);
+  } catch (err) {
+    // Any primary failure (429, 5xx, timeout, empty) → Groq, so a juror still votes.
+    if (hasGroq && provider !== "groq") {
+      console.warn(`[llm] ${provider} failed → Groq fallback: ${err instanceof Error ? err.message.slice(0, 90) : err}`);
+      return callGroq(prompt, o);
+    }
+    throw err;
+  }
+}
 
-  if (provider === "gemini") return callGemini(prompt, { maxTokens, temperature, jsonOnly });
-  return callAnthropic(prompt, { maxTokens, temperature, jsonOnly });
+// ── Groq (OpenAI-compatible) — fast Llama fallback ──────────────────────────────
+async function callGroq(
+  prompt: string,
+  opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
+): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY!.trim();
+  const body: Record<string, unknown> = {
+    model:       DEFAULT_GROQ_MODEL,
+    messages:    [{ role: "user", content: prompt }],
+    max_tokens:  opts.maxTokens,
+    temperature: opts.temperature,
+  };
+  // response_format json_object requires the literal word "json" in the prompt —
+  // our oracle/council prompts already say "Return JSON only", so it's satisfied.
+  if (opts.jsonOnly) body.response_format = { type: "json_object" };
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const json: any = await res.json();
+  const text: string = (json?.choices?.[0]?.message?.content ?? "").trim();
+  if (!text) throw new Error("Groq empty response");
+  return text;
 }
 
 // ── Gemini ────────────────────────────────────────────────────────────────────

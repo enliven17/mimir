@@ -95,7 +95,7 @@ export default function SettlementArchiveSection({
               className="font-display text-3xl font-medium tabular-nums tracking-tighter text-pv-text sm:text-4xl"
               style={{ textShadow: "0 0 24px rgba(216,95,95, 0.22)" }}
             >
-              {loading ? "—" : `${totalPool} USDC`}
+              {loading ? "—" : `${totalPool.toFixed(2)} USDC`}
             </span>
           </div>
           <div>
