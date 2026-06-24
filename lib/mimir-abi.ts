@@ -121,6 +121,20 @@ export const MIMIR_ABI = [
   },
   {
     type: "function",
+    name: "withdraw",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "pendingWithdrawals",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "setOracle",
     stateMutability: "nonpayable",
     inputs: [{ name: "_oracle", type: "address" }],

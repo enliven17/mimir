@@ -6,9 +6,9 @@
  * Shows USDC flowing into Mimir's paid endpoints in real time: total calls,
  * total earned, unique paying agents, per-endpoint breakdown, recent payments.
  *
- * ponytail: reads the in-memory ledger via /api/x402/revenue (resets on server
- * restart; durable truth is the on-chain Gateway balance). Good enough for the
- * live demo — on serverless multi-instance, numbers reflect one instance.
+ * Reads the durable Neon ledger via /api/x402/revenue (falls back to in-memory
+ * when no DB is configured). Each settled payment links to its on-chain receipt
+ * on ArcScan; the on-chain Gateway balance remains the ultimate truth.
  */
 
 import { useEffect, useState } from "react";
@@ -31,6 +31,13 @@ interface RevenueSummary {
 function short(addr: string | null): string {
   if (!addr) return "—";
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+// Arc testnet explorer. A settlement tx id that's a 0x hash links to the
+// on-chain receipt; non-hash ids (Circle settlement ids) render as plain text.
+const ARCSCAN = "https://testnet.arcscan.app";
+function isTxHash(id: string | null): id is string {
+  return !!id && /^0x[0-9a-fA-F]{64}$/.test(id);
 }
 
 export default function RevenuePage() {
@@ -110,12 +117,13 @@ export default function RevenuePage() {
                     <th className="px-4 py-2 font-medium">Endpoint</th>
                     <th className="px-4 py-2 font-medium">Payer</th>
                     <th className="px-4 py-2 text-right font-medium">USDC</th>
+                    <th className="px-4 py-2 text-right font-medium">Receipt</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800">
                   {data.recent.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-neutral-500">
+                      <td colSpan={5} className="px-4 py-6 text-center text-neutral-500">
                         Waiting for the first payment…
                       </td>
                     </tr>
@@ -131,6 +139,20 @@ export default function RevenuePage() {
                       <td className="px-4 py-2 font-mono text-neutral-400">{short(e.payer)}</td>
                       <td className="px-4 py-2 text-right text-neutral-100">
                         ${e.priceUsd.toFixed(6)}
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono">
+                        {isTxHash(e.txId) ? (
+                          <a
+                            href={`${ARCSCAN}/tx/${e.txId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-400 hover:text-emerald-300 hover:underline"
+                          >
+                            {short(e.txId)} ↗
+                          </a>
+                        ) : (
+                          <span className="text-neutral-600">{short(e.txId)}</span>
+                        )}
                       </td>
                     </tr>
                   ))}

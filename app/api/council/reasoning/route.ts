@@ -9,12 +9,14 @@
  */
 
 import { requirePayment, json } from "@/lib/x402-server";
+import { verifyPass } from "@/lib/x402-pass";
 import { COUNCIL_PERSONAS } from "@/agents/council/personas";
 import { createArcPublicClient, getContractAddress } from "@/lib/arc";
 import { MIMIR_ABI } from "@/lib/mimir-abi";
 import { callLLM } from "@/lib/llm";
 
 const PRICE = "$0.001";
+const PASS_PLAN = "council";
 
 function personaAddress(slug: string): string | undefined {
   const env = `CIRCLE_COUNCIL_${slug.toUpperCase().replace(/-/g, "_")}_ADDRESS`;
@@ -39,9 +41,15 @@ export async function GET(req: Request): Promise<Response> {
     return json({ error: `persona '${slug}' has no wallet configured` }, { status: 503 });
   }
 
-  // Payment gate — revenue lands in the persona's own wallet.
-  const gate = await requirePayment(req, PRICE, { payTo });
-  if (!gate.paid) return gate.response;
+  // A valid subscription pass unlocks reads for its window — skip the per-read
+  // 402. Otherwise charge the nanopayment into the persona's own wallet.
+  const hasPass = !!verifyPass(searchParams.get("pass"), PASS_PLAN);
+  let responseHeaders: Headers | undefined;
+  if (!hasPass) {
+    const gate = await requirePayment(req, PRICE, { payTo });
+    if (!gate.paid) return gate.response;
+    responseHeaders = gate.responseHeaders;
+  }
 
   // Read the claim, then produce this persona's reasoning.
   let question = "";
@@ -55,14 +63,14 @@ export async function GET(req: Request): Promise<Response> {
       args: [BigInt(claimId)],
     })) as readonly unknown[];
     if (!base[0] || base[0] === "0x0000000000000000000000000000000000000000") {
-      return json({ error: `claim ${claimId} not found` }, { status: 404, headers: gate.responseHeaders });
+      return json({ error: `claim ${claimId} not found` }, { status: 404, headers: responseHeaders });
     }
     question = String(base[1]);
     sideA = String(base[2]);
     sideB = String(base[3]);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "read failed";
-    return json({ error: msg }, { status: 502, headers: gate.responseHeaders });
+    return json({ error: msg }, { status: 502, headers: responseHeaders });
   }
 
   const prompt = `${persona.promptBias}
@@ -88,9 +96,9 @@ Write one tight paragraph (max 90 words): which side you lean toward and your ho
       claimId,
       question,
       reasoning,
-      paidTo: payTo,
-      price: PRICE,
+      paidTo: hasPass ? null : payTo,
+      price: hasPass ? "$0.00 (pass)" : PRICE,
     },
-    { headers: gate.responseHeaders },
+    { headers: responseHeaders },
   );
 }

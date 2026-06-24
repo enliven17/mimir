@@ -23,9 +23,16 @@ Mimir won the Arc/Agora hackathon as a macro-stake claim market. For Lepton (nan
 | **Gateway deposit via W3S** | Enables gasless batched payments without a private key | `npm run gateway:deposit` | ✅ 5 USDC deposited |
 | **Agent-to-agent payment** | One Mimir agent buys from another, real USDC flowing | `npm run x402:demo` | ✅ |
 | **Traction generator** | Drives real nanopayments for the traction story | `npm run x402:traffic` | ✅ 10/10 settled |
-| **Revenue dashboard** | Live USDC earned, paying agents, per-endpoint | `/revenue` | ✅ |
+| **Revenue dashboard** | Live USDC earned, paying agents, per-endpoint — durable (Neon), each payment links to its on-chain receipt | `/revenue` | ✅ |
+| **Council-as-jury settlement** | At settlement the oracle *buys* each eligible persona's verdict ($0.001 → persona wallet) and settles by their tally — multi-agent consensus, committed on-chain via `evidenceHash`. Every persona is a paid juror, not decoration | `GET /api/council/vote`, `agents/oracle/council-vote.ts` | ✅ |
+| **Subscription pass** | One nanopayment ($0.01) buys a time-boxed window of free council reads — the recurring-access tier on top of per-read | `POST /api/council/subscribe` | ✅ |
+| **Pull-payment safety** | Failed payout pushes park in `pendingWithdrawals` (claim via `withdraw()`) instead of reverting settlement — one bad recipient can't freeze everyone's payout | `contracts/Mimir.sol` | ✅ v2 |
 
 **Architecture:** the buyer signs the x402 EIP-3009 authorization through W3S `signTypedData` (no key), the seller side runs Circle's Gateway middleware which settles through Circle's hosted facilitator on Arc testnet. See `lib/x402.ts` (buy) and `lib/x402-server.ts` (sell).
+
+**Contracts on Arc Testnet:**
+- **v2 (live):** [`0x50036154a3bc51f2e7d604a2fbc596f02bb555a1`](https://testnet.arcscan.app/address/0x50036154a3bc51f2e7d604a2fbc596f02bb555a1) — adds pull-payment safety (`withdraw()`).
+- **v1 (legacy, immutable):** [`0x8c7016b1124983fb00dc022d88e3de997cdb5873`](https://testnet.arcscan.app/address/0x8c7016b1124983fb00dc022d88e3de997cdb5873) — the Arc/Agora track record: **181 claims created, 104 resolved** in native USDC.
 
 ```
 oracle ──$0.001 USDC──►  /api/premium/price  ──►  Gateway facilitator  ──►  settled on Arc

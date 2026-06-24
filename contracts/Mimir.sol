@@ -77,6 +77,13 @@ contract Mimir {
     mapping(address => uint256) public wins;
     mapping(address => uint256) public losses;
 
+    // Pull-payment fallback. A payout is normally pushed during resolveClaim,
+    // but if the recipient's receive() reverts (e.g. a contract that refuses
+    // funds), the amount is parked here instead of reverting the whole
+    // settlement — one bad recipient can't freeze everyone else's payout.
+    // The recipient pulls it later via withdraw().
+    mapping(address => uint256) public pendingWithdrawals;
+
     uint256 public claimCount;
     uint256 public totalResolved;
 
@@ -89,6 +96,8 @@ contract Mimir {
     event ClaimResolved(uint256 indexed id, uint8 winnerSide, string summary, uint8 confidence, bytes32 evidenceHash);
     event ClaimCancelled(uint256 indexed id);
     event OracleChanged(address indexed previous, address indexed next);
+    event WithdrawalPending(address indexed to, uint256 amount);
+    event Withdrawal(address indexed to, uint256 amount);
 
     // ── Modifiers ─────────────────────────────────────────────────────────────
     modifier onlyOwner() {
@@ -126,7 +135,22 @@ contract Mimir {
     function _transfer(address to, uint256 amount) internal {
         if (amount == 0) return;
         (bool ok,) = payable(to).call{value: amount}("");
-        require(ok, "Mimir: transfer failed");
+        if (!ok) {
+            // Failed push (recipient rejected funds) → park for pull-withdrawal
+            // so a single uncooperative recipient can't revert the settlement.
+            pendingWithdrawals[to] += amount;
+            emit WithdrawalPending(to, amount);
+        }
+    }
+
+    // ── Withdraw: pull a parked payout ──────────────────────────────────────────
+    function withdraw() external {
+        uint256 amount = pendingWithdrawals[msg.sender];
+        require(amount > 0, "Mimir: nothing to withdraw");
+        pendingWithdrawals[msg.sender] = 0; // effects before interaction (reentrancy-safe)
+        (bool ok,) = payable(msg.sender).call{value: amount}("");
+        require(ok, "Mimir: withdraw failed");
+        emit Withdrawal(msg.sender, amount);
     }
 
     function _grossPayout(uint256 stake, uint256 bps) internal pure returns (uint256) {

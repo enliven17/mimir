@@ -59,6 +59,7 @@ import {
   type EvidencePayment,
 } from "../../lib/server/evidence-fetcher";
 import { fetchWithBudget, usdcToAtomic } from "../../lib/x402";
+import { gatherCouncilVerdict } from "./council-vote";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = Number(process.env.ORACLE_POLL_INTERVAL_MS ?? "60000");
@@ -76,6 +77,15 @@ const PAY_EVIDENCE        = process.env.PAY_EVIDENCE !== "0"; // on by default
 const EVIDENCE_POOL_BPS   = Number(process.env.EVIDENCE_POOL_BPS ?? "50");   // 0.5% of pot
 const EVIDENCE_MAX_USDC   = Number(process.env.EVIDENCE_MAX_USDC ?? "0.05"); // hard ceiling
 const EVIDENCE_MIN_USDC   = Number(process.env.EVIDENCE_MIN_USDC ?? "0.001");// floor (still pay tiny sources)
+
+// Council-as-jury settlement. When on, the oracle buys each eligible persona's
+// verdict via x402 (paid into the persona's wallet) and settles by their tally
+// — multi-agent consensus, on-chain. Falls back to the solo verdict if too few
+// jurors vote. Off by default so a missing web server never blocks settlement.
+const COUNCIL_SETTLEMENT  = process.env.COUNCIL_SETTLEMENT === "1";
+const COUNCIL_BASE_URL    = process.env.MIMIR_BASE_URL ?? "http://localhost:3000";
+const COUNCIL_QUORUM      = Number(process.env.COUNCIL_QUORUM ?? "3");
+const COUNCIL_VOTE_CAP    = Number(process.env.COUNCIL_VOTE_CAP_USDC ?? "0.005");
 
 // Module-scoped throttle gate. Free-tier Gemini is 5 RPM on new accounts and
 // the oracle has no other rate limiter — every claim in a poll fires an LLM
@@ -403,8 +413,38 @@ async function settle(claim: ClaimOnChain): Promise<void> {
     const usdc = Number(evidence.payment.priceAtomic) / 1_000_000;
     console.log(`[settle] 💸 Paid ${usdc} ${evidence.payment.asset} for evidence (x402 nanopayment)`);
   }
-  const evidenceHash = hashEvidence(evidence.text);
-  const rawVerdict   = await evaluateClaim(claim, evidence.text);
+
+  // Council-as-jury: buy each persona's verdict (x402 → persona wallet) and
+  // settle by their tally. Commit the tally into the evidence hash so the
+  // consensus is verifiable on-chain. Falls back to the solo oracle verdict.
+  let rawVerdict: OracleVerdict;
+  let commit = evidence.text;
+  if (COUNCIL_SETTLEMENT) {
+    const council = await gatherCouncilVerdict({
+      claimId:       claim.id,
+      category:      claim.category,
+      baseUrl:       COUNCIL_BASE_URL,
+      payer:         { walletId: ORACLE_WALLET, address: ORACLE_ADDR },
+      capUsdc:       COUNCIL_VOTE_CAP,
+      quorum:        COUNCIL_QUORUM,
+    }).catch((err) => {
+      console.warn(`[settle] council vote failed, falling back to solo:`, err instanceof Error ? err.message : err);
+      return null;
+    });
+    if (council) {
+      const paidUsdc = Number(council.totalPaidAtomic) / 1_000_000;
+      console.log(`[settle] 🏛️  Council ${council.tally.creator}–${council.tally.challengers} (${council.tally.draw + council.tally.unresolvable} abstain) · paid ${paidUsdc.toFixed(6)} USDC to jurors`);
+      rawVerdict = { verdict: council.verdict, confidence: council.confidence, explanation: council.explanation };
+      commit = `${evidence.text}\n[council]${JSON.stringify(council.tally)}`;
+    } else {
+      console.log(`[settle] Council below quorum — settling solo.`);
+      rawVerdict = await evaluateClaim(claim, evidence.text);
+    }
+  } else {
+    rawVerdict = await evaluateClaim(claim, evidence.text);
+  }
+
+  const evidenceHash = hashEvidence(commit);
   const trusted      = applyFetcherTrust(rawVerdict, evidence.fetcher);
   const verdict      = tierVerdict(trusted);
 

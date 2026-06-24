@@ -1,10 +1,17 @@
 /**
  * x402 revenue ledger — tracks nanopayments the Mimir endpoints earn.
  *
- * ponytail: in-memory ring buffer (last 1000 events). The on-chain Gateway
- * balance is the durable source of truth; this is for the live dashboard.
- * Swap for a Neon table if cross-restart persistence is needed.
+ * Durable: writes each settled payment to Neon (x402_payments) so the dashboard
+ * survives restarts. The on-chain Gateway balance is still the ultimate source
+ * of truth. When DATABASE_URL is unset (local dev), it transparently falls back
+ * to an in-memory ring buffer (last 1000 events) — never breaks serving.
  */
+
+import {
+  insertX402Payment,
+  getX402RevenueSummary,
+  type X402RevenueSummary,
+} from "./db";
 
 export interface PaymentEvent {
   resource: string; // which endpoint earned it (e.g. /api/premium/price)
@@ -19,12 +26,21 @@ const events: PaymentEvent[] = [];
 
 /** Record a settled payment. Never throws — accounting must not break serving. */
 export function recordPayment(e: PaymentEvent): void {
+  // In-memory mirror (instant, and the only store when no DB is configured).
   try {
     events.push(e);
     if (events.length > MAX) events.splice(0, events.length - MAX);
   } catch {
     /* ignore */
   }
+  // Durable write — fire-and-forget, swallow errors (e.g. DB not configured).
+  void insertX402Payment({
+    resource: e.resource,
+    price_usd: e.priceUsd,
+    payer: e.payer,
+    tx_id: e.txId,
+    at: e.at,
+  }).catch(() => {});
 }
 
 export interface RevenueSummary {
@@ -35,7 +51,23 @@ export interface RevenueSummary {
   recent: PaymentEvent[];
 }
 
-export function getRevenueSummary(limit = 25): RevenueSummary {
+function fromDbSummary(s: X402RevenueSummary): RevenueSummary {
+  return {
+    totalCalls: s.totalCalls,
+    totalUsd: s.totalUsd,
+    uniquePayers: s.uniquePayers,
+    byResource: s.byResource,
+    recent: s.recent.map((r) => ({
+      resource: r.resource,
+      priceUsd: r.price_usd,
+      payer: r.payer,
+      txId: r.tx_id,
+      at: r.at,
+    })),
+  };
+}
+
+function inMemorySummary(limit: number): RevenueSummary {
   const byResource = new Map<string, { calls: number; usd: number }>();
   const payers = new Set<string>();
   let totalUsd = 0;
@@ -56,6 +88,15 @@ export function getRevenueSummary(limit = 25): RevenueSummary {
       .sort((a, b) => b.usd - a.usd),
     recent: events.slice(-limit).reverse(),
   };
+}
+
+/** Durable summary from Neon; falls back to the in-memory buffer on any error. */
+export async function getRevenueSummary(limit = 25): Promise<RevenueSummary> {
+  try {
+    return fromDbSummary(await getX402RevenueSummary(limit));
+  } catch {
+    return inMemorySummary(limit);
+  }
 }
 
 /** Parse an x402 price string like "$0.001" or "0.001" into dollars. */
