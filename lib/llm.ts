@@ -225,6 +225,21 @@ async function callGroq(
         );
         continue;
       }
+      const lowerBody = bodyText.toLowerCase();
+      const badKeyOrRestricted =
+        res.status === 401 ||
+        res.status === 403 ||
+        (res.status === 400 && (
+          lowerBody.includes("organization has been restricted") ||
+          lowerBody.includes("invalid api key") ||
+          lowerBody.includes("invalid_api_key")
+        ));
+      if (badKeyOrRestricted) {
+        tripGroqCooldown(apiKey);
+        lastError = new Error(`Groq key ${groqKeyFingerprint(apiKey)} rejected (${res.status}): ${bodyText.slice(0, 180)}`);
+        console.warn(`[llm] Groq key ${groqKeyFingerprint(apiKey)} rejected (${res.status}) - trying next key`);
+        continue;
+      }
       throw new Error(`Groq ${res.status}: ${bodyText.slice(0, 300)}`);
     }
 

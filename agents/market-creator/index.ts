@@ -98,6 +98,13 @@ interface ClaimCandidate {
   sourceType:       string;
 }
 
+interface ExistingClaimSignature {
+  id:               number;
+  category:         string;
+  questionKey:      string;
+  resolutionUrlKey: string;
+}
+
 interface SportEvent {
   id:            string;
   name:          string;
@@ -183,6 +190,81 @@ function cryptoThresholdReason(candidate: ClaimCandidate, event: CryptoEvent): s
 }
 
 // ── Source fetchers ───────────────────────────────────────────────────────────
+
+function normalizeComparableText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(will|does|do|did|the|their|a|an|in|on|at|by|before|after|during)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeResolutionUrl(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    url.hash = "";
+    url.search = "";
+    return url.toString().replace(/\/$/, "").toLowerCase();
+  } catch {
+    return value.trim().replace(/\/$/, "").toLowerCase();
+  }
+}
+
+function buildCandidateSignature(candidate: ClaimCandidate): ExistingClaimSignature {
+  return {
+    id:               0,
+    category:         String(candidate.category ?? "").toLowerCase().trim(),
+    questionKey:      normalizeComparableText(String(candidate.question ?? "")),
+    resolutionUrlKey: normalizeResolutionUrl(String(candidate.resolutionUrl ?? "")),
+  };
+}
+
+function filterDuplicateCandidates(
+  candidates: ClaimCandidate[],
+  existingClaims: ExistingClaimSignature[],
+): ClaimCandidate[] {
+  const existingQuestionKeys = new Map<string, number>();
+  const existingSourceKeys = new Map<string, number>();
+
+  for (const claim of existingClaims) {
+    if (claim.questionKey) existingQuestionKeys.set(`${claim.category}:${claim.questionKey}`, claim.id);
+    if (claim.resolutionUrlKey) existingSourceKeys.set(`${claim.category}:${claim.resolutionUrlKey}`, claim.id);
+  }
+
+  const seenQuestionKeys = new Set<string>();
+  const seenSourceKeys = new Set<string>();
+
+  return candidates.filter((candidate) => {
+    const sig = buildCandidateSignature(candidate);
+    const questionKey = `${sig.category}:${sig.questionKey}`;
+    const sourceKey = `${sig.category}:${sig.resolutionUrlKey}`;
+
+    const existingSourceId = sig.resolutionUrlKey ? existingSourceKeys.get(sourceKey) : undefined;
+    if (existingSourceId !== undefined) {
+      console.warn(`[market-creator] Drop duplicate candidate - same source as active claim #${existingSourceId}: ${candidate.question.slice(0, 90)}`);
+      return false;
+    }
+
+    const existingQuestionId = sig.questionKey ? existingQuestionKeys.get(questionKey) : undefined;
+    if (existingQuestionId !== undefined) {
+      console.warn(`[market-creator] Drop duplicate candidate - same question as active claim #${existingQuestionId}: ${candidate.question.slice(0, 90)}`);
+      return false;
+    }
+
+    if ((sig.resolutionUrlKey && seenSourceKeys.has(sourceKey)) || (sig.questionKey && seenQuestionKeys.has(questionKey))) {
+      console.warn(`[market-creator] Drop duplicate candidate within run: ${candidate.question.slice(0, 90)}`);
+      return false;
+    }
+
+    if (sig.resolutionUrlKey) seenSourceKeys.add(sourceKey);
+    if (sig.questionKey) seenQuestionKeys.add(questionKey);
+    return true;
+  });
+}
 
 async function fetchCryptoEvents(): Promise<{ text: string; events: CryptoEvent[] }> {
   try {
@@ -527,7 +609,7 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
 
 const CREATOR_ADDR_LC = CREATOR_ADDR.toLowerCase();
 
-async function sweepAndCount(): Promise<{ cancelled: number; joinable: number }> {
+async function sweepAndCount(): Promise<{ cancelled: number; joinable: number; joinableClaims: ExistingClaimSignature[] }> {
   let total: bigint;
   try {
     total = await publicClient.readContract({
@@ -535,12 +617,13 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number }>
     }) as bigint;
   } catch (err) {
     console.warn("[market-creator] Failed to read claimCount for sweep:", err);
-    return { cancelled: 0, joinable: 0 };
+    return { cancelled: 0, joinable: 0, joinableClaims: [] };
   }
 
   const now = BigInt(Math.floor(Date.now() / 1000));
   let cancelled = 0;
   let joinable = 0;
+  const joinableClaims: ExistingClaimSignature[] = [];
 
   for (let id = 1; id <= Number(total); id++) {
     let claim: any;
@@ -559,6 +642,12 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number }>
 
     if ((state === STATE.OPEN || state === STATE.ACTIVE) && deadline > now) {
       joinable++;
+      joinableClaims.push({
+        id,
+        category:         String(claim[13] ?? "").toLowerCase().trim(),
+        questionKey:      normalizeComparableText(String(claim[1] ?? "")),
+        resolutionUrlKey: normalizeResolutionUrl(String(claim[4] ?? "")),
+      });
     }
 
     if (creator !== CREATOR_ADDR_LC) continue;
@@ -582,7 +671,7 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number }>
       console.error(`[market-creator] Failed to cancel #${id}:`, err);
     }
   }
-  return { cancelled, joinable };
+  return { cancelled, joinable, joinableClaims };
 }
 
 // ── Main run ──────────────────────────────────────────────────────────────────
@@ -599,7 +688,7 @@ async function run(): Promise<void> {
   // claim walk. Joinable count drives the cap — getPlatformStats was wrong
   // here because it counted CANCELLED and abandoned expired-OPEN claims as
   // "unresolved" and deadlocked the creator at the cap forever.
-  const { cancelled, joinable } = await sweepAndCount();
+  const { cancelled, joinable, joinableClaims } = await sweepAndCount();
   if (cancelled > 0) {
     console.log(`[market-creator] Cancelled ${cancelled} stale claim(s) — stake refunded.`);
   }
@@ -626,7 +715,7 @@ async function run(): Promise<void> {
   );
 
   console.log("[market-creator] Drafting claim candidates...");
-  const candidates = await draftClaimCandidates({
+  const draftedCandidates = await draftClaimCandidates({
     cryptoText:   crypto.text,
     cryptoEvents: crypto.events,
     sportsText:   sports.text,
@@ -635,6 +724,7 @@ async function run(): Promise<void> {
     stocksEvents: stocks.events,
     weather,
   });
+  const candidates = filterDuplicateCandidates(draftedCandidates, joinableClaims);
 
   if (candidates.length === 0) {
     console.log("[market-creator] No high-quality candidates this run.");
