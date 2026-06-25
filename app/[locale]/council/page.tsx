@@ -110,6 +110,10 @@ function shortAddr(a: string) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
+function openPeepsAvatar(seed: string): string {
+  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}&backgroundColor=0b1020`;
+}
+
 const ARCHETYPE_LABEL: Record<PersonaSpec["archetype"], string> = {
   "llm-biased":  "LLM · biased",
   "rule-based":  "Rule · no LLM",
@@ -124,7 +128,22 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
   return (
     <article className="flex h-full flex-col gap-4 rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-5 transition-colors hover:border-pv-border/60">
       <header className="flex items-start gap-3">
-        <span className="text-2xl leading-none grayscale opacity-75">{persona.emoji}</span>
+        <span
+          className={`relative flex size-14 shrink-0 items-center justify-center rounded-2xl border ${persona.accent.border} ${persona.accent.bg}`}
+          aria-hidden
+        >
+          <span className="absolute inset-0 overflow-hidden rounded-2xl">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={openPeepsAvatar(`council-${persona.slug}`)}
+              alt=""
+              className="h-full w-full object-cover object-top opacity-95"
+            />
+          </span>
+          <span className="absolute -bottom-1 -right-1 flex size-6 items-center justify-center rounded-full border border-pv-bg bg-pv-surface2 text-[13px] leading-none shadow-[0_4px_12px_rgba(0,0,0,0.35)]">
+            {persona.emoji}
+          </span>
+        </span>
         <div className="min-w-0 flex-1">
           <h3 className="font-display text-base font-bold tracking-tight text-pv-text">
             {persona.displayName}
