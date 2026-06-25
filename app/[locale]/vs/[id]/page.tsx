@@ -49,7 +49,6 @@ import {
 import { toast } from "sonner";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
 import {
-  Avatar,
   Badge,
   Button,
   CountdownTimer,
@@ -535,13 +534,26 @@ function formatChallengers(vs: VSData): ClaimChallenger[] {
   }));
 }
 
-function getPeepSrc(address: string, fallbackIndex: number): string {
-  const seed = address
-    .toLowerCase()
-    .split("")
-    .reduce((sum, char) => sum + char.charCodeAt(0), fallbackIndex);
+const CHALLENGERS_PAGE_SIZE = 4;
 
-  return `/people/peep-${(seed % 6) + 1}.png`;
+function getOpenPeepsSrc(seed: string): string {
+  const safeSeed = seed.trim() || "mimir";
+  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(safeSeed)}&backgroundColor=0b1020`;
+}
+
+function trimFixed(value: number, decimals: number): string {
+  return value.toFixed(decimals).replace(/\.?0+$/, "");
+}
+
+function formatUsdcAmount(value: number): string {
+  if (!Number.isFinite(value) || value === 0) return "0 USDC";
+  const abs = Math.abs(value);
+  if (abs < 0.000001) return "<0.000001 USDC";
+  if (abs < 1) return `${trimFixed(value, 6)} USDC`;
+  return `${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} USDC`;
 }
 
 function VsChallengersCard({
@@ -562,16 +574,19 @@ function VsChallengersCard({
   className?: string;
 }) {
   const t = useTranslations("vsDetail");
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
-    // Cuando cambiamos de fase del preview o el listado, volvemos al estado colapsado.
-    setIsExpanded(false);
+    setPage(0);
   }, [showLoadMore, challengers.length]);
 
-  const visibleChallengers =
-    showLoadMore && !isExpanded ? challengers.slice(0, 2) : challengers;
-  const canLoadMore = showLoadMore && challengers.length > 2 && !isExpanded;
+  const pageCount = Math.max(1, Math.ceil(challengers.length / CHALLENGERS_PAGE_SIZE));
+  const normalizedPage = Math.min(page, pageCount - 1);
+  const visibleChallengers = challengers.slice(
+    normalizedPage * CHALLENGERS_PAGE_SIZE,
+    normalizedPage * CHALLENGERS_PAGE_SIZE + CHALLENGERS_PAGE_SIZE,
+  );
+  const hasPagination = challengers.length > CHALLENGERS_PAGE_SIZE;
 
   return (
     <GlassCard glass glow="none" noPad className={className}>
@@ -615,22 +630,22 @@ function VsChallengersCard({
           </div>
         ) : (
           <div className="rounded-xl border border-white/[0.1] bg-pv-bg/25 p-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] sm:p-3.5">
-            <ul className="space-y-2 sm:space-y-2.5" role="list">
+            <ul className="min-h-[15.5rem] max-h-[18rem] space-y-2 overflow-y-auto pr-1 sm:space-y-2.5" role="list">
               {visibleChallengers.map((challenger, index) => (
-                <li key={`${challenger.address}-${index}`}>
+                <li key={`${challenger.address}-${normalizedPage}-${index}`}>
                   <div className="rounded-lg border border-white/[0.08] bg-gradient-to-br from-pv-fuch/[0.04] via-transparent to-transparent p-2.5 transition-[border-color,background-color] duration-200 hover:border-white/[0.14] sm:p-3">
                     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 sm:gap-2.5 md:gap-3">
                       <div className="relative size-9 shrink-0 sm:size-10" aria-hidden>
                         <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full border border-pv-fuch/[0.32] bg-pv-surface2 shadow-[inset_0_0_18px_rgba(255,255,255,0.03)]">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={getPeepSrc(challenger.address, index)}
+                            src={getOpenPeepsSrc(`challenger-${challenger.address}`)}
                             alt=""
                             className="h-full w-full object-cover object-top opacity-95"
                           />
                         </div>
                         <span className="absolute -bottom-1 -right-1 z-10 flex h-4 min-w-4 items-center justify-center rounded-full border border-pv-bg bg-pv-fuch px-1 font-mono text-[8px] font-bold tabular-nums leading-none text-pv-bg shadow-[0_2px_8px_rgba(0,0,0,0.35)]">
-                          {index + 1}
+                          {normalizedPage * CHALLENGERS_PAGE_SIZE + index + 1}
                         </span>
                       </div>
                       <div className="min-w-0">
@@ -657,7 +672,7 @@ function VsChallengersCard({
                           className="flex h-7 min-w-[4rem] items-center justify-center rounded-md border border-white/[0.1] bg-pv-bg/55 px-2 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-fuch sm:h-8 sm:min-w-[4.5rem] sm:text-[10px]"
                           title={t("challengerStake")}
                         >
-                          {challenger.stake} USDC
+                          {formatUsdcAmount(challenger.stake)}
                         </div>
                       </div>
                     </div>
@@ -665,15 +680,28 @@ function VsChallengersCard({
                 </li>
               ))}
             </ul>
-            {canLoadMore ? (
-              <div className="pt-3 text-center">
+            {hasPagination ? (
+              <div className="flex items-center justify-between gap-3 pt-3">
                 <button
                   type="button"
-                  aria-expanded={isExpanded}
-                  onClick={() => setIsExpanded(true)}
-                  className="inline-flex items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.01] px-3 py-2 text-xs font-semibold text-pv-muted transition-[background-color,border-color] hover:border-white/[0.1] hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/25"
+                  aria-label="Previous challengers"
+                  disabled={normalizedPage === 0}
+                  onClick={() => setPage((current) => Math.max(0, current - 1))}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.02] text-sm font-bold text-pv-muted transition-[background-color,border-color,color] hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-pv-text disabled:cursor-not-allowed disabled:opacity-35"
                 >
-                  Load more
+                  {"<"}
+                </button>
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-pv-muted">
+                  {normalizedPage + 1}/{pageCount}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next challengers"
+                  disabled={normalizedPage >= pageCount - 1}
+                  onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.02] text-sm font-bold text-pv-muted transition-[background-color,border-color,color] hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-pv-text disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  {">"}
                 </button>
               </div>
             ) : null}
@@ -1063,8 +1091,8 @@ export default function VSDetailPage() {
     !hasWinner
       ? null
       : resolvedPayout === null
-        ? `${pool} USDC`
-        : `${provenResultTone === "lost" ? "-" : "+"}${resolvedPayout} USDC`;
+        ? formatUsdcAmount(pool)
+        : `${provenResultTone === "lost" ? "-" : "+"}${formatUsdcAmount(resolvedPayout)}`;
   const marketType = display.market_type ?? "binary";
   const oddsMode = display.odds_mode ?? "pool";
   const challengeStakeValue = Number(challengeStake);
@@ -1438,7 +1466,14 @@ export default function VSDetailPage() {
                 <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-white/[0.12] sm:flex-row">
                   <div className="flex-1 p-4 bg-pv-cyan/[0.04]">
                     <div className="flex items-center gap-2 mb-2">
-                      <Avatar side="creator" size={28} />
+                      <div className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-pv-cyan/35 bg-pv-surface2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={getOpenPeepsSrc(`creator-${display.creator}`)}
+                          alt=""
+                          className="h-full w-full object-cover object-top opacity-95"
+                        />
+                      </div>
                       <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-pv-cyan/60 sm:text-[11px]">
                         {t("creator")}
                       </div>
@@ -1468,7 +1503,14 @@ export default function VSDetailPage() {
                     ) : challengerCount === 1 ? (
                       <>
                         <div className="flex items-center gap-2 mb-2">
-                          <Avatar side="opponent" size={28} />
+                          <div className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-pv-fuch/35 bg-pv-surface2">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={getOpenPeepsSrc(`challenger-${display.opponent}`)}
+                              alt=""
+                              className="h-full w-full object-cover object-top opacity-95"
+                            />
+                          </div>
                           <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-pv-fuch/60 sm:text-[11px]">
                             {t("rival")}
                           </div>
@@ -1509,7 +1551,7 @@ export default function VSDetailPage() {
                       {t("pool")}
                     </p>
                     <div className="mt-auto min-w-0 pt-2 font-mono text-base font-bold tabular-nums leading-tight text-pv-gold sm:text-lg lg:text-xl">
-                      {pool} USDC
+                      {formatUsdcAmount(pool)}
                     </div>
                   </div>
                   <div className="flex min-h-[5.75rem] min-w-0 flex-col bg-pv-bg/55 px-4 py-3.5 sm:min-h-[6rem] sm:px-4 sm:py-4">
@@ -1517,7 +1559,7 @@ export default function VSDetailPage() {
                       {t("creatorStake")}
                     </p>
                     <div className="mt-auto min-w-0 pt-2 font-mono text-base font-bold tabular-nums leading-tight text-pv-cyan sm:text-lg lg:text-xl">
-                      {display.creator_stake ?? display.stake_amount} USDC
+                      {formatUsdcAmount(display.creator_stake ?? display.stake_amount)}
                     </div>
                   </div>
                   <div className="flex min-h-[5.75rem] min-w-0 flex-col bg-pv-bg/55 px-4 py-3.5 sm:min-h-[6rem] sm:px-4 sm:py-4">
@@ -1738,7 +1780,7 @@ export default function VSDetailPage() {
 
               {canAccept && (
                 <GlassCard glass className="!rounded-2xl border border-white/[0.12]">
-                    <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,12rem)] sm:items-end">
                       <Input
                         label={t("challengeStake")}
                         type="number"
@@ -1746,14 +1788,14 @@ export default function VSDetailPage() {
                         step="1"
                         value={challengeStake}
                         onChange={(event) => setChallengeStake(event.target.value)}
+                        className="h-[3.25rem]"
                       />
                       <Button
                         variant="fuch"
-                        fullWidth={false}
                         onClick={handleAccept}
                         loading={actionLoading === "accept"}
                         disabled={!hasValidChallengeStake}
-                        className="sm:min-w-[12rem]"
+                        className="h-[3.25rem] w-full"
                       >
                         {actionLoading === "accept"
                           ? t("accepting")
@@ -2066,6 +2108,7 @@ export default function VSDetailPage() {
               <div className="flex flex-col gap-6 lg:sticky lg:top-24">
                 {(display.state === "open" || display.state === "accepted") && (
                   <ClaimStrengthCard
+                    className="lg:min-h-[20rem]"
                     input={{
                       question: display.question,
                       creator_position: display.creator_position,
@@ -2150,7 +2193,7 @@ export default function VSDetailPage() {
                                       {entry.question}
                                     </div>
                                     <div className="text-xs text-pv-muted mt-1">
-                                      {t("pool")}: {getVSTotalPot(entry)} USDC
+                                      {t("pool")}: {formatUsdcAmount(getVSTotalPot(entry))}
                                     </div>
                                   </div>
                                 );

@@ -69,9 +69,10 @@ if (
   !process.env.GEMINI_API_KEY?.trim() &&
   !process.env.ANTHROPIC_API_KEY?.trim() &&
   !process.env.GROQ_API_KEY?.trim() &&
+  !process.env.GROQ_API_KEYS?.trim() &&
   !process.env.OPENROUTER_API_KEY?.trim()
 ) {
-  console.error("Set at least one LLM key: GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY");
+  console.error("Set at least one LLM key: GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY/GROQ_API_KEYS, or OPENROUTER_API_KEY");
   process.exit(1);
 }
 

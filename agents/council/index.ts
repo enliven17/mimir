@@ -64,7 +64,7 @@ const POLL_INTERVAL_MS = Number(process.env.COUNCIL_POLL_INTERVAL_MS ?? 180_000)
  * Claims are sorted by deadline-proximity so the council focuses on
  * the markets closest to settling.
  */
-const MAX_CLAIMS_PER_CYCLE = Number(process.env.COUNCIL_MAX_CLAIMS ?? 12);
+const MAX_CLAIMS_PER_CYCLE = Number(process.env.COUNCIL_MAX_CLAIMS ?? 2);
 const CONTRACT_ADDRESS     = getContractAddress();
 const publicClient         = createArcPublicClient();
 
@@ -75,8 +75,14 @@ for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET"]) {
     process.exit(1);
   }
 }
-if (!process.env.GEMINI_API_KEY?.trim() && !process.env.ANTHROPIC_API_KEY?.trim()) {
-  console.error("GEMINI_API_KEY or ANTHROPIC_API_KEY env var is required");
+if (
+  !process.env.GEMINI_API_KEY?.trim() &&
+  !process.env.ANTHROPIC_API_KEY?.trim() &&
+  !process.env.GROQ_API_KEY?.trim() &&
+  !process.env.GROQ_API_KEYS?.trim() &&
+  !process.env.OPENROUTER_API_KEY?.trim()
+) {
+  console.error("Set at least one LLM key: GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY/GROQ_API_KEYS, or OPENROUTER_API_KEY");
   process.exit(1);
 }
 

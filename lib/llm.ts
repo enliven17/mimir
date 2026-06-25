@@ -1,7 +1,7 @@
 /**
  * Provider-agnostic LLM calls for Mimir agents.
  *
- * Auto-selects between Google Gemini, Anthropic Claude, and Groq based on
+ * Auto-selects between Gemini, Claude, Groq, and OpenRouter based on
  * configured API keys. The active provider can be forced with:
  *   LLM_PROVIDER=gemini|anthropic|groq|openrouter
  *
@@ -32,8 +32,8 @@ const OPENROUTER_QUOTA_COOLDOWN_MS = Number(process.env.OPENROUTER_QUOTA_COOLDOW
 
 let anthropicClient: Anthropic | null = null;
 let geminiCooldownUntil = 0;
-let groqCooldownUntil = 0;
 let openrouterCooldownUntil = 0;
+const groqCooldownByKey = new Map<string, number>();
 
 function cooldownRemaining(until: number): number {
   const remaining = until - Date.now();
@@ -44,20 +44,48 @@ function geminiCooldownRemaining(): number {
   return cooldownRemaining(geminiCooldownUntil);
 }
 
-function groqCooldownRemaining(): number {
-  return cooldownRemaining(groqCooldownUntil);
-}
-
 function openrouterCooldownRemaining(): number {
   return cooldownRemaining(openrouterCooldownUntil);
 }
 
-function tripGeminiCooldown(): void {
-  geminiCooldownUntil = Date.now() + GEMINI_QUOTA_COOLDOWN_MS;
+function getGroqKeys(): string[] {
+  const raw = [
+    process.env.GROQ_API_KEY,
+    ...(process.env.GROQ_API_KEYS ?? "").split(/[,\s]+/),
+  ];
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const value of raw) {
+    const key = value?.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
 }
 
-function tripGroqCooldown(): void {
-  groqCooldownUntil = Date.now() + GROQ_QUOTA_COOLDOWN_MS;
+function groqKeyCooldownRemaining(key: string): number {
+  return cooldownRemaining(groqCooldownByKey.get(key) ?? 0);
+}
+
+function groqCooldownRemaining(): number {
+  const keys = getGroqKeys();
+  if (keys.length === 0) return 0;
+  const ready = keys.some((key) => groqKeyCooldownRemaining(key) === 0);
+  if (ready) return 0;
+  return Math.min(...keys.map(groqKeyCooldownRemaining));
+}
+
+function tripGroqCooldown(key: string): void {
+  groqCooldownByKey.set(key, Date.now() + GROQ_QUOTA_COOLDOWN_MS);
+}
+
+function groqKeyFingerprint(key: string): string {
+  return `...${key.slice(-6)}`;
+}
+
+function tripGeminiCooldown(): void {
+  geminiCooldownUntil = Date.now() + GEMINI_QUOTA_COOLDOWN_MS;
 }
 
 function tripOpenRouterCooldown(): void {
@@ -66,7 +94,7 @@ function tripOpenRouterCooldown(): void {
 
 function hasProviderKey(provider: LLMProvider): boolean {
   if (provider === "gemini") return !!process.env.GEMINI_API_KEY?.trim();
-  if (provider === "groq") return !!process.env.GROQ_API_KEY?.trim();
+  if (provider === "groq") return getGroqKeys().length > 0;
   if (provider === "openrouter") return !!process.env.OPENROUTER_API_KEY?.trim();
   return !!process.env.ANTHROPIC_API_KEY?.trim();
 }
@@ -79,7 +107,9 @@ function providerCooldown(provider: LLMProvider): number {
 }
 
 function fallbackProviders(primary: LLMProvider): LLMProvider[] {
-  const preferred: LLMProvider[] = [primary, "groq", "openrouter", "anthropic", "gemini"];
+  const preferred: LLMProvider[] = primary === "openrouter"
+    ? [primary, "groq", "anthropic", "gemini"]
+    : [primary, "groq", "anthropic", "gemini", "openrouter"];
   return preferred.filter((provider, index) =>
     preferred.indexOf(provider) === index && hasProviderKey(provider)
   );
@@ -90,9 +120,9 @@ export function activeLLMProvider(): LLMProvider {
   if (forced === "gemini" || forced === "anthropic" || forced === "groq" || forced === "openrouter") return forced;
   if (process.env.GEMINI_API_KEY?.trim()) return "gemini";
   if (process.env.ANTHROPIC_API_KEY?.trim()) return "anthropic";
-  if (process.env.GROQ_API_KEY?.trim()) return "groq";
+  if (getGroqKeys().length > 0) return "groq";
   if (process.env.OPENROUTER_API_KEY?.trim()) return "openrouter";
-  throw new Error("No LLM API key configured. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.");
+  throw new Error("No LLM API key configured. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY/GROQ_API_KEYS, or OPENROUTER_API_KEY.");
 }
 
 export function activeLLMModel(): string {
@@ -109,7 +139,7 @@ export function activeLLMKeyFingerprint(): string {
   const raw = provider === "gemini"
     ? process.env.GEMINI_API_KEY
     : provider === "groq"
-    ? process.env.GROQ_API_KEY
+    ? getGroqKeys()[0]
     : provider === "openrouter"
     ? process.env.OPENROUTER_API_KEY
     : process.env.ANTHROPIC_API_KEY;
@@ -161,34 +191,50 @@ async function callGroq(
   prompt: string,
   opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
 ): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY!.trim();
-  const body: Record<string, unknown> = {
-    model: DEFAULT_GROQ_MODEL,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: opts.maxTokens,
-    temperature: opts.temperature,
-  };
-  if (opts.jsonOnly) body.response_format = { type: "json_object" };
+  const keys = getGroqKeys();
+  let lastError: Error | null = null;
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!res.ok) {
-    const bodyText = (await res.text()).slice(0, 500);
-    if (res.status === 429) {
-      tripGroqCooldown();
-      console.warn(`[llm] Groq 429 - entering ${Math.round(GROQ_QUOTA_COOLDOWN_MS / 1000)}s cooldown`);
+  for (const apiKey of keys) {
+    const cooldown = groqKeyCooldownRemaining(apiKey);
+    if (cooldown > 0) {
+      lastError = new Error(`Groq key ${groqKeyFingerprint(apiKey)} in cooldown - ${Math.ceil(cooldown / 1000)}s remaining`);
+      continue;
     }
-    throw new Error(`Groq ${res.status}: ${bodyText.slice(0, 300)}`);
+
+    const body: Record<string, unknown> = {
+      model: DEFAULT_GROQ_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: opts.maxTokens,
+      temperature: opts.temperature,
+    };
+    if (opts.jsonOnly) body.response_format = { type: "json_object" };
+
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      const bodyText = (await res.text()).slice(0, 500);
+      if (res.status === 429) {
+        tripGroqCooldown(apiKey);
+        lastError = new Error(`Groq ${res.status}: ${bodyText.slice(0, 300)}`);
+        console.warn(
+          `[llm] Groq key ${groqKeyFingerprint(apiKey)} 429 - trying next key (${Math.round(GROQ_QUOTA_COOLDOWN_MS / 1000)}s cooldown)`,
+        );
+        continue;
+      }
+      throw new Error(`Groq ${res.status}: ${bodyText.slice(0, 300)}`);
+    }
+
+    const json: any = await res.json();
+    const text: string = (json?.choices?.[0]?.message?.content ?? "").trim();
+    if (!text) throw new Error("Groq empty response");
+    return text;
   }
 
-  const json: any = await res.json();
-  const text: string = (json?.choices?.[0]?.message?.content ?? "").trim();
-  if (!text) throw new Error("Groq empty response");
-  return text;
+  throw lastError ?? new Error("No Groq API key configured");
 }
 
 async function callOpenRouter(

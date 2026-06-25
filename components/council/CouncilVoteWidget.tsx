@@ -39,6 +39,10 @@ interface CouncilResponse {
   votes:       PersonaVote[];
 }
 
+function openPeepsAvatar(seed: string): string {
+  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}&backgroundColor=0b1020`;
+}
+
 export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
   const [data, setData] = useState<CouncilResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,7 +76,7 @@ export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
 
   if (loading) {
     return (
-      <section className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-5">
+      <section className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-5 lg:min-h-[20rem]">
         <div className="text-[11px] font-mono uppercase tracking-[0.18em] text-pv-muted">Council verdict</div>
         <div className="mt-2 text-sm text-pv-muted">Reading on-chain stakes…</div>
       </section>
@@ -88,7 +92,7 @@ export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
   }
 
   return (
-    <section className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-5">
+    <section className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-5 lg:min-h-[20rem]">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <div className="text-[11px] font-mono uppercase tracking-[0.18em] text-pv-emerald">Council verdict</div>
@@ -112,7 +116,14 @@ export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
             }`}
           >
             <div className="flex min-w-0 items-center gap-2">
-              <span className="text-base leading-none grayscale opacity-75">{v.emoji}</span>
+              <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/[0.1] bg-pv-surface2" aria-hidden>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={openPeepsAvatar(`council-${v.slug}`)}
+                  alt=""
+                  className="h-full w-full object-cover object-top opacity-90"
+                />
+              </span>
               <span className={`truncate text-[12px] font-semibold ${v.staked ? "text-pv-text" : "text-pv-muted"}`}>
                 {v.displayName}
               </span>

@@ -50,7 +50,7 @@ const DEFAULT_STAKE_USDC     = 2;
  * single process and add a small delay between them so a burst across
  * 8+ personas doesn't trip 429s. Overridable via COUNCIL_LLM_THROTTLE_MS.
  */
-const LLM_THROTTLE_MS = Number(process.env.COUNCIL_LLM_THROTTLE_MS ?? 4500);
+const LLM_THROTTLE_MS = Number(process.env.COUNCIL_LLM_THROTTLE_MS ?? 8000);
 let lastLlmCallAt = 0;
 
 async function throttleLlm(): Promise<void> {

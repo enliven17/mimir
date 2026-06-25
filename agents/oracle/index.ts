@@ -68,7 +68,7 @@ const CONTRACT_ADDRESS      = getContractAddress();
 const AUTO_CHALLENGE        = process.env.AUTO_CHALLENGE === "1";
 const CHALLENGE_STAKE_USDC  = Number(process.env.CHALLENGE_STAKE_USDC ?? "2");
 const CHALLENGE_CONFIDENCE  = Number(process.env.CHALLENGE_CONFIDENCE ?? "80");
-const LLM_THROTTLE_MS       = Number(process.env.ORACLE_LLM_THROTTLE_MS ?? "0");
+const LLM_THROTTLE_MS       = Number(process.env.ORACLE_LLM_THROTTLE_MS ?? "8000");
 
 // x402 paid-evidence config. The oracle becomes a PAYING agent: when a resolution
 // source answers 402, it buys the data with a sub-cent USDC nanopayment — but
@@ -114,8 +114,14 @@ for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_WALLET
     process.exit(1);
   }
 }
-if (!process.env.GEMINI_API_KEY?.trim() && !process.env.ANTHROPIC_API_KEY?.trim()) {
-  console.error("GEMINI_API_KEY or ANTHROPIC_API_KEY env var is required");
+if (
+  !process.env.GEMINI_API_KEY?.trim() &&
+  !process.env.ANTHROPIC_API_KEY?.trim() &&
+  !process.env.GROQ_API_KEY?.trim() &&
+  !process.env.GROQ_API_KEYS?.trim() &&
+  !process.env.OPENROUTER_API_KEY?.trim()
+) {
+  console.error("Set at least one LLM key: GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY/GROQ_API_KEYS, or OPENROUTER_API_KEY");
   process.exit(1);
 }
 

@@ -594,9 +594,13 @@ Every env var lives in `.env.example`. Quick reference:
 | `GEMINI_API_KEY`                  | LLM (preferred)          | If present, Gemini is the default primary provider                                 |
 | `ANTHROPIC_API_KEY`               | LLM (fallback)           | Claude fallback and optional primary provider                                      |
 | `GROQ_API_KEY`                    | LLM (fallback)           | Fast fallback after primary provider failures                                      |
-| `OPENROUTER_API_KEY`              | LLM (fallback)           | Third fallback after Groq; defaults to `openrouter/free`                           |
+| `GROQ_API_KEYS`                   | LLM (fallback)           | Optional comma/space-separated Groq key pool; each 429 cools down only that key    |
+| `OPENROUTER_API_KEY`              | LLM (fallback)           | Final fallback after the configured primary/Groq pool; defaults to `openrouter/free` |
 | `LLM_PROVIDER`                    | optional                 | Force `gemini`, `anthropic`, `groq`, or `openrouter`                               |
 | `ORACLE_LLM_MODEL`                | optional                 | Override default model name                                                        |
+| `ORACLE_LLM_THROTTLE_MS`          | oracle                   | Min delay between oracle LLM calls; default `8000`                                 |
+| `COUNCIL_MAX_CLAIMS`              | council                  | Max joinable claims evaluated per council cycle; default `2`                       |
+| `COUNCIL_LLM_THROTTLE_MS`         | council                  | Min delay between council LLM calls; default `8000`                                |
 | `AUTO_CHALLENGE`                  | oracle (worker)          | `1` to enable Kelly auto-stake                                                     |
 | `CHALLENGE_STAKE_USDC`            | oracle (worker)          | Min stake per auto-challenge (default 2)                                            |
 | `CHALLENGE_CONFIDENCE`            | oracle (worker)          | Min LLM confidence % to auto-stake (default 80)                                    |
@@ -606,8 +610,8 @@ Every env var lives in `.env.example`. Quick reference:
 | `CIRCLE_COUNCIL_<SLUG>_WALLET_ID` | council (worker)         | Per-persona W3S wallet ID; created by `npm run council:create-wallets`             |
 | `CIRCLE_COUNCIL_<SLUG>_ADDRESS`   | council (worker, UI)     | Per-persona EVM address; used to label on-chain events with the right persona      |
 | `COUNCIL_POLL_INTERVAL_MS`        | council (worker)         | Cycle interval (default 180_000 = 3 min)                                            |
-| `COUNCIL_MAX_CLAIMS`              | council (worker)         | Max claims per cycle, deadline-sorted (default 12). Lower to ease Gemini quota.    |
-| `COUNCIL_LLM_THROTTLE_MS`         | council (worker)         | Min ms between LLM calls (default 4500 ≈ 13 req/min worst case)                   |
+| `COUNCIL_MAX_CLAIMS`              | council (worker)         | Max claims per cycle, deadline-sorted (default 2). Raise only with paid quota.     |
+| `COUNCIL_LLM_THROTTLE_MS`         | council (worker)         | Min ms between LLM calls (default 8000)                                             |
 
 ---
 
