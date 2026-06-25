@@ -18,7 +18,7 @@
  * Env: CREATOR_PRIVATE_KEY, NEXT_PUBLIC_CONTRACT_ADDRESS, ANTHROPIC_API_KEY
  *      CREATOR_STAKE_USDC=2      (stake per market, default 2 USDC)
  *      MAX_CLAIMS_PER_RUN=5      (max new claims per run, default 5)
- *      MAX_ACTIVE_CLAIMS=10      (skip run if unresolved on-chain claims ≥ this)
+ *      MAX_ACTIVE_CLAIMS=30      (skip run if joinable on-chain claims >= this)
  *      RUN_INTERVAL_HOURS=6      (hours between runs, default 6h)
  */
 
@@ -53,9 +53,11 @@ import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
 const CONTRACT_ADDRESS    = getContractAddress();
 const CREATOR_STAKE_USDC  = Number(process.env.CREATOR_STAKE_USDC ?? "2");
 const MAX_CLAIMS_PER_RUN  = Number(process.env.MAX_CLAIMS_PER_RUN ?? "5");
-const MAX_ACTIVE_CLAIMS   = Number(process.env.MAX_ACTIVE_CLAIMS ?? "10");
+const MAX_ACTIVE_CLAIMS   = Number(process.env.MAX_ACTIVE_CLAIMS ?? "30");
 const RUN_INTERVAL_HOURS  = Number(process.env.RUN_INTERVAL_HOURS ?? "6");
 const MIN_QUALITY_SCORE   = 70; // 0-100
+const CRYPTO_MIN_THRESHOLD_RATIO = Number(process.env.CRYPTO_MIN_THRESHOLD_RATIO ?? "0.65");
+const CRYPTO_MAX_THRESHOLD_RATIO = Number(process.env.CRYPTO_MAX_THRESHOLD_RATIO ?? "1.35");
 
 for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLET_ID", "CIRCLE_CREATOR_ADDRESS"]) {
   if (!process.env[v]) {
@@ -63,8 +65,13 @@ for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLE
     process.exit(1);
   }
 }
-if (!process.env.GEMINI_API_KEY?.trim() && !process.env.ANTHROPIC_API_KEY?.trim()) {
-  console.error("GEMINI_API_KEY or ANTHROPIC_API_KEY env var is required");
+if (
+  !process.env.GEMINI_API_KEY?.trim() &&
+  !process.env.ANTHROPIC_API_KEY?.trim() &&
+  !process.env.GROQ_API_KEY?.trim() &&
+  !process.env.OPENROUTER_API_KEY?.trim()
+) {
+  console.error("Set at least one LLM key: GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY");
   process.exit(1);
 }
 
@@ -111,6 +118,67 @@ interface StockEvent {
   symbol:        string;  // ticker (e.g. "AAPL")
   name:          string;
   resolutionUrl: string;  // stockanalysis.com page (oracle scrapes price/day change)
+}
+
+function formatUsd(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "unknown";
+  if (value >= 1000) return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (value >= 1) return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
+function extractUsdThresholds(text: string): number[] {
+  const thresholds: number[] = [];
+  const seen = new Set<string>();
+  const patterns = [
+    /\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*([kKmMbBtT]))?/g,
+    /\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:USD|US dollars?|dollars?)\b/gi,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const raw = match[1]?.replace(/,/g, "");
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed <= 0) continue;
+      const suffix = match[2]?.toLowerCase();
+      const multiplier = suffix === "k" ? 1_000
+        : suffix === "m" ? 1_000_000
+        : suffix === "b" ? 1_000_000_000
+        : suffix === "t" ? 1_000_000_000_000
+        : 1;
+      const value = parsed * multiplier;
+      const key = value.toString();
+      if (!seen.has(key)) {
+        seen.add(key);
+        thresholds.push(value);
+      }
+    }
+  }
+
+  return thresholds;
+}
+
+function cryptoThresholdReason(candidate: ClaimCandidate, event: CryptoEvent): string | null {
+  if (!Number.isFinite(event.priceUsd) || event.priceUsd <= 0) {
+    return `missing live CoinGecko price for ${event.symbol}`;
+  }
+
+  const text = [
+    candidate.question,
+    candidate.settlementRule,
+  ].join("\n");
+  const thresholds = extractUsdThresholds(text);
+  if (thresholds.length === 0) return "no explicit USD price threshold found";
+
+  const low = event.priceUsd * CRYPTO_MIN_THRESHOLD_RATIO;
+  const high = event.priceUsd * CRYPTO_MAX_THRESHOLD_RATIO;
+  const realistic = thresholds.some((threshold) => threshold >= low && threshold <= high);
+  if (!realistic) {
+    const rendered = thresholds.map((threshold) => `$${formatUsd(threshold)}`).join(", ");
+    return `${rendered} outside live ${event.symbol} guard ($${formatUsd(low)}-$${formatUsd(high)}, current=$${formatUsd(event.priceUsd)})`;
+  }
+
+  return null;
 }
 
 // ── Source fetchers ───────────────────────────────────────────────────────────
@@ -265,7 +333,7 @@ async function draftClaimCandidates(sourceData: {
       `- [sports] "${e.name}" (gameId=${e.id}, starts=${e.startDate}) → ${e.resolutionUrl}`
     ),
     ...sourceData.cryptoEvents.map((c) =>
-      `- [crypto] "${c.name}" (${c.symbol}) → ${c.resolutionUrl}`
+      `- [crypto] "${c.name}" (${c.symbol}, current=$${formatUsd(c.priceUsd)}) -> ${c.resolutionUrl}`
     ),
     ...sourceData.stocksEvents.map((s) =>
       `- [stocks] "${s.name}" (${s.symbol}) → ${s.resolutionUrl}`
@@ -302,6 +370,7 @@ Create ${MAX_CLAIMS_PER_RUN} prediction market claim candidates. Each must be:
 - **Binary or near-binary**: clear winner/loser outcome
 - **Time-bounded**: deadline between 2-72 hours from now (${now.toISOString()})
 - **For sports (World Cup / NBA)**: deadlineHours MUST place the deadline AT LEAST 4 hours AFTER the listed start time. Never create a market on a game that has already started or finished. Frame as match outcome (e.g. "Will Brazil beat Scotland?").
+- **For crypto**: use the live CoinGecko price shown above. Create only single-asset USD price threshold markets for the listed coin URL. The threshold MUST be realistic for a 2-72 hour deadline: between ${Math.round(CRYPTO_MIN_THRESHOLD_RATIO * 100)}% and ${Math.round(CRYPTO_MAX_THRESHOLD_RATIO * 100)}% of the current price. Do NOT create stale moonshot targets, total-market-cap claims, or thresholds copied from old examples.
 - **For stocks**: frame as intraday direction resolvable from the page (e.g. "Will AAPL close up on the day?") — do NOT invent a specific price target you can't verify.
 - **Specific**: no vague language like "probably" or "might"
 
@@ -338,7 +407,7 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
   // deadline-vs-tipoff guard so we don't create markets whose deadline falls
   // before the game ends.
   const sportsUrls = new Map(sourceData.sportsEvents.map((e) => [e.resolutionUrl, e]));
-  const cryptoUrls = new Set(sourceData.cryptoEvents.map((c) => c.resolutionUrl));
+  const cryptoUrls = new Map(sourceData.cryptoEvents.map((c) => [c.resolutionUrl, c]));
   const stocksUrls = new Set(sourceData.stocksEvents.map((s) => s.resolutionUrl));
   const nowMs      = Date.now();
 
@@ -370,8 +439,14 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
     }
 
     if (cat === "crypto") {
-      if (!cryptoUrls.has(url)) {
+      const event = cryptoUrls.get(url);
+      if (!event) {
         console.warn(`[market-creator] Drop crypto candidate — URL not in allowlist: ${url}`);
+        return false;
+      }
+      const reason = cryptoThresholdReason(c, event);
+      if (reason) {
+        console.warn(`[market-creator] Drop crypto candidate - ${reason}: ${c.question.slice(0, 90)}`);
         return false;
       }
       return true;
