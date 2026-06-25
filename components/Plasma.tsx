@@ -84,12 +84,12 @@ vec3 sanitize(vec3 c){
   );
 }
 
-// 4-stop blush palette (matches the page's pv tokens).
-// Index 0 = page bg (lightest), index 3 = accent (deepest tint).
-const vec3 PAL0 = vec3(0.988, 0.973, 0.973); // #FCF8F8
-const vec3 PAL1 = vec3(0.984, 0.937, 0.937); // #FBEFEF
-const vec3 PAL2 = vec3(0.976, 0.875, 0.875); // #F9DFDF
-const vec3 PAL3 = vec3(0.961, 0.686, 0.686); // #F5AFAF
+// 4-stop blueprint palette (matches the page's pv tokens).
+// Index 0 = page bg (deep navy), index 3 = accent (blueprint cyan).
+const vec3 PAL0 = vec3(0.039, 0.118, 0.239); // #0A1E3D
+const vec3 PAL1 = vec3(0.055, 0.149, 0.286); // #0E2649
+const vec3 PAL2 = vec3(0.075, 0.188, 0.341); // #133057
+const vec3 PAL3 = vec3(0.373, 0.690, 1.000); // #5FB0FF
 
 vec3 palette(float t) {
   t = clamp(t, 0.0, 1.0);
@@ -119,7 +119,7 @@ void main() {
 }`;
 
 export default function Plasma({
-  color = "#F5AFAF",
+  color = "#5FB0FF",
   speed = 1,
   direction = "forward",
   scale = 1,

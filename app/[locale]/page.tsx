@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
-import Plasma from "@/components/Plasma";
+import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import {
@@ -16,14 +16,17 @@ import {
 import { ZERO_ADDRESS, shortenAddress } from "@/lib/constants";
 import { mergePendingVS } from "@/lib/pending-vs";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { Button } from "@/components/ui";
 import VSCard from "@/components/VSCard";
 import ArenaCard from "@/components/ArenaCard";
 import ArenaProposeCard from "@/components/ArenaProposeCard";
 import SettlementArchiveSection from "@/components/SettlementArchiveSection";
-import Artifact from "@/components/Artifact";
 import LiveStat from "@/components/LiveStat";
 import { kineticContainer, kineticLetter } from "@/lib/animations/rituals";
+
+// Canvas can't render during SSR/prerender — load client-only.
+const HeroAscii = dynamic(() => import("@/components/HeroAscii"), { ssr: false });
 
 type ParsedStat = {
   prefix: string;
@@ -269,17 +272,20 @@ export default function HomePage() {
     <PageTransition>
       {/* Hero — Manifesto with kinetic typography + arena grid */}
       <AnimatedItem>
-        <section className="relative mb-6 w-full sm:mb-8">
-          {/* Plasma WebGL backdrop — full-viewport-bleed, escapes both <main> and the hero box */}
-          <div className="absolute inset-y-0 left-1/2 z-0 h-full w-screen -translate-x-1/2 overflow-hidden">
-            <Plasma color="#F5AFAF" speed={0.9} scale={1} opacity={0.85} mouseInteractive={false} />
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-pv-bg via-pv-bg/35 to-transparent sm:h-32" />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-pv-bg via-pv-bg/60 to-transparent sm:h-40" />
+        <section className="relative w-full -mt-[calc(3.5rem+env(safe-area-inset-top))]">
+          {/* Backdrop fills the rail column edge-to-edge and bleeds up under the
+              transparent fixed navbar (rails reach the top of the page). */}
+          <div className="absolute inset-y-0 left-1/2 z-0 h-full w-full max-w-[1200px] -translate-x-1/2">
+            <div className="relative h-full w-full overflow-hidden">
+              <HeroAscii />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-pv-bg via-pv-bg/35 to-transparent sm:h-32" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-pv-bg via-pv-bg/60 to-transparent sm:h-40" />
+            </div>
           </div>
 
-          {/* Text panel — full-viewport hero so scrolling reveals the rest */}
-          <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1200px] items-center justify-center px-4 sm:px-6 lg:px-8 pt-[env(safe-area-inset-top,0px)]">
-            <div className="w-full max-w-[640px] pt-14 pb-28 sm:py-16 lg:py-20 text-center">
+          {/* Text panel — shorter hero so the rest shows sooner */}
+          <div className="relative z-10 mx-auto flex min-h-[68vh] w-full max-w-[1200px] items-center justify-center border-x border-pv-border/25 px-4 sm:px-6 lg:px-8 pt-[calc(3.5rem+env(safe-area-inset-top))]">
+            <div className="w-full max-w-[640px] py-12 sm:py-14 lg:py-16 text-center">
               {/* Headline — 3 lines, reduced size, payoff line smaller */}
               <motion.h1
                 className="mb-6 flex flex-col gap-1 text-center font-display font-bold leading-[0.92] tracking-tight text-pv-text"
@@ -308,7 +314,7 @@ export default function HomePage() {
                   </motion.span>
                   <motion.span
                     variants={kineticLetter}
-                    className="inline-block italic text-pv-emerald drop-shadow-[0_0_18px_rgba(216,95,95,0.5)]"
+                    className="inline-block italic text-white drop-shadow-[0_0_18px_rgba(51,79,169,0.5)]"
                   >
                     Mimir.
                   </motion.span>
@@ -333,18 +339,18 @@ export default function HomePage() {
                 {/* Secondary CTA — fuchsia neon */}
                 <Link
                   href="/explorer"
-                  className="group relative flex items-center justify-center overflow-hidden rounded-lg border border-pv-fuch/30 bg-transparent px-7 py-3.5 font-display text-[13px] font-bold uppercase tracking-[0.14em] text-pv-fuch/80 transition-all duration-300 hover:border-pv-fuch/60 hover:bg-pv-fuch/[0.1] hover:text-pv-fuch hover:shadow-[0_0_28px_-4px_rgba(200,71,71,0.45),inset_0_0_20px_-8px_rgba(200,71,71,0.12)]"
+                  className="group relative flex items-center justify-center overflow-hidden rounded-lg border border-pv-fuch/40 bg-transparent px-7 py-3.5 font-display text-[13px] font-bold uppercase tracking-[0.14em] text-pv-muted/90 transition-all duration-300 hover:border-pv-fuch/70 hover:bg-pv-fuch/[0.12] hover:text-white hover:shadow-[0_0_28px_-4px_rgba(51,79,169,0.45),inset_0_0_20px_-8px_rgba(51,79,169,0.12)]"
                 >
-                  <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-r from-pv-fuch/[0.1] via-transparent to-pv-fuch/[0.05]" />
+                  <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-r from-pv-fuch/[0.12] via-transparent to-pv-fuch/[0.06]" />
                   <span className="relative">{t("heroExploreChallenges")}</span>
                 </Link>
 
                 {/* Primary CTA — cyan neon */}
                 <Link
                   href="/vs/create"
-                  className="group relative flex items-center justify-center overflow-hidden rounded-lg border border-pv-emerald/40 bg-pv-emerald/[0.08] px-7 py-3.5 font-display text-[13px] font-bold uppercase tracking-[0.14em] text-pv-emerald transition-all duration-300 hover:border-pv-emerald/70 hover:bg-pv-emerald/[0.15] hover:text-white hover:shadow-[0_0_28px_-4px_rgba(216,95,95,0.5),inset_0_0_20px_-8px_rgba(216,95,95,0.15)]"
+                  className="group relative flex items-center justify-center overflow-hidden rounded-lg border border-pv-emerald/50 bg-pv-emerald/[0.15] px-7 py-3.5 font-display text-[13px] font-bold uppercase tracking-[0.14em] text-white transition-all duration-300 hover:border-pv-emerald/80 hover:bg-pv-emerald/[0.25] hover:text-white hover:shadow-[0_0_28px_-4px_rgba(51,79,169,0.5),inset_0_0_20px_-8px_rgba(51,79,169,0.15)]"
                 >
-                  <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-r from-pv-emerald/[0.12] via-transparent to-pv-emerald/[0.06]" />
+                  <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-r from-pv-emerald/[0.18] via-transparent to-pv-emerald/[0.09]" />
                   <span className="relative">{t("heroChallengeSomeone")}</span>
                 </Link>
               </motion.div>
@@ -355,16 +361,11 @@ export default function HomePage() {
 
       {/* Differentiator — stats strip (total / resolved / USDC staked); mismo patrón que THE PROTOCOL / LIVE ARENA */}
       <AnimatedItem>
-        <div className="mb-12">
-          <div className="mb-10 flex items-center gap-4 sm:gap-6">
-            <h2 className="font-display text-2xl font-bold uppercase tracking-tighter text-pv-text sm:text-3xl md:text-4xl">
-              {t("statsSectionTitle")}
-            </h2>
-            <div className="h-px flex-1 bg-black/[0.12]" aria-hidden />
-          </div>
+        <div className="relative">
+          <BlueprintHeading>{t("statsSectionTitle")}</BlueprintHeading>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-            <div className="p-5 sm:p-6 text-center border border-black/[0.06] rounded-xl bg-pv-surface/30">
+          <div className="grid grid-cols-1 gap-px border-x border-pv-border/25 bg-pv-border/25 sm:grid-cols-3">
+            <div className="p-5 sm:p-6 text-center bg-pv-bg">
               <LiveStat
                 value={allVS.length}
                 label={t("totalClaims")}
@@ -375,7 +376,7 @@ export default function HomePage() {
                 className="items-center"
               />
             </div>
-            <div className="p-5 sm:p-6 text-center border border-black/[0.06] rounded-xl bg-pv-surface/30">
+            <div className="p-5 sm:p-6 text-center bg-pv-bg">
               <LiveStat
                 value={resolvedVS.length}
                 label={t("resolvedClaims")}
@@ -386,7 +387,7 @@ export default function HomePage() {
                 className="items-center"
               />
             </div>
-            <div className="p-5 sm:p-6 text-center border border-black/[0.06] rounded-xl bg-pv-surface/30">
+            <div className="p-5 sm:p-6 text-center bg-pv-bg">
               <LiveStat
                 value={totalGenStaked}
                 label={t("genStaked")}
@@ -404,15 +405,10 @@ export default function HomePage() {
 
       {/* THE PROTOCOL — layout tipo bento (inspirado en “Market Intelligence” del prototipo) */}
       <AnimatedItem>
-        <div className="mb-12">
-          <div className="mb-10 flex items-center gap-4 sm:gap-6">
-            <h2 className="font-display text-2xl font-bold uppercase tracking-tighter text-pv-text sm:text-3xl md:text-4xl">
-              THE PROTOCOL
-            </h2>
-            <div className="h-px flex-1 bg-black/[0.12]" aria-hidden />
-          </div>
+        <div className="relative">
+          <BlueprintHeading>THE PROTOCOL</BlueprintHeading>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4 md:auto-rows-[minmax(240px,auto)]">
+          <div className="grid grid-cols-1 gap-px border-x border-pv-border/25 bg-pv-border/25 md:grid-cols-4 md:auto-rows-[minmax(240px,auto)] [&>*]:h-full">
             {steps.map(({ iconSrc, title, description }, index) => {
               const stepLabel = `STEP ${String(index + 1).padStart(2, "0")}`;
 
@@ -439,7 +435,7 @@ export default function HomePage() {
                 return (
                   <div
                     key={title}
-                    className="card group relative col-span-1 flex flex-col justify-between overflow-hidden border-black/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-2 md:min-h-[280px]"
+                    className="card group relative col-span-1 flex flex-col justify-between overflow-hidden border-transparent p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-2 md:min-h-[280px]"
                   >
                     <div className="pointer-events-none absolute -right-6 -top-6 opacity-[0.06] transition-opacity group-hover:opacity-[0.1] sm:-right-10 sm:-top-10">
                       {iconSrc ? (
@@ -490,7 +486,7 @@ export default function HomePage() {
                 return (
                   <div
                     key={title}
-                    className="card group relative overflow-hidden flex flex-col justify-between border-black/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-1 md:min-h-[280px]"
+                    className="card group relative overflow-hidden flex flex-col justify-between border-transparent p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-1 md:min-h-[280px]"
                   >
                     <div className="pointer-events-none absolute -right-9 -top-6 z-0 opacity-[0.06] transition-opacity group-hover:opacity-[0.1] sm:-right-13 sm:-top-10">
                       {iconSrc ? (
@@ -542,7 +538,7 @@ export default function HomePage() {
               return (
                 <div
                   key={title}
-                  className="card group relative col-span-1 overflow-hidden flex flex-col gap-6 border-black/[0.12] p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-4 md:flex-row md:items-center md:justify-between md:gap-10"
+                  className="card group relative col-span-1 overflow-hidden flex flex-col gap-6 border-transparent p-6 transition-all duration-200 hover:border-pv-emerald/[0.45] hover:shadow-glow-emerald sm:p-8 md:col-span-4 md:flex-row md:items-center md:justify-between md:gap-10"
                 >
                   <div className="pointer-events-none absolute -right-9 -top-6 z-0 opacity-[0.06] transition-opacity group-hover:opacity-[0.1] sm:-right-13 sm:-top-10">
                     {iconSrc ? (
@@ -576,7 +572,7 @@ export default function HomePage() {
                       </p>
                     </div>
                   </div>
-                  <div className="relative z-10 hidden h-12 w-px shrink-0 bg-black/[0.1] md:block" aria-hidden />
+                  <div className="relative z-10 hidden h-12 w-px shrink-0 bg-white/[0.1] md:block" aria-hidden />
                   <div className="relative z-10 flex shrink-0 flex-col items-start gap-1 md:items-end md:text-right">
                     <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-pv-muted">
                       Settlement
@@ -595,15 +591,10 @@ export default function HomePage() {
       {/* LIVE ARENA — 3x2 grid of active challenges */}
       {arenaGridCards.length > 0 && (
         <AnimatedItem>
-          <div className="mb-12">
-            <div className="mb-10 flex items-center gap-4 sm:gap-6">
-              <h2 className="font-display text-2xl font-bold uppercase tracking-tighter text-pv-text sm:text-3xl md:text-4xl">
-                LIVE ARENA
-              </h2>
-              <div className="h-px flex-1 bg-black/[0.12]" aria-hidden />
-            </div>
+          <div className="relative">
+            <BlueprintHeading>LIVE ARENA</BlueprintHeading>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-px border-x border-pv-border/25 bg-pv-border/25 sm:grid-cols-2 lg:grid-cols-3 [&>*]:border-0 [&>*]:h-full">
               {arenaGridCards.map(({ vs, challengersCount }) => (
                 <ArenaCard
                   key={vs.id}
@@ -621,54 +612,54 @@ export default function HomePage() {
 
       {/* THE ARCHIVE — settlement index + terminal (inspirado en “Archive / Odds” editorial) */}
       <AnimatedItem>
-        <SettlementArchiveSection allVS={allVS} loading={loading} />
+        <div className="relative">
+          <SettlementArchiveSection allVS={allVS} loading={loading} />
+        </div>
       </AnimatedItem>
 
-      {/* READY TO WIN CTA */}
+      {/* READY TO WIN CTA — blueprint framed strip, connected to neighbours */}
       <AnimatedItem>
-        <div className="mt-16 sm:mt-20 mb-12">
-          <div className="group relative w-full overflow-hidden rounded-lg border border-black/[0.12] bg-pv-surface/80 px-6 py-10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl sm:p-10 md:p-12 lg:p-14">
-            <div
-              className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-[0.14] transition-opacity duration-700 group-hover:opacity-[0.2]"
-              aria-hidden
-            >
-              <div className="h-full w-full bg-gradient-to-l from-pv-emerald/40 via-pv-emerald/10 to-transparent" />
+        <div className="group relative overflow-hidden border border-pv-border/25 bg-pv-surface px-6 py-12 sm:px-10 sm:py-14 md:px-14 md:py-16">
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-[0.14] transition-opacity duration-700 group-hover:opacity-[0.22]"
+            aria-hidden
+          >
+            <div className="h-full w-full bg-gradient-to-l from-pv-emerald/50 via-pv-emerald/10 to-transparent" />
+          </div>
+          <div
+            className="pointer-events-none absolute -right-24 top-1/2 h-80 w-80 -translate-y-1/2 rounded-full bg-pv-emerald/20 blur-3xl"
+            aria-hidden
+          />
+
+          <div className="relative z-10 flex flex-col items-start gap-8 text-left md:flex-row md:items-center md:justify-between md:gap-12">
+            <div className="max-w-xl">
+              <div className="mb-5 flex items-center gap-3">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pv-emerald opacity-40" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-pv-emerald" />
+                </span>
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-pv-muted">
+                  Launch a challenge
+                </span>
+              </div>
+
+              <h2 className="font-display text-[clamp(2rem,7vw,3.4rem)] font-bold leading-[0.95] tracking-tight text-pv-text">
+                READY TO <span className="text-pv-emerald">WIN?</span>
+              </h2>
+              <p className="mt-4 max-w-[46ch] text-sm leading-relaxed text-pv-muted sm:text-base">
+                Set the terms, lock your stake, and share the link. When the outcome is provable, Mimir settles it on-chain.
+              </p>
             </div>
-            <div
-              className="pointer-events-none absolute -right-20 top-1/2 h-72 w-72 -translate-y-1/2 rounded-full bg-pv-emerald/20 blur-3xl"
-              aria-hidden
-            />
 
-            <div className="relative z-10 flex flex-col items-start gap-7 text-left sm:gap-8 md:flex-row md:items-end md:justify-between md:gap-10">
-              <div className="max-w-xl">
-                <div className="mb-4 flex items-center gap-3">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pv-emerald opacity-40" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-pv-emerald" />
-                  </span>
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-pv-muted">
-                    Launch a challenge
-                  </span>
-                </div>
-
-                <h2 className="font-display text-[clamp(1.9rem,7vw,3.1rem)] font-bold leading-[0.95] tracking-tight text-pv-text">
-                  READY TO <span className="text-pv-emerald">WIN?</span>
-                </h2>
-                <p className="mt-4 max-w-[46ch] text-sm leading-relaxed text-pv-muted sm:text-base">
-                  Set the terms, lock your stake, and share the link. When the outcome is provable, Mimir settles it on-chain.
-                </p>
-              </div>
-
-              <div className="w-full md:w-auto">
-                <Link href="/vs/create" className="block w-full md:w-auto">
-                  <Button
-                    variant="primary"
-                    className="w-full md:w-auto px-8 font-display text-xs font-bold uppercase tracking-[0.2em]"
-                  >
-                    CREATE A CHALLENGE
-                  </Button>
-                </Link>
-              </div>
+            <div className="w-full shrink-0 md:w-auto">
+              <Link href="/vs/create" className="block w-full md:w-auto">
+                <Button
+                  variant="primary"
+                  className="w-full md:w-auto px-10 py-4 font-display text-xs font-bold uppercase tracking-[0.2em]"
+                >
+                  CREATE A CHALLENGE
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
@@ -680,20 +671,10 @@ export default function HomePage() {
       {/* Market Explorer preview — 2 cols en desktop */}
       {openVS.length > 0 && (
         <AnimatedItem>
-          <div className="mb-10">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(216,95,95,0.6)]" />
-                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-pv-emerald">
-                  {t("marketExplorerTeaser")}
-                </span>
-              </div>
-              <span className="text-[11px] text-pv-muted">
-                {t("waitingRival", { count: openVS.length })}
-              </span>
-            </div>
+          <div className="relative">
+            <BlueprintHeading>MARKET EXPLORER</BlueprintHeading>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 gap-px border-x border-pv-border/25 bg-pv-border/25 lg:grid-cols-2 [&>*]:border-0 [&>*]:h-full">
               {openVS.slice(0, 4).map((vs) => (
                 <VSCard key={vs.id} vs={vs} />
               ))}
@@ -702,7 +683,7 @@ export default function HomePage() {
             {openVS.length > 4 && (
               <Link
                 href="/explorer"
-                className="block w-full py-3.5 border border-pv-emerald/[0.24] bg-pv-emerald/[0.06] text-center font-display text-sm font-bold text-pv-emerald mt-2.5 hover:bg-pv-emerald/[0.1] transition-colors"
+                className="block w-full border-x border-pv-border/25 bg-pv-emerald/[0.06] py-3.5 text-center font-display text-sm font-bold text-pv-emerald transition-colors hover:bg-pv-emerald/[0.12]"
               >
                 {t("viewAllOpen", { count: openVS.length })}
               </Link>
@@ -711,45 +692,46 @@ export default function HomePage() {
         </AnimatedItem>
       )}
 
-      {/* Proof Ledger — recently proven, terminal/document aesthetic */}
+      {/* THE LEDGER — recently proven settlements, blueprint table */}
       {decidedResolvedVS.length > 0 && (
         <AnimatedItem>
-          <Artifact serial="PV-LEDGER" watermark="MIMIR" className="mt-4">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(216,95,95,0.6)]" />
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald">
-                {t("recentlyProven")}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-1.5">
-              {decidedResolvedVS.slice(0, 4).map((vs) => {
+          <div className="relative">
+            <BlueprintHeading>THE LEDGER</BlueprintHeading>
+            <div className="grid gap-px border-x border-pv-border/25 bg-pv-border/25">
+              {decidedResolvedVS.slice(0, 6).map((vs) => {
                 const payout = getVSSingleWinnerPayout(vs);
                 const winnerLabel = tStamp("won", { address: shortenAddress(vs.winner) });
 
                 return (
-                <Link key={vs.id} href={`/vs/${vs.id}`} className="block group">
-                  <motion.div
-                    whileHover={{ x: 4 }}
-                    className="flex items-center justify-between p-3 bg-black/[0.02] border border-black/[0.06] rounded group-hover:border-pv-emerald/[0.25] transition-colors"
+                  <Link
+                    key={vs.id}
+                    href={`/vs/${vs.id}`}
+                    className="group flex items-center justify-between gap-4 bg-pv-bg px-5 py-4 transition-colors hover:bg-pv-surface sm:px-6"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="font-mono text-[10px] text-pv-muted/40 w-8 shrink-0">
+                    <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                      <span className="w-10 shrink-0 font-mono text-[11px] text-pv-muted/60">
                         #{vs.id}
                       </span>
-                      <span className="w-1 h-1 rounded-full bg-pv-emerald shrink-0" />
-                      <span className="font-mono text-[12px] truncate text-pv-text/80">
+                      <span className="hidden shrink-0 border border-pv-emerald/40 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-pv-emerald sm:inline-block">
+                        Settled
+                      </span>
+                      <span className="truncate font-mono text-[13px] text-pv-text/90">
                         {winnerLabel}
                       </span>
                     </div>
-                    <span className="font-mono text-[12px] font-bold text-pv-gold flex-shrink-0 ml-2">
-                      {payout === null ? `${getVSTotalPot(vs)} USDC` : `+${payout} USDC`}
-                    </span>
-                  </motion.div>
-                </Link>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className="font-mono text-[13px] font-bold text-pv-gold">
+                        {payout === null ? `${getVSTotalPot(vs)} USDC` : `+${payout} USDC`}
+                      </span>
+                      <span className="font-mono text-pv-muted/50 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-pv-emerald">
+                        →
+                      </span>
+                    </div>
+                  </Link>
                 );
               })}
             </div>
-          </Artifact>
+          </div>
         </AnimatedItem>
       )}
     </PageTransition>
