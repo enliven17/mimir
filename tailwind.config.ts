@@ -10,21 +10,22 @@ const config: Config = {
     extend: {
       colors: {
         pv: {
-          // Soft blush palette
-          bg:       "#FCF8F8",
-          surface:  "#FBEFEF",
-          surface2: "#F9DFDF",
-          border:   "#F5AFAF",
-          text:     "#2A1818",
-          muted:    "#7A5050",
-          // Accents — monochromatic rose family (no green/cyan/fuch).
-          // The legacy token names (cyan/fuch/emerald) stay so existing
-          // utility classes keep working; they all resolve to rose tones now.
-          cyan:     "#D85F5F",
-          fuch:     "#C84747",
-          emerald:  "#D85F5F",
-          gold:     "#B07300",
-          danger:   "#B91C1C",
+          // Blueprint palette — pure-white ink + #334FA9 blue on deep navy.
+          bg:       "#0A1E3D",
+          surface:  "#0E2649",
+          surface2: "#133057",
+          border:   "#FFFFFF",
+          text:     "#FFFFFF",
+          muted:    "#A9C0DE",
+          // Accents — single blueprint blue. Legacy token names (cyan/fuch/
+          // emerald) stay so existing utility classes keep working; they all
+          // resolve to #334FA9 now. Gold stays warm so payout figures still
+          // pop against the navy.
+          cyan:     "#334FA9",
+          fuch:     "#334FA9",
+          emerald:  "#334FA9",
+          gold:     "#E0B36A",
+          danger:   "#EF6B6B",
         },
       },
       fontFamily: {
@@ -32,25 +33,28 @@ const config: Config = {
         body:    ["'Maple Mono'", "var(--font-body)",    "ui-monospace", "monospace"],
         mono:    ["'Maple Mono'", "var(--font-mono)",    "ui-monospace", "monospace"],
       },
+      // Blueprint look: sharp corners everywhere. Pills/dots/avatars keep
+      // their roundness via `rounded-full`.
       borderRadius: {
-        DEFAULT: "8px",
-        sm:    "4px",
-        md:    "8px",
-        lg:    "10px",
-        xl:    "12px",
-        "2xl": "14px",
-        "3xl": "16px",
-        "4xl": "20px",
+        DEFAULT: "0px",
+        none:  "0px",
+        sm:    "0px",
+        md:    "0px",
+        lg:    "0px",
+        xl:    "0px",
+        "2xl": "0px",
+        "3xl": "0px",
+        "4xl": "0px",
         full:  "9999px",
       },
       boxShadow: {
-        glow:           "0 0 40px rgba(245,175,175,0.32)",
-        "glow-fuch":    "0 0 40px rgba(245,175,175,0.28)",
-        "glow-emerald": "0 0 40px rgba(216, 95, 95,0.18)",
-        "glow-gold":    "0 0 40px rgba(176,115,0,0.12)",
-        "glow-lg":      "0 0 60px rgba(245,175,175,0.36)",
-        "glow-fuch-lg": "0 0 60px rgba(245,175,175,0.32)",
-        "glow-emerald-lg": "0 0 60px rgba(216, 95, 95,0.22)",
+        glow:           "0 0 40px rgba(51,79,169,0.3)",
+        "glow-fuch":    "0 0 40px rgba(51,79,169,0.26)",
+        "glow-emerald": "0 0 40px rgba(51,79,169,0.2)",
+        "glow-gold":    "0 0 40px rgba(224,179,106,0.16)",
+        "glow-lg":      "0 0 60px rgba(51,79,169,0.34)",
+        "glow-fuch-lg": "0 0 60px rgba(51,79,169,0.3)",
+        "glow-emerald-lg": "0 0 60px rgba(51,79,169,0.24)",
       },
       keyframes: {
         fadeUp: {

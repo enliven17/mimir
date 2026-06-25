@@ -14,7 +14,7 @@
    */
   html {
     @apply antialiased overflow-x-hidden;
-    color-scheme: light;
+    color-scheme: dark;
   }
 
   body {
@@ -47,14 +47,14 @@
     pointer-events: none;
     background: radial-gradient(
       ellipse at 50% 50%,
-      transparent 60%,
-      rgba(245, 175, 175, 0.28) 100%
+      transparent 55%,
+      rgba(3, 11, 26, 0.55) 100%
     );
   }
 
   ::selection {
-    background: rgba(245, 175, 175, 0.45);
-    color: #2A1818;
+    background: rgba(51,79,169, 0.35);
+    color: #FFFFFF;
   }
 
   /**
@@ -76,16 +76,16 @@
            bg-pv-emerald text-pv-bg
            transition-[transform,box-shadow,filter] duration-200 ease-out
            hover:-translate-y-px hover:brightness-[1.06]
-           hover:shadow-[0_6px_20px_-4px_rgba(216,95,95,0.32)]
+           hover:shadow-[0_6px_20px_-4px_rgba(51,79,169,0.32)]
            active:translate-y-0 active:scale-[0.98] active:shadow-none
            disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   .btn-ghost {
     @apply w-full py-4 px-6 rounded font-display font-bold text-base
-           bg-transparent text-pv-muted border border-black/[0.15]
+           bg-transparent text-pv-muted border border-white/[0.15]
            transition-[transform,box-shadow,border-color,color,background-color] duration-200 ease-out
-           hover:-translate-y-px hover:border-black/[0.28] hover:text-pv-text
+           hover:-translate-y-px hover:border-white/[0.28] hover:text-pv-text
            hover:shadow-[0_4px_18px_-6px_rgba(0,0,0,0.45)]
            active:translate-y-0 active:scale-[0.98]
            disabled:cursor-not-allowed disabled:opacity-40;
@@ -96,7 +96,7 @@
            bg-transparent text-pv-cyan border border-pv-cyan/[0.3]
            transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out
            hover:-translate-y-px hover:bg-pv-cyan hover:text-pv-bg hover:border-pv-cyan
-           hover:shadow-[0_6px_20px_-4px_rgba(216,95,95,0.22)]
+           hover:shadow-[0_6px_20px_-4px_rgba(51,79,169,0.22)]
            active:translate-y-0 active:scale-[0.98]
            disabled:opacity-40 disabled:cursor-not-allowed;
   }
@@ -106,7 +106,7 @@
            bg-transparent text-pv-fuch border border-pv-fuch/[0.3]
            transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out
            hover:-translate-y-px hover:bg-pv-fuch hover:text-pv-bg hover:border-pv-fuch
-           hover:shadow-[0_6px_20px_-4px_rgba(200,71,71,0.2)]
+           hover:shadow-[0_6px_20px_-4px_rgba(51,79,169,0.2)]
            active:translate-y-0 active:scale-[0.98]
            disabled:opacity-40 disabled:cursor-not-allowed;
   }
@@ -116,7 +116,7 @@
            bg-pv-emerald text-pv-bg
            transition-[transform,box-shadow,filter] duration-200 ease-out
            hover:-translate-y-px hover:brightness-[1.06]
-           hover:shadow-[0_6px_20px_-4px_rgba(216,95,95,0.32)]
+           hover:shadow-[0_6px_20px_-4px_rgba(51,79,169,0.32)]
            active:translate-y-0 active:scale-[0.98] active:shadow-none
            disabled:opacity-40 disabled:cursor-not-allowed;
   }
@@ -136,7 +136,7 @@
     @apply rounded font-bold text-pv-bg bg-pv-emerald
            transition-[transform,box-shadow,filter] duration-200 ease-out
            hover:-translate-y-px hover:brightness-[1.06]
-           hover:shadow-[0_4px_14px_-4px_rgba(216,95,95,0.3)]
+           hover:shadow-[0_4px_14px_-4px_rgba(51,79,169,0.3)]
            active:translate-y-0 active:scale-[0.98] active:shadow-none
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -156,17 +156,17 @@
 
   /* ── Card ── */
   .card {
-    @apply bg-pv-surface border border-black/[0.15] rounded overflow-hidden relative
+    @apply bg-pv-surface border border-pv-border/25 overflow-hidden relative
            transition-all duration-200;
   }
 
   .card-hover {
-    @apply hover:border-black/[0.25] hover:bg-pv-surface/80;
+    @apply hover:border-pv-border/45 hover:bg-pv-surface/80;
   }
 
   /* ── Form elements ── */
   .input {
-    @apply w-full px-4 py-3.5 rounded bg-pv-surface2 border border-black/[0.1]
+    @apply w-full px-4 py-3.5 rounded bg-pv-surface2 border border-white/[0.1]
            text-pv-text placeholder:text-pv-muted font-body text-[15px]
            focus:border-pv-emerald/60 focus:border
            transition-colors duration-150 outline-none;
@@ -187,13 +187,13 @@
    * Selects de Market type / Odds mode: mismo sistema que `.form-field-pv` + chevron + altura táctil y hover suave.
    */
   .select-field-pv {
-    @apply w-full min-h-[3.25rem] cursor-pointer appearance-none rounded-xl border border-black/[0.12]
+    @apply w-full min-h-[3.25rem] cursor-pointer appearance-none rounded-xl border border-white/[0.12]
            bg-pv-bg/90 bg-no-repeat px-4 py-3 pr-11 font-body text-sm font-medium tracking-tight
            text-pv-text antialiased outline-none transition-[border-color,box-shadow,background-color]
-           duration-200 hover:border-black/[0.22] hover:bg-pv-surface/[0.4]
+           duration-200 hover:border-white/[0.22] hover:bg-pv-surface/[0.4]
            focus-visible:border-pv-emerald/50 focus-visible:ring-1 focus-visible:ring-pv-emerald/25
            focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50;
-    color-scheme: light;
+    color-scheme: dark;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none'%3E%3Cpath stroke='%23A8A4B8' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round' d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-position: right 0.75rem center;
     background-size: 1.125rem 1.125rem;
@@ -204,7 +204,7 @@
    * `rounded-xl`, borde blanco suave, foco con anillo fino (sin duplicar borde verde grueso de `.input`).
    */
   .form-field-pv {
-    @apply w-full rounded-xl border border-black/[0.12] bg-pv-bg/90 px-4 py-3.5
+    @apply w-full rounded-xl border border-white/[0.12] bg-pv-bg/90 px-4 py-3.5
            font-body text-sm text-pv-text
            placeholder:text-pv-muted/50
            outline-none transition-[border-color,box-shadow]
@@ -217,28 +217,28 @@
   }
 
   .chip {
-    @apply px-3.5 py-1.5 rounded border border-black/[0.15] bg-transparent
+    @apply px-3.5 py-1.5 rounded border border-white/[0.15] bg-transparent
            text-sm font-semibold cursor-pointer transition-all duration-150;
   }
 
   /* ── Ambient rivalry glow (VS detail) — soft blush, light theme ── */
   .rivalry-bg {
     background:
-      radial-gradient(ellipse 60% 40% at 0% 30%, rgba(245,175,175,0.35) 0%, transparent 70%),
-      radial-gradient(ellipse 60% 40% at 100% 70%, rgba(249,223,223,0.55) 0%, transparent 70%);
+      radial-gradient(ellipse 60% 40% at 0% 30%, rgba(51,79,169,0.18) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 40% at 100% 70%, rgba(51,79,169,0.22) 0%, transparent 70%);
   }
 
   .rivalry-card-ambient {
     background:
-      radial-gradient(ellipse 60% 40% at 0% 30%, rgba(245,175,175,0.30) 0%, transparent 70%),
-      radial-gradient(ellipse 60% 40% at 100% 70%, rgba(249,223,223,0.45) 0%, transparent 70%);
+      radial-gradient(ellipse 60% 40% at 0% 30%, rgba(51,79,169,0.16) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 40% at 100% 70%, rgba(51,79,169,0.2) 0%, transparent 70%);
   }
 
-  /* ── Glow utilities (re-tinted to the blush palette) ── */
+  /* ── Glow utilities (re-tinted to the blueprint palette) ── */
   .glow-cyan {
     background: radial-gradient(
       ellipse at 0% 50%,
-      rgba(245, 175, 175, 0.22),
+      rgba(51,79,169, 0.2),
       transparent 65%
     );
   }
@@ -246,7 +246,7 @@
   .glow-fuch {
     background: radial-gradient(
       ellipse at 100% 50%,
-      rgba(249, 223, 223, 0.32),
+      rgba(51,79,169, 0.24),
       transparent 65%
     );
   }
@@ -254,7 +254,7 @@
   .glow-emerald {
     background: radial-gradient(
       ellipse at 50% 50%,
-      rgba(245, 175, 175, 0.18),
+      rgba(51,79,169, 0.16),
       transparent 65%
     );
   }
@@ -262,7 +262,7 @@
   .glow-gold {
     background: radial-gradient(
       ellipse at 50% 50%,
-      rgba(251, 239, 239, 0.4),
+      rgba(224, 179, 106, 0.3),
       transparent 65%
     );
   }
@@ -285,5 +285,5 @@
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #F5AFAF; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #E48B8B; }
+::-webkit-scrollbar-thumb { background: #2E4D78; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3E69A3; }
