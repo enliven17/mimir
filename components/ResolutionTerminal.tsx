@@ -258,11 +258,11 @@ export default function ResolutionTerminal({
       glass
       glow="none"
       noPad
-      className="mb-6 !rounded-2xl border border-black/[0.12]"
+      className="mb-6 !rounded-2xl border border-white/[0.12]"
     >
       <div className="p-3 sm:p-4">
         {/* Terminal header (estética de consola) */}
-        <div className="mb-3 flex items-center justify-between border-b border-black/[0.08] pb-2">
+        <div className="mb-3 flex items-center justify-between border-b border-white/[0.08] pb-2">
           <div className="flex items-center gap-2" aria-hidden>
             <span className="h-2.5 w-2.5 rounded-full border border-pv-danger/25 bg-pv-danger/[0.08]" />
             <span className="h-2.5 w-2.5 rounded-full border border-pv-gold/25 bg-pv-gold/[0.08]" />
@@ -273,7 +273,7 @@ export default function ResolutionTerminal({
           </span>
         </div>
 
-        <div className="rounded-xl border border-black/[0.08] bg-black/[0.18] p-3 sm:p-4">
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.18] p-3 sm:p-4">
           <div className="font-mono text-sm text-pv-muted text-left leading-[2.2]">
             {lineInfo.map((_, i) => {
               if (i > activeIndex) return null;

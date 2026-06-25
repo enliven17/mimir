@@ -1,6 +1,7 @@
 "use client";
 
 import { Link } from "@/i18n/navigation";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 
 /* ───────────────────────────────────────────────────────────────────────────
  * Inline SVG diagrams — hand-drawn in the project's blush palette so they
@@ -429,15 +430,11 @@ function TocLink({ href, label }: { href: string; label: string }) {
 /* ── Page ────────────────────────────────────────────────────────────────── */
 export default function DocsPage() {
   return (
-    <article className="mx-auto max-w-4xl space-y-14 py-12">
-      <header className="space-y-4">
-        <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-pv-emerald">
-          MIMIR · DOCUMENTATION
-        </p>
-        <h1 className="text-4xl font-bold leading-tight tracking-tight text-pv-text sm:text-5xl">
-          How Mimir works
-        </h1>
-        <p className="max-w-2xl text-base leading-relaxed text-pv-text/75 sm:text-lg">
+    <div className="pb-10">
+      <BlueprintHeading>How Mimir works</BlueprintHeading>
+      <article className="mx-auto max-w-4xl space-y-14 px-4 pt-6 sm:px-6 lg:px-8">
+      <header>
+        <p className="mx-auto max-w-2xl text-center text-base leading-relaxed text-pv-text/75 sm:text-lg">
           Mimir is an AI-settled claim market on Arc — Circle&apos;s stablecoin-native L1.
           Two parties stake USDC on opposite sides of a verifiable question; when the
           deadline passes, an off-chain AI oracle reads the agreed-upon evidence
@@ -864,6 +861,7 @@ export default function DocsPage() {
         </a>
         .
       </footer>
-    </article>
+      </article>
+    </div>
   );
 }

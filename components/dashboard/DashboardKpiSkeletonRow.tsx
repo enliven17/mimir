@@ -11,8 +11,8 @@ const kpiSkeletonCardClass = `${DASHBOARD_CARD_SURFACE} pointer-events-none flex
 function KpiSkeletonTile() {
   return (
     <div className={kpiSkeletonCardClass} aria-hidden>
-      <div className="h-9 w-[4.25rem] rounded-md bg-black/[0.1] motion-safe:animate-pulse motion-reduce:animate-none motion-reduce:opacity-90 sm:h-10 sm:w-24" />
-      <div className="h-3 w-44 max-w-[85%] rounded bg-black/[0.07] motion-safe:animate-pulse motion-reduce:animate-none motion-reduce:opacity-90" />
+      <div className="h-9 w-[4.25rem] rounded-md bg-white/[0.1] motion-safe:animate-pulse motion-reduce:animate-none motion-reduce:opacity-90 sm:h-10 sm:w-24" />
+      <div className="h-3 w-44 max-w-[85%] rounded bg-white/[0.07] motion-safe:animate-pulse motion-reduce:animate-none motion-reduce:opacity-90" />
     </div>
   );
 }

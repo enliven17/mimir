@@ -21,7 +21,7 @@ export default function VsXmtpChatPreviewShell({
   return (
     <>
       <div
-        className="mb-4 max-h-[min(42vh,280px)] min-h-[128px] overflow-y-auto rounded-lg border border-black/[0.08] bg-pv-bg/40 px-3 py-2.5 sm:px-3.5 sm:py-3"
+        className="mb-4 max-h-[min(42vh,280px)] min-h-[128px] overflow-y-auto rounded-lg border border-white/[0.08] bg-pv-bg/40 px-3 py-2.5 sm:px-3.5 sm:py-3"
         role="region"
         aria-label={t("chatPreviewAriaLabel")}
       >
@@ -30,7 +30,7 @@ export default function VsXmtpChatPreviewShell({
         </p>
         <div className="flex flex-col gap-2.5">
           <div className="flex w-full justify-start">
-            <div className="max-w-[min(92%,20rem)] rounded-lg border border-black/[0.07] bg-pv-surface2/90 px-3 py-2 text-pv-text/90">
+            <div className="max-w-[min(92%,20rem)] rounded-lg border border-white/[0.07] bg-pv-surface2/90 px-3 py-2 text-pv-text/90">
               <p className="mb-1 text-left text-[10px] text-pv-muted/80">
                 <span className="font-mono">{peerShort}</span>
               </p>
@@ -46,7 +46,7 @@ export default function VsXmtpChatPreviewShell({
             </div>
           </div>
           <div className="flex w-full justify-start">
-            <div className="max-w-[min(92%,20rem)] rounded-lg border border-black/[0.07] bg-pv-surface2/90 px-3 py-2 text-pv-text/90">
+            <div className="max-w-[min(92%,20rem)] rounded-lg border border-white/[0.07] bg-pv-surface2/90 px-3 py-2 text-pv-text/90">
               <p className="mb-1 text-left text-[10px] text-pv-muted/80">
                 <span className="font-mono">{peerShort}</span>
               </p>
@@ -56,14 +56,14 @@ export default function VsXmtpChatPreviewShell({
         </div>
       </div>
 
-      <div className="border-t border-black/[0.08] pt-4 opacity-75">
+      <div className="border-t border-white/[0.08] pt-4 opacity-75">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <Input
             disabled
             readOnly
             value=""
             placeholder={t("chatPreviewInputPlaceholder")}
-            className="min-h-[44px] flex-1 rounded-lg border-black/[0.1] bg-pv-bg/30"
+            className="min-h-[44px] flex-1 rounded-lg border-white/[0.1] bg-pv-bg/30"
             aria-disabled="true"
           />
           <Button

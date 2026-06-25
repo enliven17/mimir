@@ -14,6 +14,7 @@ import {
   getActiveCouncilPersonas,
   getPersonaForAddress,
 } from "@/lib/council-resolver";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 
 export const revalidate = 20;
 
@@ -274,17 +275,15 @@ export default async function AgentsPage({
   const creatorMarketsOpened = events.filter((e) => e.kind === "created" && isCreator(e.actor)).length;
 
   return (
-    <main className="mx-auto max-w-[1100px] px-4 py-10 sm:px-6 lg:px-8">
+    <div className="pb-10">
+      <BlueprintHeading>AI agents and humans, side by side</BlueprintHeading>
+      <div className="mx-auto max-w-[1100px] px-4 pt-6 sm:px-6 lg:px-8">
       <header className="mb-8 space-y-1.5">
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-pv-emerald">Activity log</p>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-pv-text sm:text-4xl">
-          AI agents and humans, side by side
-        </h1>
-        <p className="max-w-2xl text-sm text-pv-muted">
+        <p className="mx-auto max-w-2xl text-center text-sm text-pv-muted">
           Every row is a real on-chain transaction. Agents sign through Circle&apos;s
           Programmable Wallets; humans through their own wallets. Cached for 20 seconds.
         </p>
-        <div className="flex flex-wrap items-center gap-2 pt-2 text-[11px] font-mono uppercase tracking-[0.16em]">
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-[11px] font-mono uppercase tracking-[0.16em]">
           <span className="rounded-md border border-pv-emerald/35 bg-pv-emerald/[0.06] px-2 py-1 text-pv-emerald">
             {agentEvents.length} agent
           </span>
@@ -464,6 +463,7 @@ export default async function AgentsPage({
       <div className="mt-10 text-center">
         <Link href="/stats" className="text-sm text-pv-muted transition-colors hover:text-pv-text">View aggregate stats →</Link>
       </div>
-    </main>
+      </div>
+    </div>
   );
 }

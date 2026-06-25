@@ -318,7 +318,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
     if (isOneVsOneDemoVs(vs)) {
       return (
         <div
-          className={`card border border-black/[0.08] p-5 ${vsPanelPageShell(embedded)}`}
+          className={`card border border-white/[0.08] p-5 ${vsPanelPageShell(embedded)}`}
         >
           <div className="flex min-w-0 gap-3 sm:gap-3.5">
             <span
@@ -348,7 +348,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
         glass
         glow="none"
         noPad
-        className={`!rounded-2xl border border-black/[0.12] ${vsPanelPageShell(embedded)}`}
+        className={`!rounded-2xl border border-white/[0.12] ${vsPanelPageShell(embedded)}`}
       >
         <div className="flex w-full min-w-0 items-start gap-3 px-5 py-5 sm:gap-3.5 sm:px-8 sm:py-6">
           <span
@@ -373,7 +373,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
   if (!isConnected || !address) {
     return (
       <div
-        className={`card border border-black/[0.08] p-5 ${vsPanelPageShell(embedded)}`}
+        className={`card border border-white/[0.08] p-5 ${vsPanelPageShell(embedded)}`}
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 gap-3 sm:gap-3.5">
@@ -403,7 +403,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
   if (!peerAddress) {
     return (
       <div
-        className={`card border border-black/[0.08] p-5 ${vsPanelPageShell(embedded)}`}
+        className={`card border border-white/[0.08] p-5 ${vsPanelPageShell(embedded)}`}
       >
         <div className="flex min-w-0 gap-3 sm:gap-3.5">
           <span
@@ -427,9 +427,9 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
 
   return (
     <div
-      className={`card overflow-hidden rounded-xl border border-black/[0.1] p-0 ${vsPanelPageShell(embedded)}`}
+      className={`card overflow-hidden rounded-xl border border-white/[0.1] p-0 ${vsPanelPageShell(embedded)}`}
     >
-      <div className="border-b border-black/[0.08] bg-pv-bg/25 px-5 py-3.5 sm:px-6">
+      <div className="border-b border-white/[0.08] bg-pv-bg/25 px-5 py-3.5 sm:px-6">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 flex-1 gap-3 sm:gap-3.5">
             <span
@@ -456,7 +456,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
                 fullWidth={false}
                 disabled={!hasMyVisibleToClear}
                 onClick={handleClearMyMessages}
-                className="text-pv-muted hover:bg-black/[0.04] hover:text-pv-text disabled:opacity-40"
+                className="text-pv-muted hover:bg-white/[0.04] hover:text-pv-text disabled:opacity-40"
                 aria-label={t("clearMyMessagesAria")}
                 title={t("clearMyMessagesAria")}
               >
@@ -470,7 +470,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
                 fullWidth={false}
                 disabled={isRefreshing}
                 onClick={() => void refreshThread()}
-                className="shrink-0 text-pv-muted hover:bg-black/[0.04] hover:text-pv-text"
+                className="shrink-0 text-pv-muted hover:bg-white/[0.04] hover:text-pv-text"
                 aria-busy={isRefreshing}
               >
                 <RefreshCw
@@ -505,7 +505,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
           role="alert"
           className="mb-3 overflow-hidden rounded-xl border border-pv-danger/30 bg-pv-danger/[0.05] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"
         >
-          <div className="border-b border-black/[0.06] bg-pv-bg/25 px-3.5 py-2.5 sm:px-4">
+          <div className="border-b border-white/[0.06] bg-pv-bg/25 px-3.5 py-2.5 sm:px-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-pv-danger/90">
               {t("providerErrorEyebrow")}
             </p>
@@ -515,7 +515,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
               {xmtpProviderErrorMessage || t("errorGeneric")}
             </p>
             {showInboxToolsForInstallLimit ? (
-              <div className="mt-4 rounded-lg border border-black/[0.1] bg-pv-bg/40 px-3 py-2.5 sm:px-3.5 sm:py-3">
+              <div className="mt-4 rounded-lg border border-white/[0.1] bg-pv-bg/40 px-3 py-2.5 sm:px-3.5 sm:py-3">
                 <div className="flex flex-row items-center justify-between gap-3">
                   <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-pv-muted">
                     {t("installationsLimitGuide")}
@@ -524,7 +524,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
                     href={XMTP_INBOX_TOOLS_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-black/[0.12] bg-black/[0.04] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-pv-muted transition-[border-color,background-color,color] hover:border-black/[0.18] hover:bg-black/[0.06] hover:text-pv-text/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15 whitespace-nowrap"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-white/[0.12] bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-pv-muted transition-[border-color,background-color,color] hover:border-white/[0.18] hover:bg-white/[0.06] hover:text-pv-text/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15 whitespace-nowrap"
                   >
                     <ExternalLink size={12} className="shrink-0 opacity-70" aria-hidden />
                     {t("openInboxTools")}
@@ -556,10 +556,10 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
           <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-pv-muted/80">
             {t("loadingConversation")}
           </p>
-          <div className="flex flex-col gap-2.5 rounded-lg border border-black/[0.08] bg-pv-bg/35 p-3.5">
-            <div className="h-3.5 w-[68%] max-w-[220px] animate-pulse rounded-lg bg-black/[0.07]" />
+          <div className="flex flex-col gap-2.5 rounded-lg border border-white/[0.08] bg-pv-bg/35 p-3.5">
+            <div className="h-3.5 w-[68%] max-w-[220px] animate-pulse rounded-lg bg-white/[0.07]" />
             <div className="ml-auto h-3.5 w-[52%] max-w-[160px] animate-pulse rounded-lg bg-pv-emerald/15" />
-            <div className="h-3.5 w-[58%] max-w-[180px] animate-pulse rounded-lg bg-black/[0.06]" />
+            <div className="h-3.5 w-[58%] max-w-[180px] animate-pulse rounded-lg bg-white/[0.06]" />
           </div>
         </div>
       )}
@@ -619,7 +619,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
 
       {!isXmtpProviderError && innerReady && dm && client && (
         <>
-          <div className="overflow-hidden rounded-lg border border-black/[0.08] bg-pv-bg/40">
+          <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-pv-bg/40">
             <div
               ref={threadScrollRef}
               className={VS_XMTP_PANEL_THREAD_SCROLL_CLASS}
@@ -631,7 +631,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
               {displayRows.length === 0 ? (
                 <div className="flex min-h-[112px] flex-col items-center justify-center gap-2.5 px-3 py-7 text-center sm:min-h-[128px]">
                   <div
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/[0.08] bg-pv-bg/30 text-pv-emerald/80"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.08] bg-pv-bg/30 text-pv-emerald/80"
                     aria-hidden
                   >
                     <MessageCircle size={18} strokeWidth={1.75} />
@@ -664,7 +664,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
                             className={`max-w-[min(92%,20rem)] rounded-lg px-3 py-2 ${
                               mine
                                 ? "border border-pv-emerald/20 bg-pv-emerald/[0.08] text-pv-text"
-                                : "border border-black/[0.07] bg-pv-surface2/90 text-pv-text/90"
+                                : "border border-white/[0.07] bg-pv-surface2/90 text-pv-text/90"
                             }`}
                           >
                             <p
@@ -732,7 +732,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder={t("placeholderInput")}
-                    className="h-[46px] rounded-lg border-black/[0.08] bg-pv-bg/35 text-[13px] placeholder:text-pv-muted/45 focus-visible:border-pv-emerald/25"
+                    className="h-[46px] rounded-lg border-white/[0.08] bg-pv-bg/35 text-[13px] placeholder:text-pv-muted/45 focus-visible:border-pv-emerald/25"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();

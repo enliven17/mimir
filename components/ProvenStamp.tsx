@@ -26,7 +26,7 @@ export default function ProvenStamp({
       glass
       glow="both"
       noPad
-      className="animate-pulse-glow mb-6 !rounded-2xl border border-black/[0.12]"
+      className="animate-pulse-glow mb-6 !rounded-2xl border border-white/[0.12]"
     >
       <div className="p-5 sm:p-6 text-center">
         <motion.div
@@ -83,7 +83,7 @@ export default function ProvenStamp({
 
         {resolutionSummary ? (
           <>
-            <div className="my-4 h-px bg-black/[0.08]" aria-hidden />
+            <div className="my-4 h-px bg-white/[0.08]" aria-hidden />
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

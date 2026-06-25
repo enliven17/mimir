@@ -71,7 +71,7 @@ export default function VSCard({
         aria-label={vs.question}
       />
 
-      <div className="pointer-events-none absolute left-0 top-0 h-full w-2/5 bg-[radial-gradient(ellipse_at_0%_50%,rgba(216,95,95,0.06),transparent_65%)]" />
+      <div className="pointer-events-none absolute left-0 top-0 h-full w-2/5 bg-[radial-gradient(ellipse_at_0%_50%,rgba(51,79,169,0.06),transparent_65%)]" />
 
       <div className="relative z-10 pointer-events-none">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">

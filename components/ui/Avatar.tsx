@@ -10,8 +10,8 @@ export default function Avatar({ side, size = 48 }: AvatarProps) {
     : "border-pv-fuch/40 bg-pv-fuch/10";
   const dotClass   = isCreator ? "bg-pv-cyan" : "bg-pv-fuch";
   const glowClass  = isCreator
-    ? "shadow-[0_0_12px_rgba(216,95,95,0.4)]"
-    : "shadow-[0_0_12px_rgba(200,71,71,0.4)]";
+    ? "shadow-[0_0_12px_rgba(51,79,169,0.4)]"
+    : "shadow-[0_0_12px_rgba(51,79,169,0.4)]";
 
   return (
     <div

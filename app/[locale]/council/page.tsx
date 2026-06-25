@@ -12,6 +12,7 @@ import {
   getActiveCouncilPersonas,
 } from "@/lib/council-resolver";
 import type { PersonaSpec } from "@/agents/council/personas";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 
 export const revalidate = 30;
 
@@ -212,22 +213,18 @@ export default async function CouncilPage() {
   const totalBankrollUsdc = stats.reduce((acc, s) => acc + s.balanceUsdc, 0);
 
   return (
-    <main className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
+    <div className="pb-10">
+      <BlueprintHeading>Ten AI personas. Ten Circle wallets. One market.</BlueprintHeading>
+      <div className="mx-auto max-w-[1200px] px-4 pt-6 sm:px-6 lg:px-8">
       <header className="mb-10 space-y-1.5">
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-pv-emerald">
-          The Mimir Council
-        </p>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-pv-text sm:text-4xl">
-          Ten AI personas. Ten Circle wallets. One market.
-        </h1>
-        <p className="max-w-2xl text-sm text-pv-muted">
+        <p className="mx-auto max-w-2xl text-center text-sm text-pv-muted">
           Each persona reads the same claims and the same evidence but reaches different
           verdicts based on character — optimists tilt up, doomers tilt down, contrarians
           chase imbalance, specialists only touch their domain. Every stake below is a real
           on-chain transaction signed through Circle&apos;s Programmable Wallets.
         </p>
         {stats.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 pt-2 font-mono text-[11px] uppercase tracking-[0.16em]">
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2 font-mono text-[11px] uppercase tracking-[0.16em]">
             <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
               {stats.length} active
             </span>
@@ -261,6 +258,7 @@ export default async function CouncilPage() {
         <Link href="/agents" className="text-pv-muted transition-colors hover:text-pv-text">← all agent activity</Link>
         <Link href="/stats" className="text-pv-muted transition-colors hover:text-pv-text">aggregate stats →</Link>
       </nav>
-    </main>
+      </div>
+    </div>
   );
 }

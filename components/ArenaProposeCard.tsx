@@ -10,7 +10,7 @@ export default function ArenaProposeCard() {
   return (
     <Link
       href="/vs/create"
-      className="group flex h-full min-h-[280px] flex-col justify-between overflow-hidden rounded border border-pv-emerald/35 bg-pv-emerald p-6 shadow-[0_0_40px_rgba(216,95,95,0.12)] transition-all duration-200 active:scale-[0.98] sm:min-h-[300px] sm:p-8"
+      className="group flex h-full min-h-[280px] flex-col justify-between overflow-hidden rounded border border-pv-emerald/35 bg-pv-emerald p-6 shadow-[0_0_40px_rgba(51,79,169,0.12)] transition-all duration-200 active:scale-[0.98] sm:min-h-[300px] sm:p-8"
     >
       <div className="flex justify-end">
         <PlusCircle

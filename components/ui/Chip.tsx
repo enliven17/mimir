@@ -35,9 +35,9 @@ export default function Chip({
       aria-pressed={ariaPressed}
       className={`chip focus-ring whitespace-nowrap ${
         active && !color
-          ? "bg-pv-text/[0.07] text-pv-text border-black/[0.22]"
+          ? "bg-pv-text/[0.07] text-pv-text border-white/[0.22]"
           : !color
-          ? "text-pv-muted hover:text-pv-text hover:border-black/[0.22]"
+          ? "text-pv-muted hover:text-pv-text hover:border-white/[0.22]"
           : "text-pv-muted"
       } ${className}`}
       style={dynamicStyle}

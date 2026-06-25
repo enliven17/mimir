@@ -40,6 +40,7 @@ import {
   type CctpChain,
 } from "@/lib/cctp";
 import GatewayBalanceWidget from "@/components/GatewayBalanceWidget";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 
 type SourceKey = "ethSepolia" | "baseSepolia" | "avalancheFuji";
 
@@ -207,15 +208,14 @@ export default function BridgePage() {
 
   // ── UI ──────────────────────────────────────────────────────────────────────
   return (
-    <div className="mx-auto max-w-2xl space-y-6 py-8">
-      <header className="space-y-2">
-        <p className="text-xs uppercase tracking-widest text-pv-muted/85">Circle CCTP V2</p>
-        <h1 className="text-3xl font-semibold">Bridge USDC to Arc</h1>
-        <p className="text-pv-muted">
+    <div className="pb-12">
+      <BlueprintHeading>Bridge USDC to Arc</BlueprintHeading>
+
+      <div className="mx-auto mt-8 max-w-2xl space-y-6 px-4 sm:px-6">
+      <p className="text-center text-pv-muted">
           Bring USDC from Base, Ethereum, or Avalanche Sepolia into Arc Testnet via
           Circle's native burn-and-mint protocol. Fast Transfer (~15s).
         </p>
-      </header>
 
       <GatewayBalanceWidget />
 
@@ -378,6 +378,7 @@ export default function BridgePage() {
         </a>
         . <Link href="/" className="underline">Back to Mimir</Link>.
       </footer>
+      </div>
     </div>
   );
 }

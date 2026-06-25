@@ -64,9 +64,9 @@ function WalletAccountMenu({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-[calc(100%+4px)] z-[60] min-w-[240px] overflow-hidden rounded-2xl border border-pv-border/40 bg-pv-surface/95 p-2 shadow-[0_22px_60px_-20px_rgba(216,95,95,0.22)] backdrop-blur-xl"
+            className="absolute right-0 top-[calc(100%+4px)] z-[60] min-w-[240px] overflow-hidden rounded-2xl border border-pv-border/40 bg-pv-surface/95 p-2 shadow-[0_22px_60px_-20px_rgba(51,79,169,0.22)] backdrop-blur-xl"
           >
-            <div className="mb-1 rounded-xl border border-black/[0.08] bg-black/[0.03] px-3.5 py-3">
+            <div className="mb-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3">
               <p className="font-display text-[13px] font-bold tracking-tight text-pv-text">
                 {shortenAddress(address)}
               </p>
@@ -95,7 +95,7 @@ function WalletAccountMenu({
               <ExternalLink className={iconClass} aria-hidden />
               <span>{t("viewOnExplorer")}</span>
             </a>
-            <div className="my-2 h-px bg-black/[0.08]" aria-hidden />
+            <div className="my-2 h-px bg-white/[0.08]" aria-hidden />
             <button
               type="button"
               role="menuitem"
@@ -103,7 +103,7 @@ function WalletAccountMenu({
                 onDisconnect();
                 onOpenChange(false);
               }}
-              className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-3.5 py-3 text-left text-[13px] font-medium text-pv-muted transition-[background-color,border-color,color] hover:border-black/[0.08] hover:bg-black/[0.04] hover:text-pv-text"
+              className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-3.5 py-3 text-left text-[13px] font-medium text-pv-muted transition-[background-color,border-color,color] hover:border-white/[0.08] hover:bg-white/[0.04] hover:text-pv-text"
             >
               <LogOut
                 className="h-4 w-4 shrink-0 text-pv-muted transition-colors group-hover:text-pv-text"
@@ -197,15 +197,16 @@ export default function Header() {
 
   return (
     <header className="fixed left-0 right-0 top-0 z-50 pt-[env(safe-area-inset-top)]">
+      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
       <div
-        className={`mx-auto flex h-14 max-w-[1100px] items-center justify-between px-4 transition-[background-color,border-color,box-shadow,transform,margin] duration-300 ease-out sm:px-6 ${
+        className={`flex h-14 w-full items-center justify-between px-4 transition-[background-color,border-color,box-shadow,transform,margin] duration-300 ease-out sm:px-6 ${
           scrolled || mobileOpen
-            ? "mt-2 rounded-2xl border border-pv-border/40 bg-pv-surface/70 px-5 shadow-[0_10px_40px_-12px_rgba(216,95,95,0.18)] backdrop-blur-[18px] sm:mt-3"
+            ? "mt-2 rounded-2xl border border-pv-border/40 bg-pv-surface/70 px-5 shadow-[0_10px_40px_-12px_rgba(51,79,169,0.18)] backdrop-blur-[18px] sm:mt-3"
             : "mt-0 rounded-none border border-transparent bg-transparent shadow-none backdrop-blur-0"
         }`}
       >
         <Link href="/" className="flex items-center gap-2.5">
-          <span className="group font-display text-lg font-bold tracking-tight text-pv-emerald transition-colors duration-300 ease-in-out sm:text-xl">
+          <span className="group font-display text-lg font-bold tracking-tight text-pv-text transition-colors duration-300 ease-in-out sm:text-xl">
             Mimir
             <span
               className="ml-[1px] inline-block origin-center leading-none text-pv-text transition-[color,transform] duration-300 ease-out will-change-transform group-hover:scale-[1.22] group-hover:-rotate-6 group-hover:text-pv-emerald"
@@ -243,10 +244,10 @@ export default function Header() {
                     href={item.href}
                     className={`chip relative whitespace-nowrap text-[13px] transition-all ${
                       item.accent
-                        ? "border-pv-emerald/[0.28] bg-pv-emerald/[0.08] text-pv-emerald"
+                        ? "border-pv-emerald bg-pv-emerald font-bold text-white hover:brightness-110"
                         : isActive
-                        ? "border-black/[0.32] bg-black/[0.06] text-pv-text"
-                        : "text-pv-muted hover:border-black/[0.22] hover:text-pv-text"
+                        ? "border-white/[0.32] bg-white/[0.06] text-pv-text"
+                        : "text-pv-muted hover:border-white/[0.22] hover:text-pv-text"
                     }`}
                   >
                     {item.label}
@@ -309,6 +310,7 @@ export default function Header() {
           </>
         )}
       </div>
+      </div>
 
       {/* Mobile sheet */}
       <AnimatePresence>
@@ -318,7 +320,7 @@ export default function Header() {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-b border-black/[0.08] bg-pv-surface/95 backdrop-blur-xl md:hidden"
+            className="overflow-hidden border-t border-b border-white/[0.08] bg-pv-surface/95 backdrop-blur-xl md:hidden"
           >
             <LayoutGroup id="mobile-header-nav">
               <nav

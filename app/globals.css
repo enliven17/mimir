@@ -73,7 +73,7 @@
   /* ── Buttons ── */
   .btn-primary {
     @apply w-full py-4 px-6 rounded font-display font-bold text-base
-           bg-pv-emerald text-pv-bg
+           bg-pv-emerald text-white
            transition-[transform,box-shadow,filter] duration-200 ease-out
            hover:-translate-y-px hover:brightness-[1.06]
            hover:shadow-[0_6px_20px_-4px_rgba(51,79,169,0.32)]
@@ -93,9 +93,9 @@
 
   .btn-cyan {
     @apply w-full py-4 px-6 rounded font-display font-bold text-base
-           bg-transparent text-pv-cyan border border-pv-cyan/[0.3]
+           bg-transparent text-pv-muted border border-pv-cyan/[0.3]
            transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out
-           hover:-translate-y-px hover:bg-pv-cyan hover:text-pv-bg hover:border-pv-cyan
+           hover:-translate-y-px hover:bg-pv-cyan hover:text-white hover:border-pv-cyan
            hover:shadow-[0_6px_20px_-4px_rgba(51,79,169,0.22)]
            active:translate-y-0 active:scale-[0.98]
            disabled:opacity-40 disabled:cursor-not-allowed;
@@ -103,9 +103,9 @@
 
   .btn-fuch {
     @apply w-full py-4 px-6 rounded font-display font-bold text-base
-           bg-transparent text-pv-fuch border border-pv-fuch/[0.3]
+           bg-transparent text-pv-muted border border-pv-fuch/[0.3]
            transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out
-           hover:-translate-y-px hover:bg-pv-fuch hover:text-pv-bg hover:border-pv-fuch
+           hover:-translate-y-px hover:bg-pv-fuch hover:text-white hover:border-pv-fuch
            hover:shadow-[0_6px_20px_-4px_rgba(51,79,169,0.2)]
            active:translate-y-0 active:scale-[0.98]
            disabled:opacity-40 disabled:cursor-not-allowed;
@@ -113,7 +113,7 @@
 
   .btn-emerald {
     @apply w-full py-4 px-6 rounded font-display font-bold text-base
-           bg-pv-emerald text-pv-bg
+           bg-pv-emerald text-white
            transition-[transform,box-shadow,filter] duration-200 ease-out
            hover:-translate-y-px hover:brightness-[1.06]
            hover:shadow-[0_6px_20px_-4px_rgba(51,79,169,0.32)]
@@ -131,9 +131,8 @@
            disabled:cursor-not-allowed disabled:opacity-40;
   }
 
-  /* Navbar / compact emerald actions (not full-width) */
   .btn-compact-primary {
-    @apply rounded font-bold text-pv-bg bg-pv-emerald
+    @apply rounded font-bold text-white bg-pv-emerald
            transition-[transform,box-shadow,filter] duration-200 ease-out
            hover:-translate-y-px hover:brightness-[1.06]
            hover:shadow-[0_4px_14px_-4px_rgba(51,79,169,0.3)]

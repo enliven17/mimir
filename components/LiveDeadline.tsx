@@ -122,7 +122,7 @@ export default function LiveDeadline({
 
       {/* Decay bar */}
       {showBar && !compact && (
-        <div className="relative h-1 w-full rounded-full bg-black/[0.06] overflow-hidden">
+        <div className="relative h-1 w-full rounded-full bg-white/[0.06] overflow-hidden">
           <motion.div
             className={`absolute inset-y-0 left-0 rounded-full ${barColor} ${
               isCritical ? "animate-phase-glow" : ""

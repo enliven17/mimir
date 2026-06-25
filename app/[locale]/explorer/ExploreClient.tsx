@@ -40,13 +40,14 @@ import ExploreArenaEmptyState from "@/components/explorer/ExploreArenaEmptyState
 import ExploreFilteredEmptyState from "@/components/explorer/ExploreFilteredEmptyState";
 import { ChevronDown, ListFilter, RefreshCw, Search, X } from "lucide-react";
 import ChallengeOpportunityCard from "@/components/explorer/ChallengeOpportunityCard";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 import type { VSCacheFreshness } from "@/lib/vs-freshness";
 
 const filterPillBase =
   "shrink-0 rounded border px-4 py-2 font-display text-xs font-bold uppercase tracking-tight transition-[color,border-color,background-color] focus-ring";
 const filterPillActive = "border-pv-emerald/50 bg-pv-emerald text-pv-bg";
 const filterPillInactive =
-  "border-black/[0.15] bg-transparent text-pv-muted hover:border-black/[0.28] hover:text-pv-text";
+  "border-white/[0.15] bg-transparent text-pv-muted hover:border-white/[0.28] hover:text-pv-text";
 
 type ArenaViewMode = "open" | "ai" | "closed";
 
@@ -93,37 +94,37 @@ function sortOpportunities(
 
 function IntelligenceDossierSkeleton() {
   return (
-    <div className="h-full rounded-2xl border border-black/[0.1] bg-black/[0.03] p-4 backdrop-blur-xl">
+    <div className="h-full rounded-2xl border border-white/[0.1] bg-white/[0.03] p-4 backdrop-blur-xl">
       <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
-        <div className="h-3 rounded bg-black/[0.08]" />
-        <div className="h-3 rounded bg-black/[0.08]" />
-        <div className="h-3 rounded bg-black/[0.08]" />
+        <div className="h-3 rounded bg-white/[0.08]" />
+        <div className="h-3 rounded bg-white/[0.08]" />
+        <div className="h-3 rounded bg-white/[0.08]" />
       </div>
       <div className="mb-3 space-y-2">
-        <div className="h-5 w-5/6 rounded bg-black/[0.08]" />
-        <div className="h-5 w-3/4 rounded bg-black/[0.08]" />
+        <div className="h-5 w-5/6 rounded bg-white/[0.08]" />
+        <div className="h-5 w-3/4 rounded bg-white/[0.08]" />
       </div>
-      <div className="mb-3 grid grid-cols-1 gap-2 rounded-2xl border border-black/[0.06] bg-black/20 p-3 sm:grid-cols-2">
+      <div className="mb-3 grid grid-cols-1 gap-2 rounded-2xl border border-white/[0.06] bg-black/20 p-3 sm:grid-cols-2">
         <div className="space-y-2">
-          <div className="h-3 w-1/2 rounded bg-black/[0.08]" />
-          <div className="h-3 rounded bg-black/[0.08]" />
+          <div className="h-3 w-1/2 rounded bg-white/[0.08]" />
+          <div className="h-3 rounded bg-white/[0.08]" />
         </div>
         <div className="space-y-2">
-          <div className="h-3 w-1/2 rounded bg-black/[0.08]" />
-          <div className="h-3 rounded bg-black/[0.08]" />
+          <div className="h-3 w-1/2 rounded bg-white/[0.08]" />
+          <div className="h-3 rounded bg-white/[0.08]" />
         </div>
         <div className="space-y-2">
-          <div className="h-3 w-1/2 rounded bg-black/[0.08]" />
-          <div className="h-3 rounded bg-black/[0.08]" />
+          <div className="h-3 w-1/2 rounded bg-white/[0.08]" />
+          <div className="h-3 rounded bg-white/[0.08]" />
         </div>
         <div className="space-y-2">
-          <div className="h-3 w-1/2 rounded bg-black/[0.08]" />
-          <div className="h-3 rounded bg-black/[0.08]" />
+          <div className="h-3 w-1/2 rounded bg-white/[0.08]" />
+          <div className="h-3 rounded bg-white/[0.08]" />
         </div>
       </div>
       <div className="flex gap-2">
-        <div className="h-11 flex-1 rounded-lg bg-black/[0.08]" />
-        <div className="h-11 w-36 rounded-lg bg-black/[0.08]" />
+        <div className="h-11 flex-1 rounded-lg bg-white/[0.08]" />
+        <div className="h-11 w-36 rounded-lg bg-white/[0.08]" />
       </div>
     </div>
   );
@@ -659,13 +660,15 @@ export default function ExploreClient() {
 
   return (
     <PageTransition>
-      <h1 className="sr-only">{t("title")}</h1>
+      <div className="mb-8">
+        <BlueprintHeading>{t("title")}</BlueprintHeading>
+      </div>
 
       {/* z-20: filter dropdowns (absolute z-40) must stack above #arena-content — Framer
           motion siblings create stacking contexts; later DOM order was painting cards on top. */}
       <AnimatedItem className="relative z-20">
         <section id="arena-controls" className="mb-8" aria-label={t("filtersAriaLabel")}>
-          <div className="rounded-[28px] border border-black/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-5 shadow-[0_18px_60px_-36px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:p-6">
+          <div className="border border-pv-border/25 bg-pv-surface p-5 sm:p-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-2">
                 <p className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-pv-muted">
@@ -683,15 +686,15 @@ export default function ExploreClient() {
                 </div>
               </div>
 
-              <div className="inline-flex w-full flex-col gap-2 rounded-[22px] border border-black/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:w-auto sm:flex-row sm:items-center">
+              <div className="inline-flex w-full flex-col gap-2 border border-pv-border/15 bg-pv-bg p-2 sm:w-auto sm:flex-row sm:items-center">
                 <button
                   type="button"
                   onClick={() => switchView("open")}
                   aria-pressed={activeView === "open"}
-                  className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 rounded-[18px] px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
+                  className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
                     activeView === "open"
-                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] shadow-[0_12px_32px_-20px_rgba(216,95,95,0.95)]"
-                      : "border border-transparent bg-transparent hover:border-black/[0.08] hover:bg-black/[0.03]"
+                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18]"
+                      : "border border-transparent bg-transparent hover:border-white/[0.08] hover:bg-white/[0.03]"
                   }`}
                 >
                   <span className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-pv-text">
@@ -701,7 +704,7 @@ export default function ExploreClient() {
                     className={`rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] ${
                       activeView === "open"
                         ? "bg-pv-emerald text-pv-bg"
-                        : "border border-black/[0.12] bg-black/20 text-pv-muted"
+                        : "border border-white/[0.12] bg-black/20 text-pv-muted"
                     }`}
                   >
                     {filteredOpenChallenges.length}
@@ -712,10 +715,10 @@ export default function ExploreClient() {
                   type="button"
                   onClick={() => switchView("ai")}
                   aria-pressed={activeView === "ai"}
-                  className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 rounded-[18px] px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
+                  className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
                     activeView === "ai"
-                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] shadow-[0_12px_32px_-20px_rgba(216,95,95,0.95)]"
-                      : "border border-transparent bg-transparent hover:border-black/[0.08] hover:bg-black/[0.03]"
+                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18]"
+                      : "border border-transparent bg-transparent hover:border-white/[0.08] hover:bg-white/[0.03]"
                   }`}
                 >
                   <span className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-pv-text">
@@ -725,7 +728,7 @@ export default function ExploreClient() {
                     className={`rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] ${
                       activeView === "ai"
                         ? "bg-pv-emerald text-pv-bg"
-                        : "border border-black/[0.12] bg-black/20 text-pv-muted"
+                        : "border border-white/[0.12] bg-black/20 text-pv-muted"
                     }`}
                   >
                     {filteredOpportunities.length}
@@ -736,10 +739,10 @@ export default function ExploreClient() {
                   type="button"
                   onClick={() => switchView("closed")}
                   aria-pressed={activeView === "closed"}
-                  className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 rounded-[18px] px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
+                  className={`flex min-h-[52px] flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-all duration-200 sm:min-w-[240px] ${
                     activeView === "closed"
-                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] shadow-[0_12px_32px_-20px_rgba(216,95,95,0.95)]"
-                      : "border border-transparent bg-transparent hover:border-black/[0.08] hover:bg-black/[0.03]"
+                      ? "border border-pv-emerald/40 bg-pv-emerald/[0.18]"
+                      : "border border-transparent bg-transparent hover:border-white/[0.08] hover:bg-white/[0.03]"
                   }`}
                 >
                   <span className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-pv-text">
@@ -749,7 +752,7 @@ export default function ExploreClient() {
                     className={`rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] ${
                       activeView === "closed"
                         ? "bg-pv-emerald text-pv-bg"
-                        : "border border-black/[0.12] bg-black/20 text-pv-muted"
+                        : "border border-white/[0.12] bg-black/20 text-pv-muted"
                     }`}
                   >
                     {filteredClosedChallenges.length}
@@ -758,7 +761,7 @@ export default function ExploreClient() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-[28px] border border-black/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-5 shadow-[0_18px_60px_-36px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:p-6">
+            <div className="mt-4 border border-pv-border/15 bg-pv-bg p-5 sm:p-6">
               <div className="grid grid-cols-2 gap-3 gap-y-4 lg:grid-cols-12 lg:items-end lg:gap-4 xl:gap-5">
               <div
                 className="relative col-span-1 min-w-0 lg:col-span-2"
@@ -782,7 +785,7 @@ export default function ExploreClient() {
                     setQuickFilterMenuOpen(false);
                     setSortMenuOpen((open) => !open);
                   }}
-                  className="input flex h-11 min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 bg-pv-bg py-0 pr-3 text-left font-body text-sm text-pv-text transition-[border-color,box-shadow] hover:border-black/[0.14]"
+                  className="input flex h-11 min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 bg-pv-bg py-0 pr-3 text-left font-body text-sm text-pv-text transition-[border-color,box-shadow] hover:border-white/[0.14]"
                 >
                   <span className="min-w-0 truncate">{sortTriggerLabel}</span>
                   <ChevronDown
@@ -804,7 +807,7 @@ export default function ExploreClient() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
                       transition={{ duration: 0.16, ease: [0.25, 0.46, 0.45, 0.94] }}
-                      className="absolute left-0 top-full z-[100] mt-1.5 w-max min-w-full max-w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded border border-black/[0.1] bg-pv-bg py-1 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.85)]"
+                      className="absolute left-0 top-full z-[100] mt-1.5 w-max min-w-full max-w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded border border-white/[0.1] bg-pv-bg py-1 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.85)]"
                     >
                       {sortOnlyOptions.map(({ key, label }) => (
                         <button
@@ -819,7 +822,7 @@ export default function ExploreClient() {
                           className={`flex w-full items-center px-4 py-2.5 text-left font-body text-sm transition-colors ${
                             sort === key
                               ? "bg-pv-emerald/[0.12] font-medium text-pv-emerald"
-                              : "text-pv-muted hover:bg-black/[0.05] hover:text-pv-text"
+                              : "text-pv-muted hover:bg-white/[0.05] hover:text-pv-text"
                           }`}
                         >
                           {label}
@@ -852,7 +855,7 @@ export default function ExploreClient() {
                     setSortMenuOpen(false);
                     setQuickFilterMenuOpen((open) => !open);
                   }}
-                  className="input flex h-11 min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 bg-pv-bg py-0 pr-3 text-left font-body text-sm text-pv-text transition-[border-color,box-shadow] hover:border-black/[0.14]"
+                  className="input flex h-11 min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 bg-pv-bg py-0 pr-3 text-left font-body text-sm text-pv-text transition-[border-color,box-shadow] hover:border-white/[0.14]"
                 >
                   <span className="min-w-0 truncate">
                     {quickFilterTriggerLabel}
@@ -876,7 +879,7 @@ export default function ExploreClient() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
                       transition={{ duration: 0.16, ease: [0.25, 0.46, 0.45, 0.94] }}
-                      className="absolute left-0 top-full z-[100] mt-1.5 w-max min-w-full max-w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded border border-black/[0.1] bg-pv-bg py-1 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.85)]"
+                      className="absolute left-0 top-full z-[100] mt-1.5 w-max min-w-full max-w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded border border-white/[0.1] bg-pv-bg py-1 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.85)]"
                     >
                       <button
                         type="button"
@@ -893,7 +896,7 @@ export default function ExploreClient() {
                         className={`flex w-full items-center px-4 py-2.5 text-left font-body text-sm transition-colors ${
                           quickFilterOptionSelected("all")
                             ? "bg-pv-emerald/[0.12] font-medium text-pv-emerald"
-                            : "text-pv-muted hover:bg-black/[0.05] hover:text-pv-text"
+                            : "text-pv-muted hover:bg-white/[0.05] hover:text-pv-text"
                         }`}
                       >
                         {t("quickFilterAll")}
@@ -924,7 +927,7 @@ export default function ExploreClient() {
                         } ${
                           quickFilterOptionSelected("needs")
                             ? "bg-pv-emerald/[0.12] font-medium text-pv-emerald"
-                            : "text-pv-muted hover:bg-black/[0.05] hover:text-pv-text"
+                            : "text-pv-muted hover:bg-white/[0.05] hover:text-pv-text"
                         }`}
                       >
                         {t("needsChallengers")}
@@ -944,7 +947,7 @@ export default function ExploreClient() {
                         className={`flex w-full items-center px-4 py-2.5 text-left font-body text-sm transition-colors ${
                           quickFilterOptionSelected("soon")
                             ? "bg-pv-emerald/[0.12] font-medium text-pv-emerald"
-                            : "text-pv-muted hover:bg-black/[0.05] hover:text-pv-text"
+                            : "text-pv-muted hover:bg-white/[0.05] hover:text-pv-text"
                         }`}
                       >
                         {t("expiringSoon")}
@@ -964,7 +967,7 @@ export default function ExploreClient() {
                         className={`flex w-full items-center px-4 py-2.5 text-left font-body text-sm transition-colors ${
                           quickFilterOptionSelected("strength")
                             ? "bg-pv-emerald/[0.12] font-medium text-pv-emerald"
-                            : "text-pv-muted hover:bg-black/[0.05] hover:text-pv-text"
+                            : "text-pv-muted hover:bg-white/[0.05] hover:text-pv-text"
                         }`}
                       >
                         {t("strength")}
@@ -1034,7 +1037,7 @@ export default function ExploreClient() {
                     {search ? (
                       <button
                         type="button"
-                        className="absolute right-2 top-1/2 z-[1] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-pv-muted transition-colors hover:bg-black/[0.06] hover:text-pv-text focus-ring"
+                        className="absolute right-2 top-1/2 z-[1] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-pv-muted transition-colors hover:bg-white/[0.06] hover:text-pv-text focus-ring"
                         onClick={() => updateFilters({ search: "" })}
                         aria-label={t("clearSearch")}
                       >
@@ -1047,7 +1050,7 @@ export default function ExploreClient() {
                   type="button"
                   onClick={() => setAdvancedOpen((open) => !open)}
                   aria-expanded={advancedOpen}
-                  className="flex h-11 min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded border border-black/[0.1] bg-pv-bg px-5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-text transition-colors hover:border-pv-emerald/30 hover:bg-black/[0.04] lg:w-auto"
+                  className="flex h-11 min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded border border-white/[0.1] bg-pv-bg px-5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-text transition-colors hover:border-pv-emerald/30 hover:bg-white/[0.04] lg:w-auto"
                 >
                   <ListFilter size={16} className="text-pv-muted" aria-hidden />
                   {t("advanced")}
@@ -1059,7 +1062,7 @@ export default function ExploreClient() {
                   }}
                   disabled={refreshing}
                   aria-busy={refreshing}
-                  className="flex h-11 min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded border border-black/[0.1] bg-pv-bg px-5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-text transition-colors hover:border-pv-emerald/30 hover:bg-black/[0.04] disabled:cursor-wait disabled:opacity-70 lg:w-auto"
+                  className="flex h-11 min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded border border-white/[0.1] bg-pv-bg px-5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-text transition-colors hover:border-pv-emerald/30 hover:bg-white/[0.04] disabled:cursor-wait disabled:opacity-70 lg:w-auto"
                 >
                   <RefreshCw
                     size={16}
@@ -1084,7 +1087,7 @@ export default function ExploreClient() {
               className={`overflow-hidden ${!advancedOpen ? "pointer-events-none" : ""}`}
               aria-hidden={!advancedOpen}
             >
-              <div className="mt-6 border-t border-black/[0.06] pt-6">
+              <div className="mt-6 border-t border-white/[0.06] pt-6">
                 <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:items-start sm:gap-x-10 sm:gap-y-6">
                   <div className="min-w-0">
                     <span className="mb-3 block font-display text-[10px] font-bold uppercase tracking-[0.22em] text-pv-muted">

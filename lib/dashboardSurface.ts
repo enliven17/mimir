@@ -11,7 +11,7 @@ export const DASHBOARD_CARD_SURFACE =
 
 /** Hover para KPI y bloques planos interactivos (paridad `ArenaCard`). */
 export const DASHBOARD_CARD_HOVER =
-  "transition-[border-color,background-color] duration-200 hover:border-pv-emerald/30 hover:bg-[#242323]";
+  "transition-[border-color,background-color] duration-200 hover:border-pv-emerald/40 hover:bg-pv-surface2";
 
 /** Panel con padding (filtros, perfil de riesgo, quick actions). */
 export const DASHBOARD_PANEL_SURFACE = `${DASHBOARD_CARD_SURFACE} p-4 sm:p-5`;

@@ -17,6 +17,7 @@ import type { VSCacheFreshness } from "@/lib/vs-freshness";
 import { mergePendingVS } from "@/lib/pending-vs";
 import { applyExploreFilters } from "@/lib/exploreFilters";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { LiveStat } from "@/components/ui";
 import { shouldShowDashboardStakeHoldingsMocks } from "@/lib/dashboardUiPolicy";
 import DashboardPortfolioSection, {
@@ -218,73 +219,52 @@ export default function DashboardPageClient() {
   return (
     <PageTransition>
       <AnimatedItem>
-        <header className="mb-8 sm:mb-10">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-4 sm:gap-6">
-            <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-6">
-              <h1 className="font-display text-2xl font-bold uppercase tracking-tighter text-pv-text sm:text-3xl md:text-4xl">
-                {t("title")}
-              </h1>
+        <div className="mb-8 sm:mb-10">
+          <BlueprintHeading>{t("title")}</BlueprintHeading>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-1.5">
               <div
-                className="h-px min-w-[2rem] flex-1 bg-black/[0.12]"
+                className="h-1.5 w-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(51,79,169,0.6)]"
                 aria-hidden
               />
+              <span className="font-mono text-xs text-pv-muted">
+                {t("total", { count: duels.length })}
+              </span>
             </div>
-            <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3 sm:gap-4">
-              <div className="flex items-center gap-1.5">
-                <div
-                  className="h-1.5 w-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(216,95,95,0.6)]"
-                  aria-hidden
-                />
-                <span className="font-mono text-xs text-pv-muted">
-                  {t("total", { count: duels.length })}
-                </span>
-              </div>
-              {snapshotCache && !loadError ? (
-                <span
-                  className={`max-w-[11rem] truncate font-mono text-[9px] font-semibold uppercase tracking-[0.14em] sm:max-w-none sm:text-[10px] ${
-                    snapshotCache.status === "live"
-                      ? "text-pv-emerald/90"
-                      : snapshotCache.status === "stale"
-                        ? "text-amber-400/90"
-                        : "text-pv-muted"
-                  }`}
-                  title={tCache("label")}
-                  aria-label={t("listFreshnessAria")}
-                >
-                  {tCache(snapshotCache.status)}
-                  {snapshotCache.ageMs != null ? (
-                    <>
-                      {" "}
-                      · {formatDashboardSnapshotAge(snapshotCache.ageMs, locale)}
-                    </>
-                  ) : (
-                    <>
-                      {" "}
-                      · {tCache("unknown")}
-                    </>
-                  )}
-                </span>
-              ) : null}
-              <Link
-                href="/vs/create"
-                className={`inline-flex items-center justify-center no-underline ${filterPillBase} ${filterPillActive}`}
+            {snapshotCache && !loadError ? (
+              <span
+                className={`max-w-[11rem] truncate font-mono text-[9px] font-semibold uppercase tracking-[0.14em] sm:max-w-none sm:text-[10px] ${
+                  snapshotCache.status === "live"
+                    ? "text-pv-emerald/90"
+                    : snapshotCache.status === "stale"
+                      ? "text-amber-400/90"
+                      : "text-pv-muted"
+                }`}
+                title={tCache("label")}
+                aria-label={t("listFreshnessAria")}
               >
-                {t("new")}
-              </Link>
-            </div>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <span className="block max-w-2xl font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-pv-emerald sm:text-xs">
-              {t("eyebrow")}
-            </span>
-            <a
-              href="#dashboard-exposure"
-              className="shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted underline decoration-black/[0.15] underline-offset-[5px] transition-colors hover:text-pv-emerald hover:decoration-pv-emerald/50 sm:text-[11px]"
+                {tCache(snapshotCache.status)}
+                {snapshotCache.ageMs != null ? (
+                  <>
+                    {" "}
+                    · {formatDashboardSnapshotAge(snapshotCache.ageMs, locale)}
+                  </>
+                ) : (
+                  <>
+                    {" "}
+                    · {tCache("unknown")}
+                  </>
+                )}
+              </span>
+            ) : null}
+            <Link
+              href="/vs/create"
+              className={`inline-flex items-center justify-center no-underline ${filterPillBase} ${filterPillActive}`}
             >
-              {t("jumpToExposure")}
-            </a>
+              {t("new")}
+            </Link>
           </div>
-        </header>
+        </div>
       </AnimatedItem>
 
       {loadError ? (

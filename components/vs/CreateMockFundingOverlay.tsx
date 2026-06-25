@@ -91,7 +91,7 @@ export default function CreateMockFundingOverlay({
               glass
               noPad
               glow="emerald"
-              className="!rounded-2xl border border-black/[0.14] shadow-[0_0_48px_-12px_rgba(216,95,95,0.35)]"
+              className="!rounded-2xl border border-white/[0.14] shadow-[0_0_48px_-12px_rgba(51,79,169,0.35)]"
             >
               <div className="p-6 sm:p-8">
                 <div
@@ -126,7 +126,7 @@ export default function CreateMockFundingOverlay({
                   </div>
                 ) : (
                   <div className="flex flex-col items-center text-center">
-                    <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-pv-emerald/35 bg-pv-emerald/[0.08] shadow-[0_0_28px_-10px_rgba(216,95,95,0.5)]">
+                    <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-pv-emerald/35 bg-pv-emerald/[0.08] shadow-[0_0_28px_-10px_rgba(51,79,169,0.5)]">
                       <Check
                         className="size-7 text-pv-emerald"
                         strokeWidth={2.5}

@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 
 interface PaymentEvent {
   resource: string;
@@ -65,15 +66,16 @@ export default function RevenuePage() {
   }, []);
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-      <h1 className="font-display text-2xl font-bold tracking-tight text-pv-text">x402 Revenue</h1>
-      <p className="mt-1.5 font-mono text-[13px] text-pv-muted">
+    <div className="pb-10">
+      <BlueprintHeading>x402 Revenue</BlueprintHeading>
+      <div className="mx-auto max-w-4xl px-4 pt-3 sm:px-6 lg:px-8">
+      <p className="text-center font-mono text-[13px] text-pv-muted">
         Live USDC nanopayments flowing into Mimir&apos;s paid endpoints. Refreshes every 5s.
       </p>
 
       {err && <p className="mt-6 font-mono text-sm text-pv-danger">Couldn&apos;t load: {err}</p>}
 
-      {!data && !err && <p className="mt-6 font-mono text-sm text-pv-muted">Loading…</p>}
+      {!data && !err && <RevenueSkeleton />}
 
       {data && (
         <>
@@ -85,7 +87,7 @@ export default function RevenuePage() {
 
           <section className="mt-10">
             <h2 className="label">By endpoint</h2>
-            <div className="card mt-3 divide-y divide-black/[0.08]">
+            <div className="card mt-3 divide-y divide-white/[0.08]">
               {data.byResource.length === 0 && (
                 <p className="px-4 py-6 font-mono text-sm text-pv-muted">
                   No payments yet — run <code className="text-pv-text">npm run x402:demo</code>.
@@ -107,7 +109,7 @@ export default function RevenuePage() {
             <h2 className="label">Recent payments</h2>
             <div className="card mt-3 overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b border-black/[0.08] text-left">
+                <thead className="border-b border-white/[0.08] text-left">
                   <tr className="font-mono text-[11px] uppercase tracking-[0.12em] text-pv-muted">
                     <th className="px-4 py-2.5 font-bold">When</th>
                     <th className="px-4 py-2.5 font-bold">Endpoint</th>
@@ -116,7 +118,7 @@ export default function RevenuePage() {
                     <th className="px-4 py-2.5 text-right font-bold">Receipt</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-black/[0.06]">
+                <tbody className="divide-y divide-white/[0.06]">
                   {data.recent.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center font-mono text-pv-muted">
@@ -182,7 +184,59 @@ export default function RevenuePage() {
           </section>
         </>
       )}
-    </main>
+      </div>
+    </div>
+  );
+}
+
+function Bar({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`animate-shimmer bg-pv-surface2 ${className}`}
+      style={{
+        backgroundImage:
+          "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)",
+        backgroundSize: "200% 100%",
+      }}
+    />
+  );
+}
+
+function RevenueSkeleton() {
+  return (
+    <div aria-busy className="mt-8" aria-label="Loading revenue">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="card px-4 py-5">
+            <Bar className="h-3 w-24" />
+            <Bar className="mt-3 h-7 w-28" />
+          </div>
+        ))}
+      </section>
+      <section className="mt-10">
+        <Bar className="h-3 w-24" />
+        <div className="card mt-3 divide-y divide-white/[0.08]">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center justify-between px-4 py-3.5">
+              <Bar className="h-4 w-40" />
+              <Bar className="h-4 w-24" />
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="mt-10">
+        <Bar className="h-3 w-32" />
+        <div className="card mt-3 divide-y divide-white/[0.06]">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center justify-between px-4 py-3">
+              <Bar className="h-4 w-20" />
+              <Bar className="h-4 w-32" />
+              <Bar className="h-4 w-20" />
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 

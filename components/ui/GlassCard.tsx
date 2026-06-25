@@ -21,8 +21,8 @@ const glowStyles: Record<GlowSide, React.ReactNode> = {
   ),
   both: (
     <>
-      <div className="absolute top-0 left-0 w-1/2 h-full bg-[radial-gradient(ellipse_at_0%_40%,rgba(216,95,95,0.07),transparent_65%)] pointer-events-none" />
-      <div className="absolute top-0 right-0 w-1/2 h-full bg-[radial-gradient(ellipse_at_100%_40%,rgba(200,71,71,0.07),transparent_65%)] pointer-events-none" />
+      <div className="absolute top-0 left-0 w-1/2 h-full bg-[radial-gradient(ellipse_at_0%_40%,rgba(51,79,169,0.07),transparent_65%)] pointer-events-none" />
+      <div className="absolute top-0 right-0 w-1/2 h-full bg-[radial-gradient(ellipse_at_100%_40%,rgba(51,79,169,0.07),transparent_65%)] pointer-events-none" />
     </>
   ),
   emerald: (
@@ -41,7 +41,7 @@ export default function GlassCard({
   ...props
 }: GlassCardProps) {
   const baseClass = glass
-    ? "bg-pv-surface/70 backdrop-blur-[20px] border border-black/[0.15] rounded overflow-hidden relative transition-all duration-200"
+    ? "bg-pv-surface/70 backdrop-blur-[20px] border border-white/[0.15] rounded overflow-hidden relative transition-all duration-200"
     : "card";
 
   return (

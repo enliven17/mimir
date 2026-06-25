@@ -27,13 +27,13 @@ export default function ControlPanel({
     <motion.div
       className={`relative rounded-xl overflow-hidden ${
         recessed
-          ? "bg-pv-bg/80 border border-black/[0.08] shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]"
-          : "bg-pv-surface border border-black/[0.12]"
+          ? "bg-pv-bg/80 border border-white/[0.08] shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]"
+          : "bg-pv-surface border border-white/[0.12]"
       } ${className}`}
       {...props}
     >
       {label && (
-        <div className="px-4 py-2 border-b border-black/[0.06]">
+        <div className="px-4 py-2 border-b border-white/[0.06]">
           <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-muted/50">
             {label}
           </span>
@@ -58,7 +58,7 @@ export function SegmentedSwitch({
 }) {
   return (
     <div
-      className={`inline-flex rounded-lg bg-pv-bg/60 border border-black/[0.08] p-0.5 ${className}`}
+      className={`inline-flex rounded-lg bg-pv-bg/60 border border-white/[0.08] p-0.5 ${className}`}
     >
       {options.map((opt) => (
         <button
@@ -67,7 +67,7 @@ export function SegmentedSwitch({
           onClick={() => onChange(opt.value)}
           className={`relative px-3 py-1.5 rounded-md font-mono text-[11px] font-bold uppercase tracking-wider transition-all duration-150 ${
             value === opt.value
-              ? "bg-black/[0.08] text-pv-text shadow-sm"
+              ? "bg-white/[0.08] text-pv-text shadow-sm"
               : "text-pv-muted hover:text-pv-text/70"
           }`}
         >

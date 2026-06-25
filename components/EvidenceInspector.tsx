@@ -33,12 +33,12 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
   if (vs.state !== "resolved") return null;
 
   return (
-    <div className="mt-4 rounded-2xl border border-black/[0.08] bg-pv-surface overflow-hidden">
+    <div className="mt-4 rounded-2xl border border-white/[0.08] bg-pv-surface overflow-hidden">
       {/* Header — always visible */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-4 py-3 hover:bg-black/[0.02] transition-colors"
+        className="flex w-full items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
       >
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-pv-emerald" aria-hidden />
@@ -59,7 +59,7 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
 
       {/* Expanded content */}
       {open && (
-        <div className="border-t border-black/[0.06] px-4 pb-4 pt-3 space-y-4">
+        <div className="border-t border-white/[0.06] px-4 pb-4 pt-3 space-y-4">
           {/* Verdict */}
           <div>
             <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-pv-muted">Verdict</div>
@@ -74,7 +74,7 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
               <span>Confidence</span>
               <span className={CONFIDENCE_COLOR(confidence)}>{confidence}%</span>
             </div>
-            <div className="h-1.5 rounded-full bg-black/[0.06]">
+            <div className="h-1.5 rounded-full bg-white/[0.06]">
               <div
                 className={`h-1.5 rounded-full transition-all ${
                   confidence >= 80 ? "bg-pv-emerald" : confidence >= 60 ? "bg-amber-400" : "bg-red-400"
@@ -131,7 +131,7 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
           )}
 
           {/* How to verify */}
-          <div className="rounded-xl border border-black/[0.06] bg-black/[0.02] px-3 py-2">
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
             <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-pv-muted mb-1">
               How to verify
             </div>

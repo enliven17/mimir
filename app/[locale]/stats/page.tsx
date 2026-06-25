@@ -11,6 +11,7 @@ import {
 import { MIMIR_ABI } from "@/lib/mimir-abi";
 import { getPersonaForAddress } from "@/lib/council-resolver";
 import type { PersonaSpec } from "@/agents/council/personas";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 
 export const revalidate = 30;
 
@@ -348,11 +349,11 @@ export default async function StatsPage() {
   const decided        = creatorWins + challengerWins;
 
   return (
-    <main className="mx-auto max-w-[1100px] px-4 py-10 sm:px-6 lg:px-8">
-      <header className="mb-8 space-y-1.5">
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-pv-emerald">Oracle Analytics</p>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-pv-text sm:text-4xl">Live on-chain stats</h1>
-        <p className="text-sm text-pv-muted">
+    <div className="pb-10">
+      <BlueprintHeading>Live on-chain stats</BlueprintHeading>
+      <div className="mx-auto max-w-[1100px] px-4 pt-6 sm:px-6 lg:px-8">
+      <header className="mb-8">
+        <p className="text-center text-sm text-pv-muted">
           Every number on this page is read directly from the Mimir contract on Arc Testnet. Cached for 30 seconds.
         </p>
       </header>
@@ -374,8 +375,8 @@ export default async function StatsPage() {
             How sure the oracle was when it settled. Mimir refunds the bottom band rather than guess.
           </p>
           <div className="space-y-4">
-            <ConfidenceBar label="FIRM · ≥ 80%"      count={firm}      total={totalResolved} color="#D85F5F" />
-            <ConfidenceBar label="CONTESTED · 60-79" count={contested} total={totalResolved} color="#F5AFAF" />
+            <ConfidenceBar label="FIRM · ≥ 80%"      count={firm}      total={totalResolved} color="#5FB0FF" />
+            <ConfidenceBar label="CONTESTED · 60-79" count={contested} total={totalResolved} color="#4A90E2" />
             <ConfidenceBar label="LOW · refunded"    count={low}       total={totalResolved} color="#E8C46C" />
           </div>
         </div>
@@ -580,6 +581,7 @@ export default async function StatsPage() {
           ← Back to markets
         </Link>
       </div>
-    </main>
+      </div>
+    </div>
   );
 }

@@ -41,7 +41,7 @@ function truncateQuestion(q: string, max = 72): string {
 const HUB_SHELL = "mx-auto w-full max-w-[720px] px-4 pb-16 sm:px-6";
 const HUB_SHELL_WIDE =
   "mx-auto w-full max-w-[1280px] px-4 pb-16 sm:px-6 lg:px-8";
-const CONTENT_DIVIDER = "mt-6 border-t border-black/[0.06] pt-8 sm:mt-8 sm:pt-10";
+const CONTENT_DIVIDER = "mt-6 border-t border-white/[0.06] pt-8 sm:mt-8 sm:pt-10";
 
 // Light blush surface to match the rest of the site (pv-bg #FCF8F8 / pv-surface
 // #FBEFEF). Previous dark gradient + heavy shadow + backdrop-blur fought the
@@ -174,7 +174,7 @@ export default function MessagesHub() {
           </AnimatedItem>
           <div className={CONTENT_DIVIDER}>
             <AnimatedItem>
-              <GlassCard className="border border-black/[0.1]">
+              <GlassCard className="border border-white/[0.1]">
                 <div className="flex items-start gap-3 sm:gap-4">
                   <div className="rounded-lg border border-pv-muted/25 bg-pv-surface2 p-2.5 sm:p-3">
                     <Lock className="text-pv-muted" size={22} aria-hidden />
@@ -258,7 +258,7 @@ export default function MessagesHub() {
 
           {!loading && !loadError && !participating && (
             <AnimatedItem>
-              <GlassCard className="relative overflow-hidden border border-black/[0.1]">
+              <GlassCard className="relative overflow-hidden border border-white/[0.1]">
                 <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-pv-emerald/[0.06] blur-2xl" />
                 <div className="relative flex flex-col items-center px-4 py-10 text-center sm:px-6 sm:py-12">
                   <div className="flex h-14 w-14 items-center justify-center rounded-full border border-pv-emerald/20 bg-pv-emerald/[0.08] sm:h-16 sm:w-16">

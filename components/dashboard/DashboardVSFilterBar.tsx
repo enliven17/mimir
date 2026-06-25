@@ -13,7 +13,7 @@ const filterPillBase =
   "shrink-0 rounded border px-4 py-2.5 font-display text-xs font-bold uppercase tracking-tight transition-[color,border-color,background-color] focus-ring min-h-[44px]";
 const filterPillActive = "border-pv-emerald/50 bg-pv-emerald text-pv-bg";
 const filterPillInactive =
-  "border-black/[0.15] bg-transparent text-pv-muted hover:border-black/[0.28] hover:text-pv-text";
+  "border-white/[0.15] bg-transparent text-pv-muted hover:border-white/[0.28] hover:text-pv-text";
 
 /** Píldoras del panel Advanced (misma escala que Explore). */
 const advancedFilterPillBase =
@@ -119,7 +119,7 @@ export default function DashboardVSFilterBar({
             {searchQuery ? (
               <button
                 type="button"
-                className="absolute right-2 top-1/2 z-[1] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-pv-muted transition-colors hover:bg-black/[0.06] hover:text-pv-text focus-ring"
+                className="absolute right-2 top-1/2 z-[1] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-pv-muted transition-colors hover:bg-white/[0.06] hover:text-pv-text focus-ring"
                 onClick={() => onSearchChange("")}
                 aria-label={tDash("clearSearch")}
               >
@@ -167,7 +167,7 @@ export default function DashboardVSFilterBar({
             type="button"
             onClick={() => setAdvancedOpen((o) => !o)}
             aria-expanded={advancedOpen}
-            className="flex h-11 min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded border border-black/[0.1] bg-pv-bg px-5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-text transition-colors hover:border-pv-emerald/30 hover:bg-black/[0.04] sm:w-auto"
+            className="flex h-11 min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded border border-white/[0.1] bg-pv-bg px-5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-text transition-colors hover:border-pv-emerald/30 hover:bg-white/[0.04] sm:w-auto"
           >
             <ListFilter size={16} className="text-pv-muted" aria-hidden />
             {tExplore("advanced")}
@@ -177,7 +177,7 @@ export default function DashboardVSFilterBar({
             onClick={onRefresh}
             disabled={refreshing}
             aria-busy={refreshing}
-            className="flex h-11 min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded border border-black/[0.1] bg-pv-bg px-5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-text transition-colors hover:border-pv-emerald/30 hover:bg-black/[0.04] disabled:cursor-wait disabled:opacity-70 sm:w-auto"
+            className="flex h-11 min-h-[44px] w-full shrink-0 items-center justify-center gap-2 rounded border border-white/[0.1] bg-pv-bg px-5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-pv-text transition-colors hover:border-pv-emerald/30 hover:bg-white/[0.04] disabled:cursor-wait disabled:opacity-70 sm:w-auto"
           >
             <RefreshCw
               size={16}
@@ -208,7 +208,7 @@ export default function DashboardVSFilterBar({
         className={`overflow-hidden ${!advancedOpen ? "pointer-events-none" : ""}`}
         aria-hidden={!advancedOpen}
       >
-        <div className="mt-6 border-t border-black/[0.06] pt-6">
+        <div className="mt-6 border-t border-white/[0.06] pt-6">
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-x-10 sm:gap-y-6 sm:items-start">
             <div className="min-w-0">
               <span className="mb-3 block font-display text-[10px] font-bold uppercase tracking-[0.22em] text-pv-muted">

@@ -6,6 +6,7 @@ import { Link } from "@/i18n/navigation";
 import { PlusCircle } from "lucide-react";
 import { getVSChallengerCount, getVSTotalPot, type VSData } from "@/lib/contract";
 import { Button } from "@/components/ui";
+import { BlueprintHeading } from "@/components/BlueprintGrid";
 
 type FeedRow =
   | {
@@ -62,55 +63,37 @@ export default function SettlementArchiveSection({
   );
 
   return (
-    <section
-      className="mb-12 border-t border-black/[0.06] pt-14 sm:mb-16 sm:pt-16 md:pt-20"
-      aria-labelledby="settlement-archive-heading"
-    >
-      {/* Header + headline stats */}
-      <div className="mb-14 flex flex-col justify-between gap-10 md:mb-16 md:flex-row md:items-end md:gap-12 lg:mb-20">
-        <div className="max-w-2xl">
-          <span className="mb-4 block font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-pv-emerald sm:text-xs">
-            {t("archiveEyebrow")}
-          </span>
-          <h2
-            id="settlement-archive-heading"
-            className="mb-5 font-display text-[clamp(2.25rem,6vw,3.75rem)] font-bold leading-[0.95] tracking-tighter text-pv-text"
-          >
-            {t("archiveTitle")}
-          </h2>
-          <p className="max-w-md text-base font-light leading-relaxed text-pv-muted sm:text-lg">
-            {t("archiveLead")}
-          </p>
-        </div>
+    <section aria-labelledby="settlement-archive-heading">
+      <BlueprintHeading>{t("archiveTitle")}</BlueprintHeading>
 
-        <div
-          className={`flex flex-wrap gap-10 sm:gap-14 md:mb-1 ${loading ? "opacity-60" : ""}`}
-          aria-busy={loading}
-        >
-          <div>
-            <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted">
-              {t("archiveStatTotalPool")}
-            </span>
-            <span
-              className="font-display text-3xl font-medium tabular-nums tracking-tighter text-pv-text sm:text-4xl"
-              style={{ textShadow: "0 0 24px rgba(216,95,95, 0.22)" }}
-            >
-              {loading ? "—" : `${totalPool.toFixed(2)} USDC`}
-            </span>
-          </div>
-          <div>
-            <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted">
-              {t("archiveStatOpenChallenges")}
-            </span>
-            <span className="font-display text-3xl font-medium tabular-nums tracking-tighter text-pv-emerald sm:text-4xl">
-              {loading ? "—" : openCount}
-            </span>
-          </div>
+      {/* Headline stats — blueprint divider grid */}
+      <div
+        className="grid grid-cols-2 gap-px border-x border-pv-border/25 bg-pv-border/25"
+        aria-busy={loading}
+      >
+        <div className="bg-pv-bg px-5 py-7 text-center sm:py-9">
+          <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted">
+            {t("archiveStatTotalPool")}
+          </span>
+          <span
+            className="font-display text-3xl font-medium tabular-nums tracking-tighter text-pv-text sm:text-4xl"
+            style={{ textShadow: "0 0 24px rgba(51,79,169, 0.22)" }}
+          >
+            {loading ? "—" : `${totalPool.toFixed(2)} USDC`}
+          </span>
+        </div>
+        <div className="bg-pv-bg px-5 py-7 text-center sm:py-9">
+          <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted">
+            {t("archiveStatOpenChallenges")}
+          </span>
+          <span className="font-display text-3xl font-medium tabular-nums tracking-tighter text-pv-emerald sm:text-4xl">
+            {loading ? "—" : openCount}
+          </span>
         </div>
       </div>
 
-      {/* Glass insight panel */}
-      <div className="group relative mb-14 overflow-hidden rounded-lg border border-black/[0.12] bg-pv-surface/80 px-6 py-10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl sm:mb-16 sm:p-10 md:p-12 lg:mb-20">
+      {/* Insight CTA strip — framed blueprint cell */}
+      <div className="group relative overflow-hidden border-x border-pv-border/25 bg-pv-surface px-6 py-10 sm:p-10 md:p-12">
         <div
           className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-[0.14] transition-opacity duration-700 group-hover:opacity-[0.2]"
           aria-hidden
@@ -139,24 +122,15 @@ export default function SettlementArchiveSection({
         </div>
       </div>
 
-      {/* Terminal feed */}
-      <div>
-        <div className="mb-8 flex flex-col gap-4 sm:mb-10 sm:flex-row sm:items-end sm:justify-between">
-          <h3 className="border-l-2 border-pv-emerald pl-4 font-display text-lg font-bold uppercase tracking-tight text-pv-text sm:text-xl">
-            {t("archiveTerminalTitle")}
-          </h3>
-          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted">
-            {t("archiveTerminalMeta", { count: allVS.length })}
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-3 sm:gap-4">
+      {/* Terminal feed — blueprint band + framed rows */}
+      <BlueprintHeading>{t("archiveTerminalTitle")}</BlueprintHeading>
+      <div className="grid gap-px border-x border-pv-border/25 bg-pv-border/25">
           {feedRows.map((row) =>
             row.kind === "live" ? (
               <Link
                 key={row.vs.id}
                 href={`/vs/${row.vs.id}`}
-                className="group flex gap-6 border border-transparent bg-pv-surface p-5 transition-all duration-300 hover:border-pv-emerald/20 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
+                className="group flex gap-6 bg-pv-bg p-5 transition-colors duration-300 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
               >
                 {/* Columna izquierda: enumeración centrada verticalmente */}
                 <div className="flex shrink-0 items-center self-stretch">
@@ -216,7 +190,7 @@ export default function SettlementArchiveSection({
             ) : (
               <div
                 key={row.id}
-                className="group flex gap-6 border border-black/[0.06] bg-pv-surface p-5 transition-all duration-300 hover:border-pv-emerald/20 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
+                className="group flex gap-6 bg-pv-bg p-5 transition-colors duration-300 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
               >
                 {/* Columna izquierda: enumeración demo centrada verticalmente */}
                 <div className="flex shrink-0 items-center self-stretch">
@@ -274,7 +248,6 @@ export default function SettlementArchiveSection({
               </div>
             )
           )}
-        </div>
       </div>
     </section>
   );
