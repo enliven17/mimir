@@ -38,6 +38,13 @@ function stateLabel(vs: VSData, t: (key: string) => string): string {
   return t("archiveStateOpen");
 }
 
+function formatUsdcAmount(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  }).format(amount);
+}
+
 export default function SettlementArchiveSection({
   allVS,
   loading,
@@ -156,7 +163,7 @@ export default function SettlementArchiveSection({
                         {t("archiveColPool")}
                       </span>
                       <span className="font-display text-lg font-medium tabular-nums text-pv-text sm:text-xl">
-                        {getVSTotalPot(row.vs)}
+                        {formatUsdcAmount(getVSTotalPot(row.vs))}
                         <span className="ml-0.5 text-sm font-normal text-pv-muted">USDC</span>
                       </span>
                     </div>
