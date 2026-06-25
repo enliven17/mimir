@@ -4,7 +4,6 @@ import { Link } from "@/i18n/navigation";
 import { getVSChallengerCount, isVSJoinable, type VSData } from "@/lib/contract";
 import { computeClaimQuality } from "@/lib/claimQuality";
 import { useTranslations } from "next-intl";
-import { UserRound } from "lucide-react";
 
 type ArenaVS = Pick<
   VSData,
@@ -60,7 +59,7 @@ function formatArenaIdCode(id: number): string {
 type ArenaStatusKey = "arenaStatusLive" | "arenaStatusPending" | "arenaStatusArchived";
 
 const ARENA_STAT_CELL =
-  "rounded border border-black/[0.1] bg-black/[0.03] px-3 py-2.5 sm:px-3.5 sm:py-3";
+  "rounded border border-white/[0.1] bg-white/[0.03] px-3 py-2.5 sm:px-3.5 sm:py-3";
 
 function getArenaPresentation(vs: ArenaVS): {
   statusKey: ArenaStatusKey;
@@ -122,8 +121,8 @@ export default function ArenaCard({
     statusVariant === "live"
       ? "font-display text-xs font-semibold uppercase tracking-wide text-pv-emerald bg-pv-emerald/10 px-2 py-1"
       : statusVariant === "archived"
-        ? "font-display text-xs font-semibold uppercase tracking-wide text-pv-muted bg-black/[0.06] px-2 py-1 ring-1 ring-black/[0.08]"
-        : "font-display text-xs font-semibold uppercase tracking-wide text-pv-muted bg-black/[0.06] px-2 py-1 ring-1 ring-black/[0.08]";
+        ? "font-display text-xs font-semibold uppercase tracking-wide text-pv-muted bg-white/[0.06] px-2 py-1 ring-1 ring-white/[0.08]"
+        : "font-display text-xs font-semibold uppercase tracking-wide text-pv-muted bg-white/[0.06] px-2 py-1 ring-1 ring-white/[0.08]";
 
   const marketLabel = tDetail(`marketTypes.${marketType}`);
   const oddsLabel = tDetail(`oddsModes.${oddsMode}`);
@@ -134,12 +133,12 @@ export default function ArenaCard({
         ? "border-pv-cyan/35 bg-pv-cyan/[0.12] text-pv-cyan"
         : claimQuality.tier === "fair"
           ? "border-amber-400/35 bg-amber-400/[0.12] text-amber-300"
-          : "border-black/[0.14] bg-black/[0.05] text-pv-muted"
+          : "border-white/[0.14] bg-white/[0.05] text-pv-muted"
     : "";
 
   return (
     <article
-      className={`card group relative flex h-full flex-col gap-6 overflow-hidden border-black/[0.12] bg-pv-surface p-6 transition-all duration-300 hover:border-pv-emerald/30 hover:bg-pv-surface2 sm:gap-8 sm:p-8 ${
+      className={`card group relative flex h-full flex-col gap-6 overflow-hidden border-white/[0.12] bg-pv-surface p-6 transition-all duration-300 hover:border-pv-emerald/30 hover:bg-pv-surface2 sm:gap-8 sm:p-8 ${
         isSample
           ? "border border-dashed border-pv-emerald/35 bg-pv-surface/80 ring-1 ring-pv-emerald/[0.12]"
           : ""
@@ -152,7 +151,7 @@ export default function ArenaCard({
           ) : null}
           <span className={statusPillClass}>{t(statusPillMessageKey)}</span>
         </div>
-        <span className="rounded px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-pv-muted ring-1 ring-black/[0.1] bg-black/[0.03] backdrop-blur-sm">
+        <span className="rounded px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-pv-muted ring-1 ring-white/[0.1] bg-white/[0.03] backdrop-blur-sm">
           {t("arenaIdBadge", { code: formatArenaIdCode(vs.id) })}
         </span>
       </div>
@@ -225,7 +224,7 @@ export default function ArenaCard({
         </div>
       </div>
 
-      <div className="relative z-10 mt-auto border-t border-black/[0.1] pt-6">
+      <div className="relative z-10 mt-auto border-t border-white/[0.1] pt-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted">
@@ -233,13 +232,19 @@ export default function ArenaCard({
             </span>
             <div className="flex items-center gap-3">
               <div className="flex items-center pl-0.5">
-                {["bg-pv-surface2", "bg-pv-surface", "bg-pv-emerald/30"].map((color, i) => (
+                {[0, 1, 2].map((i) => (
                   <span
                     key={`${vs.id}-avatar-${i}`}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.15] ${color} ${i > 0 ? "-ml-2.5" : ""}`}
+                    className={`flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/[0.15] bg-pv-surface2 ${i > 0 ? "-ml-2.5" : ""}`}
                     style={{ zIndex: 10 - i }}
                   >
-                    <UserRound size={14} className="text-pv-text/90" aria-hidden />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/people/peep-${(((vs.id + i) % 6) + 6) % 6 + 1}.svg`}
+                      alt=""
+                      aria-hidden
+                      className="h-full w-full object-cover object-top"
+                    />
                   </span>
                 ))}
               </div>
@@ -253,8 +258,8 @@ export default function ArenaCard({
             href={`/vs/${vs.id}`}
             className={
               isArchived
-                ? "inline-flex shrink-0 items-center justify-center rounded-md border border-black/[0.15] bg-transparent px-5 py-2 font-display text-[10px] font-bold uppercase tracking-[0.18em] text-pv-muted shadow-none transition-[color,border-color,transform,box-shadow] duration-200 ease-out hover:-translate-y-px hover:border-black/[0.28] hover:bg-transparent hover:text-pv-text hover:shadow-[0_4px_18px_-6px_rgba(0,0,0,0.45)] active:translate-y-0 active:scale-[0.98] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-surface"
-                : "inline-flex shrink-0 items-center justify-center rounded-md bg-pv-text px-5 py-2 font-display text-[10px] font-bold uppercase tracking-[0.18em] text-pv-bg shadow-none transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out hover:-translate-y-px hover:bg-pv-emerald hover:text-pv-bg hover:shadow-[0_6px_18px_-4px_rgba(216,95,95,0.35)] active:translate-y-0 active:scale-[0.98] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/40 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-surface"
+                ? "inline-flex shrink-0 items-center justify-center rounded-md border border-white/[0.15] bg-transparent px-5 py-2 font-display text-[10px] font-bold uppercase tracking-[0.18em] text-pv-muted shadow-none transition-[color,border-color,transform,box-shadow] duration-200 ease-out hover:-translate-y-px hover:border-white/[0.28] hover:bg-transparent hover:text-pv-text hover:shadow-[0_4px_18px_-6px_rgba(0,0,0,0.45)] active:translate-y-0 active:scale-[0.98] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-surface"
+                : "inline-flex shrink-0 items-center justify-center rounded-md bg-pv-text px-5 py-2 font-display text-[10px] font-bold uppercase tracking-[0.18em] text-pv-bg shadow-none transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out hover:-translate-y-px hover:bg-pv-emerald hover:text-pv-bg hover:shadow-[0_6px_18px_-4px_rgba(51,79,169,0.35)] active:translate-y-0 active:scale-[0.98] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/40 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-surface"
             }
           >
             {isArchived ? t("arenaViewDetails") : t("arenaJoin")}
