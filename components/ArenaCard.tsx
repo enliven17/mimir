@@ -240,7 +240,7 @@ export default function ArenaCard({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={`/people/peep-${(((vs.id + i) % 6) + 6) % 6 + 1}.svg`}
+                      src={`/people/peep-${(((vs.id + i) % 6) + 6) % 6 + 1}.png`}
                       alt=""
                       aria-hidden
                       className="h-full w-full object-cover object-top"

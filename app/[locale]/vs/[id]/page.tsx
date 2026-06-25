@@ -541,7 +541,7 @@ function getPeepSrc(address: string, fallbackIndex: number): string {
     .split("")
     .reduce((sum, char) => sum + char.charCodeAt(0), fallbackIndex);
 
-  return `/people/peep-${(seed % 6) + 1}.svg`;
+  return `/people/peep-${(seed % 6) + 1}.png`;
 }
 
 function VsChallengersCard({
