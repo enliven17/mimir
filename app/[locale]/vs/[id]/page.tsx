@@ -620,17 +620,16 @@ function VsChallengersCard({
                 <li key={`${challenger.address}-${index}`}>
                   <div className="rounded-lg border border-white/[0.08] bg-gradient-to-br from-pv-fuch/[0.04] via-transparent to-transparent p-2.5 transition-[border-color,background-color] duration-200 hover:border-white/[0.14] sm:p-3">
                     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 sm:gap-2.5 md:gap-3">
-                      <div
-                        className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-pv-fuch/[0.32] bg-pv-surface2 shadow-[inset_0_0_18px_rgba(255,255,255,0.03)] sm:size-10"
-                        aria-hidden
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={getPeepSrc(challenger.address, index)}
-                          alt=""
-                          className="h-full w-full object-cover object-top opacity-95"
-                        />
-                        <span className="absolute -bottom-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-pv-bg bg-pv-fuch px-1 font-mono text-[8px] font-bold tabular-nums leading-none text-pv-bg">
+                      <div className="relative size-9 shrink-0 sm:size-10" aria-hidden>
+                        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full border border-pv-fuch/[0.32] bg-pv-surface2 shadow-[inset_0_0_18px_rgba(255,255,255,0.03)]">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={getPeepSrc(challenger.address, index)}
+                            alt=""
+                            className="h-full w-full object-cover object-top opacity-95"
+                          />
+                        </div>
+                        <span className="absolute -bottom-1 -right-1 z-10 flex h-4 min-w-4 items-center justify-center rounded-full border border-pv-bg bg-pv-fuch px-1 font-mono text-[8px] font-bold tabular-nums leading-none text-pv-bg shadow-[0_2px_8px_rgba(0,0,0,0.35)]">
                           {index + 1}
                         </span>
                       </div>
