@@ -145,11 +145,6 @@ export default function ArenaCard({
           : ""
       }`}
     >
-      <div
-        className="pointer-events-none absolute left-0 top-0 h-0 w-1 bg-pv-emerald transition-[height] duration-500 ease-out group-hover:h-full"
-        aria-hidden
-      />
-
       <div className="relative z-10 flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {isSample && sampleBadgeLabel ? (
