@@ -94,9 +94,9 @@ export default function RevenuePage() {
                 </p>
               )}
               {data.byResource.map((r) => (
-                <div key={r.resource} className="flex items-center justify-between px-4 py-3">
-                  <code className="font-mono text-sm text-pv-text">{r.resource}</code>
-                  <div className="text-right text-sm">
+                <div key={r.resource} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <code className="min-w-0 break-all font-mono text-sm text-pv-text">{r.resource}</code>
+                  <div className="shrink-0 text-left text-sm sm:text-right">
                     <span className="font-mono font-semibold text-pv-text">${r.usd.toFixed(6)}</span>
                     <span className="ml-3 font-mono text-pv-muted">{r.calls} calls</span>
                   </div>
@@ -107,15 +107,25 @@ export default function RevenuePage() {
 
           <section className="mt-10">
             <h2 className="label">Recent payments</h2>
-            <div className="card mt-3 overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="card mt-3 divide-y divide-white/[0.06] sm:hidden">
+              {data.recent.length === 0 && (
+                <p className="px-4 py-8 text-center font-mono text-sm text-pv-muted">
+                  Waiting for the first payment...
+                </p>
+              )}
+              {data.recent.map((e, i) => (
+                <PaymentCard key={`${e.txId ?? i}-${e.at}`} event={e} />
+              ))}
+            </div>
+            <div className="card mt-3 hidden sm:block">
+              <table className="w-full table-fixed text-sm">
                 <thead className="border-b border-white/[0.08] text-left">
                   <tr className="font-mono text-[11px] uppercase tracking-[0.12em] text-pv-muted">
-                    <th className="px-4 py-2.5 font-bold">When</th>
-                    <th className="px-4 py-2.5 font-bold">Endpoint</th>
-                    <th className="px-4 py-2.5 font-bold">Payer</th>
-                    <th className="px-4 py-2.5 text-right font-bold">USDC</th>
-                    <th className="px-4 py-2.5 text-right font-bold">Receipt</th>
+                    <th className="w-[18%] px-4 py-2.5 font-bold">When</th>
+                    <th className="w-[30%] px-4 py-2.5 font-bold">Endpoint</th>
+                    <th className="w-[18%] px-4 py-2.5 font-bold">Payer</th>
+                    <th className="w-[16%] px-4 py-2.5 text-right font-bold">USDC</th>
+                    <th className="w-[18%] px-4 py-2.5 text-right font-bold">Receipt</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
@@ -131,8 +141,8 @@ export default function RevenuePage() {
                       <td className="px-4 py-2.5 font-mono text-pv-muted">
                         {new Date(e.at).toLocaleTimeString()}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <code className="font-mono text-pv-text">{e.resource}</code>
+                      <td className="min-w-0 px-4 py-2.5">
+                        <code className="block truncate font-mono text-pv-text" title={e.resource}>{e.resource}</code>
                       </td>
                       <td className="px-4 py-2.5 font-mono text-pv-muted">{short(e.payer)}</td>
                       <td className="px-4 py-2.5 text-right font-mono font-semibold text-pv-text">
@@ -184,6 +194,54 @@ export default function RevenuePage() {
           </section>
         </>
       )}
+      </div>
+    </div>
+  );
+}
+
+function PaymentCard({ event }: { event: PaymentEvent }) {
+  const receipt = isTxHash(event.txId) ? (
+    <a
+      href={`${ARCSCAN}/tx/${event.txId}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-pv-emerald underline-offset-2 hover:underline"
+      title={event.txId}
+    >
+      {short(event.txId)} ↗
+    </a>
+  ) : event.payer ? (
+    <a
+      href={`${ARCSCAN}/address/${event.payer}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-pv-emerald underline-offset-2 hover:underline"
+      title={`Payer on Arc — settlement ${event.txId ?? ""}`}
+    >
+      payer ↗
+    </a>
+  ) : (
+    <span className="text-pv-muted/60">—</span>
+  );
+
+  return (
+    <div className="px-4 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-pv-muted">
+            {new Date(event.at).toLocaleTimeString()}
+          </p>
+          <code className="mt-1 block break-all font-mono text-sm text-pv-text">
+            {event.resource}
+          </code>
+        </div>
+        <span className="shrink-0 font-mono text-sm font-semibold text-pv-text">
+          ${event.priceUsd.toFixed(6)}
+        </span>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3 font-mono text-xs">
+        <span className="min-w-0 truncate text-pv-muted">{short(event.payer)}</span>
+        <span className="shrink-0">{receipt}</span>
       </div>
     </div>
   );

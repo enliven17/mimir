@@ -344,7 +344,7 @@ Key facts:
 | Agent signer       | Circle W3S developer-controlled wallets                                           | Removes private-key handling from worker processes; satisfies prod-grade key management                          |
 | Cross-chain        | Circle CCTP V2 Fast Transfer + Iris attestation                                   | ~15s end-to-end, no third-party bridge trust                                                                     |
 | Unified balance    | Circle Gateway `POST /v1/balances`                                                | One-call multi-domain balance view, proxied through our API to keep the key server-side                          |
-| LLM (pluggable)    | Google Gemini 2.5 Flash *or* Anthropic Claude Sonnet 4.6                          | `lib/llm.ts` auto-selects whichever key is present; force a choice with `LLM_PROVIDER`                            |
+| LLM (pluggable)    | Gemini, Claude, Groq, or OpenRouter                                               | `lib/llm.ts` auto-selects configured keys; force a choice with `LLM_PROVIDER`                                    |
 | Messaging          | XMTP Browser SDK v7 (`@xmtp/browser-sdk`)                                         | Optional E2E-encrypted chat between creator and challenger before/after settlement                               |
 | Database           | Neon Postgres via `@neondatabase/serverless`                                      | Serverless-friendly driver, works on both Vercel functions and Railway long-running workers                      |
 | i18n               | next-intl (English + Spanish)                                                     | Locale-prefixed routing (`/en/*`, `/es/*`), runtime message loading                                              |
@@ -591,9 +591,11 @@ Every env var lives in `.env.example`. Quick reference:
 | `CIRCLE_ORACLE_ADDRESS`           | oracle, contract `oracle` | Output of `circle-create-wallets.ts`                                               |
 | `CIRCLE_CREATOR_WALLET_ID`        | market-creator           | Output of `circle-create-wallets.ts`                                               |
 | `CIRCLE_CREATOR_ADDRESS`          | market-creator, deploy   | Output of `circle-create-wallets.ts`                                               |
-| `GEMINI_API_KEY`                  | LLM (preferred)          | If both LLM keys present, Gemini wins                                              |
-| `ANTHROPIC_API_KEY`               | LLM (fallback)           | Used when `GEMINI_API_KEY` is empty                                                |
-| `LLM_PROVIDER`                    | optional                 | Force `gemini` or `anthropic` when both keys are set                               |
+| `GEMINI_API_KEY`                  | LLM (preferred)          | If present, Gemini is the default primary provider                                 |
+| `ANTHROPIC_API_KEY`               | LLM (fallback)           | Claude fallback and optional primary provider                                      |
+| `GROQ_API_KEY`                    | LLM (fallback)           | Fast fallback after primary provider failures                                      |
+| `OPENROUTER_API_KEY`              | LLM (fallback)           | Third fallback after Groq; defaults to `openrouter/free`                           |
+| `LLM_PROVIDER`                    | optional                 | Force `gemini`, `anthropic`, `groq`, or `openrouter`                               |
 | `ORACLE_LLM_MODEL`                | optional                 | Override default model name                                                        |
 | `AUTO_CHALLENGE`                  | oracle (worker)          | `1` to enable Kelly auto-stake                                                     |
 | `CHALLENGE_STAKE_USDC`            | oracle (worker)          | Min stake per auto-challenge (default 2)                                            |

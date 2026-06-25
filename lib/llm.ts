@@ -1,134 +1,173 @@
 /**
- * Provider-agnostic LLM call for Mimir agents.
+ * Provider-agnostic LLM calls for Mimir agents.
  *
- * Auto-selects between Google Gemini and Anthropic Claude based on which
- * API key is present in the environment. Falls back gracefully so a hackathon
- * demo only needs ONE of:
- *   - GEMINI_API_KEY     (preferred when present)
- *   - ANTHROPIC_API_KEY
+ * Auto-selects between Google Gemini, Anthropic Claude, and Groq based on
+ * configured API keys. The active provider can be forced with:
+ *   LLM_PROVIDER=gemini|anthropic|groq|openrouter
  *
- * The provider can also be forced via LLM_PROVIDER=gemini|anthropic.
  * Each provider uses its own default model unless ORACLE_LLM_MODEL is set.
- *
- *   import { callLLM } from "@/lib/llm";
- *   const text = await callLLM(prompt, { maxTokens: 512, jsonOnly: true });
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 
-export type LLMProvider = "gemini" | "anthropic" | "groq";
+export type LLMProvider = "gemini" | "anthropic" | "groq" | "openrouter";
 
 export interface CallLLMOptions {
   /** Max output tokens. Defaults to 1024. */
   maxTokens?: number;
-  /** Sampling temperature 0–1. Defaults to 0.2 (deterministic). */
+  /** Sampling temperature 0-1. Defaults to 0.2 (deterministic). */
   temperature?: number;
   /** Ask the model for JSON output. Gemini uses responseMimeType; Claude is prompt-hinted. */
   jsonOnly?: boolean;
 }
 
-const DEFAULT_GEMINI_MODEL    = process.env.ORACLE_LLM_MODEL || "gemini-2.5-flash";
+const DEFAULT_GEMINI_MODEL = process.env.ORACLE_LLM_MODEL || "gemini-2.5-flash";
 const DEFAULT_ANTHROPIC_MODEL = process.env.ORACLE_LLM_MODEL || "claude-sonnet-4-6";
-// Groq is the always-on fallback so the council never stalls on a Gemini 429.
-const DEFAULT_GROQ_MODEL      = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "openrouter/free";
+
+const GEMINI_QUOTA_COOLDOWN_MS = Number(process.env.LLM_QUOTA_COOLDOWN_MS ?? "300000"); // 5 min
+const GROQ_QUOTA_COOLDOWN_MS = Number(process.env.GROQ_QUOTA_COOLDOWN_MS ?? "2700000"); // 45 min
+const OPENROUTER_QUOTA_COOLDOWN_MS = Number(process.env.OPENROUTER_QUOTA_COOLDOWN_MS ?? "2700000"); // 45 min
 
 let anthropicClient: Anthropic | null = null;
+let geminiCooldownUntil = 0;
+let groqCooldownUntil = 0;
+let openrouterCooldownUntil = 0;
 
-// ── Quota cooldown gate ─────────────────────────────────────────────────────
-// When Gemini returns 429 (RESOURCE_EXHAUSTED) we set a cooldown timestamp.
-// Until it expires, callLLM short-circuits with a thrown error instead of
-// hammering the API with retries — gives the rolling-minute quota window
-// time to actually reset. Per-process (module-scoped), so each worker
-// (oracle / council / creator) tracks its own bucket independently.
-const QUOTA_COOLDOWN_MS = Number(process.env.LLM_QUOTA_COOLDOWN_MS ?? "300000"); // 5 min default
-let quotaCooldownUntil = 0;
-
-function inQuotaCooldown(): number {
-  const remaining = quotaCooldownUntil - Date.now();
+function cooldownRemaining(until: number): number {
+  const remaining = until - Date.now();
   return remaining > 0 ? remaining : 0;
 }
 
-function tripQuotaCooldown(): void {
-  quotaCooldownUntil = Date.now() + QUOTA_COOLDOWN_MS;
+function geminiCooldownRemaining(): number {
+  return cooldownRemaining(geminiCooldownUntil);
+}
+
+function groqCooldownRemaining(): number {
+  return cooldownRemaining(groqCooldownUntil);
+}
+
+function openrouterCooldownRemaining(): number {
+  return cooldownRemaining(openrouterCooldownUntil);
+}
+
+function tripGeminiCooldown(): void {
+  geminiCooldownUntil = Date.now() + GEMINI_QUOTA_COOLDOWN_MS;
+}
+
+function tripGroqCooldown(): void {
+  groqCooldownUntil = Date.now() + GROQ_QUOTA_COOLDOWN_MS;
+}
+
+function tripOpenRouterCooldown(): void {
+  openrouterCooldownUntil = Date.now() + OPENROUTER_QUOTA_COOLDOWN_MS;
+}
+
+function hasProviderKey(provider: LLMProvider): boolean {
+  if (provider === "gemini") return !!process.env.GEMINI_API_KEY?.trim();
+  if (provider === "groq") return !!process.env.GROQ_API_KEY?.trim();
+  if (provider === "openrouter") return !!process.env.OPENROUTER_API_KEY?.trim();
+  return !!process.env.ANTHROPIC_API_KEY?.trim();
+}
+
+function providerCooldown(provider: LLMProvider): number {
+  if (provider === "gemini") return geminiCooldownRemaining();
+  if (provider === "groq") return groqCooldownRemaining();
+  if (provider === "openrouter") return openrouterCooldownRemaining();
+  return 0;
+}
+
+function fallbackProviders(primary: LLMProvider): LLMProvider[] {
+  const preferred: LLMProvider[] = [primary, "groq", "openrouter", "anthropic", "gemini"];
+  return preferred.filter((provider, index) =>
+    preferred.indexOf(provider) === index && hasProviderKey(provider)
+  );
 }
 
 export function activeLLMProvider(): LLMProvider {
   const forced = process.env.LLM_PROVIDER?.toLowerCase();
-  if (forced === "gemini" || forced === "anthropic" || forced === "groq") return forced;
-  if (process.env.GEMINI_API_KEY?.trim())    return "gemini";
+  if (forced === "gemini" || forced === "anthropic" || forced === "groq" || forced === "openrouter") return forced;
+  if (process.env.GEMINI_API_KEY?.trim()) return "gemini";
   if (process.env.ANTHROPIC_API_KEY?.trim()) return "anthropic";
-  if (process.env.GROQ_API_KEY?.trim())      return "groq";
-  throw new Error("No LLM API key configured. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or GROQ_API_KEY.");
+  if (process.env.GROQ_API_KEY?.trim()) return "groq";
+  if (process.env.OPENROUTER_API_KEY?.trim()) return "openrouter";
+  throw new Error("No LLM API key configured. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.");
 }
 
 export function activeLLMModel(): string {
-  const p = activeLLMProvider();
-  return p === "gemini" ? DEFAULT_GEMINI_MODEL : p === "groq" ? DEFAULT_GROQ_MODEL : DEFAULT_ANTHROPIC_MODEL;
+  const provider = activeLLMProvider();
+  if (provider === "gemini") return DEFAULT_GEMINI_MODEL;
+  if (provider === "groq") return DEFAULT_GROQ_MODEL;
+  if (provider === "openrouter") return DEFAULT_OPENROUTER_MODEL;
+  return DEFAULT_ANTHROPIC_MODEL;
 }
 
-/** Redacted fingerprint of the active API key. Use in startup logs to verify
- *  that per-worker overrides are landing — different workers should print
- *  different suffixes. Format: `…XXXXXX (len=N)`. */
+/** Redacted fingerprint of the active API key for startup logs. */
 export function activeLLMKeyFingerprint(): string {
   const provider = activeLLMProvider();
   const raw = provider === "gemini"
     ? process.env.GEMINI_API_KEY
     : provider === "groq"
     ? process.env.GROQ_API_KEY
+    : provider === "openrouter"
+    ? process.env.OPENROUTER_API_KEY
     : process.env.ANTHROPIC_API_KEY;
   const key = raw?.trim() ?? "";
   if (!key) return "(missing)";
-  return `…${key.slice(-6)} (len=${key.length})`;
+  return `...${key.slice(-6)} (len=${key.length})`;
 }
 
 export async function callLLM(prompt: string, opts: CallLLMOptions = {}): Promise<string> {
-  const provider = activeLLMProvider();
-  const o = {
-    maxTokens:   opts.maxTokens   ?? 1024,
+  const primary = activeLLMProvider();
+  const options = {
+    maxTokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0.2,
-    jsonOnly:    opts.jsonOnly    ?? false,
+    jsonOnly: opts.jsonOnly ?? false,
   };
-  const hasGroq = !!process.env.GROQ_API_KEY?.trim();
+  const candidates = fallbackProviders(primary);
+  let lastError: unknown = null;
 
-  // Gemini cooling down from a prior 429 → go straight to Groq instead of
-  // stalling (the whole point of the fallback: the council keeps voting).
-  const cooldown = inQuotaCooldown();
-  if (provider === "gemini" && cooldown > 0) {
-    if (hasGroq) {
-      console.warn(`[llm] Gemini in cooldown (${Math.ceil(cooldown / 1000)}s) → Groq fallback`);
-      return callGroq(prompt, o);
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index];
+    const cooldown = providerCooldown(candidate);
+    const next = candidates.slice(index + 1).find((provider) => providerCooldown(provider) === 0);
+
+    if (cooldown > 0) {
+      lastError = new Error(`${candidate} quota cooldown - ${Math.ceil(cooldown / 1000)}s remaining`);
+      if (next) {
+        console.warn(`[llm] ${candidate} in cooldown (${Math.ceil(cooldown / 1000)}s) -> ${next} fallback`);
+      }
+      continue;
     }
-    throw new Error(`LLM quota cooldown — ${Math.ceil(cooldown / 1000)}s remaining (set by prior 429)`);
+
+    try {
+      if (candidate === "gemini") return await callGemini(prompt, options);
+      if (candidate === "groq") return await callGroq(prompt, options);
+      if (candidate === "openrouter") return await callOpenRouter(prompt, options);
+      return await callAnthropic(prompt, options);
+    } catch (err) {
+      lastError = err;
+      if (next) {
+        console.warn(`[llm] ${candidate} failed -> ${next} fallback: ${err instanceof Error ? err.message.slice(0, 90) : err}`);
+      }
+    }
   }
 
-  try {
-    if (provider === "gemini") return await callGemini(prompt, o);
-    if (provider === "groq")   return await callGroq(prompt, o);
-    return await callAnthropic(prompt, o);
-  } catch (err) {
-    // Any primary failure (429, 5xx, timeout, empty) → Groq, so a juror still votes.
-    if (hasGroq && provider !== "groq") {
-      console.warn(`[llm] ${provider} failed → Groq fallback: ${err instanceof Error ? err.message.slice(0, 90) : err}`);
-      return callGroq(prompt, o);
-    }
-    throw err;
-  }
+  throw lastError instanceof Error ? lastError : new Error("All configured LLM providers failed");
 }
 
-// ── Groq (OpenAI-compatible) — fast Llama fallback ──────────────────────────────
 async function callGroq(
   prompt: string,
   opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
 ): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY!.trim();
   const body: Record<string, unknown> = {
-    model:       DEFAULT_GROQ_MODEL,
-    messages:    [{ role: "user", content: prompt }],
-    max_tokens:  opts.maxTokens,
+    model: DEFAULT_GROQ_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: opts.maxTokens,
     temperature: opts.temperature,
   };
-  // response_format json_object requires the literal word "json" in the prompt —
-  // our oracle/council prompts already say "Return JSON only", so it's satisfied.
   if (opts.jsonOnly) body.response_format = { type: "json_object" };
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -137,40 +176,85 @@ async function callGroq(
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) {
+    const bodyText = (await res.text()).slice(0, 500);
+    if (res.status === 429) {
+      tripGroqCooldown();
+      console.warn(`[llm] Groq 429 - entering ${Math.round(GROQ_QUOTA_COOLDOWN_MS / 1000)}s cooldown`);
+    }
+    throw new Error(`Groq ${res.status}: ${bodyText.slice(0, 300)}`);
+  }
+
   const json: any = await res.json();
   const text: string = (json?.choices?.[0]?.message?.content ?? "").trim();
   if (!text) throw new Error("Groq empty response");
   return text;
 }
 
-// ── Gemini ────────────────────────────────────────────────────────────────────
+async function callOpenRouter(
+  prompt: string,
+  opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
+): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY!.trim();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+    "X-OpenRouter-Title": process.env.OPENROUTER_APP_NAME || "Mimir",
+  };
+  if (process.env.OPENROUTER_SITE_URL?.trim()) {
+    headers["HTTP-Referer"] = process.env.OPENROUTER_SITE_URL.trim();
+  }
+
+  const body: Record<string, unknown> = {
+    model: DEFAULT_OPENROUTER_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: opts.maxTokens,
+    temperature: opts.temperature,
+  };
+  if (opts.jsonOnly && DEFAULT_OPENROUTER_MODEL !== "openrouter/free") {
+    body.response_format = { type: "json_object" };
+  }
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    const bodyText = (await res.text()).slice(0, 500);
+    if (res.status === 429) {
+      tripOpenRouterCooldown();
+      console.warn(`[llm] OpenRouter 429 - entering ${Math.round(OPENROUTER_QUOTA_COOLDOWN_MS / 1000)}s cooldown`);
+    }
+    throw new Error(`OpenRouter ${res.status}: ${bodyText.slice(0, 300)}`);
+  }
+
+  const json: any = await res.json();
+  const text: string = (json?.choices?.[0]?.message?.content ?? "").trim();
+  if (!text) throw new Error("OpenRouter empty response");
+  return text;
+}
+
 async function callGemini(
   prompt: string,
   opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY!.trim();
-  const model  = DEFAULT_GEMINI_MODEL;
-  const url    = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_GEMINI_MODEL}:generateContent`;
   const generationConfig: Record<string, unknown> = {
-    temperature:     opts.temperature,
+    temperature: opts.temperature,
     maxOutputTokens: opts.maxTokens,
-    // Gemini 2.5+ models default to "thinking", which consumes output tokens
-    // before producing visible text. Disabled here so small max_tokens budgets
-    // don't yield empty responses for short JSON outputs.
-    thinkingConfig:  { thinkingBudget: 0 },
+    thinkingConfig: { thinkingBudget: 0 },
   };
   if (opts.jsonOnly) generationConfig.responseMimeType = "application/json";
 
-  // 429 trips the module-wide cooldown and throws on the first hit — retrying
-  // inside the rolling-minute window just wastes attempts. Other transient
-  // codes still get exponential backoff.
-  const TRANSIENT = new Set([408, 500, 502, 503, 504]);
-  const MAX_ATTEMPTS = 4;
+  const transient = new Set([408, 500, 502, 503, 504]);
+  const maxAttempts = 4;
   let res: Response | null = null;
   let lastBody = "";
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
@@ -181,23 +265,25 @@ async function callGemini(
       signal: AbortSignal.timeout(60_000),
     });
     if (res.ok) break;
+
     lastBody = (await res.text()).slice(0, 500);
     if (res.status === 429) {
-      tripQuotaCooldown();
-      console.warn(`[llm] Gemini 429 — entering ${Math.round(QUOTA_COOLDOWN_MS / 1000)}s cooldown, skipping further calls`);
+      tripGeminiCooldown();
+      console.warn(`[llm] Gemini 429 - entering ${Math.round(GEMINI_QUOTA_COOLDOWN_MS / 1000)}s cooldown`);
       throw new Error(`Gemini 429: ${lastBody}`);
     }
-    if (!TRANSIENT.has(res.status) || attempt === MAX_ATTEMPTS) {
+    if (!transient.has(res.status) || attempt === maxAttempts) {
       throw new Error(`Gemini ${res.status}: ${lastBody}`);
     }
+
     const delayMs = 1000 * 2 ** (attempt - 1);
-    console.warn(`[llm] Gemini ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS}); retrying in ${delayMs}ms`);
-    await new Promise((r) => setTimeout(r, delayMs));
+    console.warn(`[llm] Gemini ${res.status} (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
   const json: any = await res!.json();
   const text: string = (json?.candidates?.[0]?.content?.parts ?? [])
-    .map((p: any) => p?.text ?? "")
+    .map((part: any) => part?.text ?? "")
     .join("")
     .trim();
   if (!text) {
@@ -208,7 +294,6 @@ async function callGemini(
   return text;
 }
 
-// ── Anthropic ─────────────────────────────────────────────────────────────────
 async function callAnthropic(
   prompt: string,
   opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
@@ -217,10 +302,10 @@ async function callAnthropic(
     anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!.trim() });
   }
   const message = await anthropicClient.messages.create({
-    model:       DEFAULT_ANTHROPIC_MODEL,
-    max_tokens:  opts.maxTokens,
+    model: DEFAULT_ANTHROPIC_MODEL,
+    max_tokens: opts.maxTokens,
     temperature: opts.temperature,
-    messages:    [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: prompt }],
   });
   const block = message.content[0];
   return (block as { text?: string }).text ?? "";
