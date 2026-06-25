@@ -4,29 +4,22 @@ import { Link } from "@/i18n/navigation";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 
 /* ───────────────────────────────────────────────────────────────────────────
- * Inline SVG diagrams — hand-drawn in the project's blush palette so they
+ * Inline SVG diagrams - hand-drawn in the project's blueprint palette so they
  * inherit the visual language without pulling in Mermaid. Each one is
  * responsive via `viewBox`; tweak only the box/text positions when copy
  * changes.
- *
- * Palette tokens used here mirror tailwind.config.ts > theme.extend.colors.pv:
- *   bg       #FCF8F8
- *   surface  #FBEFEF
- *   surface2 #F9DFDF
- *   border   #F5AFAF
- *   text     #2A1818
- *   muted    #7A5050
- *   accent   #D85F5F   (the "pv-emerald" alias, recoloured to rose)
+ * Palette tokens mirror tailwind.config.ts > theme.extend.colors.pv.
  * ───────────────────────────────────────────────────────────────────────── */
 
 const C = {
-  bg:      "#FCF8F8",
-  surface: "#FBEFEF",
-  surf2:   "#F9DFDF",
-  border:  "#F5AFAF",
-  text:    "#2A1818",
-  muted:   "#7A5050",
-  accent:  "#D85F5F",
+  bg:      "#0A1E3D",
+  surface: "#0E2649",
+  surf2:   "#133057",
+  border:  "rgba(255,255,255,0.22)",
+  line:    "rgba(255,255,255,0.38)",
+  text:    "#FFFFFF",
+  muted:   "#A9C0DE",
+  accent:  "#334FA9",
 };
 
 /* ── 1. Architecture diagram ─────────────────────────────────────────────── */
@@ -79,8 +72,8 @@ function ArchitectureDiagram() {
         <text x="590" y="222" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">NEON POSTGRES</text>
         <text x="590" y="240" textAnchor="middle" fontSize="11" fill={C.text}>read-index cache</text>
         <rect x="490" y="265" width="200" height="55" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.5" />
-        <text x="590" y="287" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">LLM PROVIDER</text>
-        <text x="590" y="305" textAnchor="middle" fontSize="11" fill={C.text}>Gemini · Anthropic</text>
+        <text x="590" y="287" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">LLM LAYER</text>
+        <text x="590" y="305" textAnchor="middle" fontSize="11" fill={C.text}>verdicts, drafts, reasoning</text>
       </g>
 
       {/* Circle stack callout */}
@@ -107,6 +100,86 @@ function ArchitectureDiagram() {
 }
 
 /* ── 2. Claim lifecycle (horizontal stepper) ─────────────────────────────── */
+function EndToEndFlowDiagram() {
+  const nodes = [
+    { x: 40, y: 70, w: 150, h: 86, title: "Question", note: "source + rule" },
+    { x: 235, y: 70, w: 150, h: 86, title: "Create", note: "creator stakes USDC" },
+    { x: 430, y: 70, w: 150, h: 86, title: "Challenge", note: "counter-stake joins" },
+    { x: 625, y: 70, w: 150, h: 86, title: "Deadline", note: "market locks" },
+    { x: 820, y: 70, w: 150, h: 86, title: "Evidence", note: "fetch + hash" },
+    { x: 235, y: 220, w: 150, h: 86, title: "LLM read", note: "verdict + confidence" },
+    { x: 430, y: 220, w: 150, h: 86, title: "Council", note: "optional paid votes" },
+    { x: 625, y: 220, w: 150, h: 86, title: "Resolve", note: "contract writes result" },
+    { x: 820, y: 220, w: 150, h: 86, title: "Payout", note: "USDC to winners" },
+  ];
+
+  return (
+    <svg viewBox="0 0 1010 370" className="h-auto w-full" role="img" aria-label="End-to-end market flow">
+      <defs>
+        <marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill={C.accent} />
+        </marker>
+      </defs>
+      <path d="M190 113H232M385 113H427M580 113H622M775 113H817M895 156V193M820 263H778M625 263H583M430 263H388" fill="none" stroke={C.accent} strokeWidth="1.7" markerEnd="url(#arrow-flow)" />
+      <path d="M310 156V218M505 220V158M700 220V158" fill="none" stroke={C.line} strokeWidth="1.4" strokeDasharray="4 4" markerEnd="url(#arrow-flow)" />
+      {nodes.map((node, index) => (
+        <g key={node.title}>
+          <rect x={node.x} y={node.y} width={node.w} height={node.h} rx="10" fill={index >= 7 ? C.surf2 : C.surface} stroke={index >= 7 ? C.accent : C.border} strokeWidth="1.6" />
+          <text x={node.x + node.w / 2} y={node.y + 30} textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">STEP {String(index + 1).padStart(2, "0")}</text>
+          <text x={node.x + node.w / 2} y={node.y + 53} textAnchor="middle" fontSize="14" fontWeight="700" fill={C.text}>{node.title}</text>
+          <text x={node.x + node.w / 2} y={node.y + 72} textAnchor="middle" fontSize="11" fill={C.muted}>{node.note}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function StateMachineDiagram() {
+  return (
+    <svg viewBox="0 0 880 300" className="h-auto w-full" role="img" aria-label="Claim state machine">
+      <defs>
+        <marker id="arrow-state" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill={C.accent} />
+        </marker>
+      </defs>
+      <g>
+        <rect x="40" y="105" width="150" height="80" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="115" y="137" textAnchor="middle" fontSize="16" fontWeight="700" fill={C.text}>OPEN</text>
+        <text x="115" y="160" textAnchor="middle" fontSize="11" fill={C.muted}>creator stake only</text>
+      </g>
+      <g>
+        <rect x="290" y="105" width="150" height="80" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="365" y="137" textAnchor="middle" fontSize="16" fontWeight="700" fill={C.text}>ACTIVE</text>
+        <text x="365" y="160" textAnchor="middle" fontSize="11" fill={C.muted}>challenger side funded</text>
+      </g>
+      <g>
+        <rect x="540" y="50" width="150" height="80" rx="12" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
+        <text x="615" y="82" textAnchor="middle" fontSize="16" fontWeight="700" fill={C.text}>RESOLVED</text>
+        <text x="615" y="105" textAnchor="middle" fontSize="11" fill={C.muted}>payout or refund</text>
+      </g>
+      <g>
+        <rect x="540" y="165" width="150" height="80" rx="12" fill={C.bg} stroke={C.line} strokeWidth="1.5" strokeDasharray="5 4" />
+        <text x="615" y="197" textAnchor="middle" fontSize="16" fontWeight="700" fill={C.text}>CANCELLED</text>
+        <text x="615" y="220" textAnchor="middle" fontSize="11" fill={C.muted}>expired open claim</text>
+      </g>
+      <g>
+        <rect x="740" y="90" width="110" height="120" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.5" />
+        <text x="795" y="118" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">OUTCOMES</text>
+        <text x="795" y="143" textAnchor="middle" fontSize="11" fill={C.text}>creator wins</text>
+        <text x="795" y="163" textAnchor="middle" fontSize="11" fill={C.text}>challengers win</text>
+        <text x="795" y="183" textAnchor="middle" fontSize="11" fill={C.text}>draw / refund</text>
+      </g>
+      <line x1="190" y1="145" x2="288" y2="145" stroke={C.accent} strokeWidth="1.8" markerEnd="url(#arrow-state)" />
+      <text x="239" y="132" textAnchor="middle" fontSize="11" fill={C.muted}>challengeClaim()</text>
+      <line x1="440" y1="125" x2="538" y2="92" stroke={C.accent} strokeWidth="1.8" markerEnd="url(#arrow-state)" />
+      <text x="486" y="88" textAnchor="middle" fontSize="11" fill={C.muted}>resolveClaim()</text>
+      <line x1="190" y1="165" x2="538" y2="205" stroke={C.line} strokeWidth="1.4" strokeDasharray="5 5" markerEnd="url(#arrow-state)" />
+      <text x="330" y="205" textAnchor="middle" fontSize="11" fill={C.muted}>cancel after deadline if no challenger</text>
+      <line x1="690" y1="91" x2="738" y2="142" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-state)" />
+    </svg>
+  );
+}
+
 function LifecycleDiagram() {
   const steps = [
     { tag: "01", title: "Create",   note: "Stake side A in USDC" },
@@ -342,11 +415,11 @@ function JuryDiagram() {
         <text x="440" y="234" textAnchor="middle" fontSize="11" fill={C.muted}>quorum = 3 decisive votes (default)</text>
       </g>
 
-      {/* Groq fallback note */}
+      {/* Private model routing note */}
       <g>
         <rect x="630" y="50" width="240" height="64" rx="12" fill={C.bg} stroke={C.border} strokeWidth="1.5" strokeDasharray="4 3" />
-        <text x="750" y="74" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">LLM FALLBACK</text>
-        <text x="750" y="96" textAnchor="middle" fontSize="11" fill={C.text}>Groq (Llama) on Gemini 429</text>
+        <text x="750" y="74" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">LLM ROUTING</text>
+        <text x="750" y="96" textAnchor="middle" fontSize="11" fill={C.text}>private model routing</text>
       </g>
 
       {/* 4 tally */}
@@ -450,13 +523,15 @@ export default function DocsPage() {
           <TocLink href="#what" label="1. What Mimir is" />
           <TocLink href="#why-arc" label="2. Why USDC on Arc" />
           <TocLink href="#architecture" label="3. Architecture" />
-          <TocLink href="#lifecycle" label="4. The claim lifecycle" />
-          <TocLink href="#agents" label="5. The agents" />
-          <TocLink href="#circle" label="6. The Circle stack" />
-          <TocLink href="#lepton" label="7. What's new since Arc (Lepton)" />
-          <TocLink href="#contract" label="8. Smart contract terms" />
-          <TocLink href="#play" label="9. How to play" />
-          <TocLink href="#faq" label="10. FAQ" />
+          <TocLink href="#flow" label="4. End-to-end flow" />
+          <TocLink href="#lifecycle" label="5. The claim lifecycle" />
+          <TocLink href="#agents" label="6. The agents" />
+          <TocLink href="#circle" label="7. The Circle stack" />
+          <TocLink href="#lepton" label="8. Nanopayments and council" />
+          <TocLink href="#state-machine" label="9. State machine" />
+          <TocLink href="#contract" label="10. Smart contract terms" />
+          <TocLink href="#play" label="11. How to play" />
+          <TocLink href="#faq" label="12. FAQ" />
         </div>
       </nav>
 
@@ -513,7 +588,7 @@ export default function DocsPage() {
         <p>
           Three independent tiers, each running where it fits best:
         </p>
-        <DiagramFrame caption="Top to bottom: user wallets → Next.js frontend (Vercel) and worker agents (Railway) → Arc contract + ancillary services (Neon read-index, LLM provider, the Circle stack).">
+        <DiagramFrame caption="Top to bottom: user wallets → Next.js frontend (Vercel) and worker agents (Railway) → Arc contract + ancillary services (Neon read-index, LLM layer, the Circle stack).">
           <ArchitectureDiagram />
         </DiagramFrame>
         <ul className="list-disc space-y-2 pl-5 text-pv-text/85">
@@ -537,7 +612,31 @@ export default function DocsPage() {
         </ul>
       </Section>
 
-      <Section id="lifecycle" eyebrow="04" title="The claim lifecycle">
+      <Section id="flow" eyebrow="04" title="End-to-end flow">
+        <p>
+          A market is intentionally small: one question, one source, one deadline,
+          and two funded sides. The complexity lives around that primitive:
+          evidence collection, LLM interpretation, optional council voting, and
+          final payout.
+        </p>
+        <DiagramFrame caption="The full market path from question drafting to payout. The chain stores the funded state; workers handle reading, interpretation, council coordination, and the final transaction.">
+          <EndToEndFlowDiagram />
+        </DiagramFrame>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card title="What users control">
+            Users choose whether to create, challenge, or inspect a market. Their
+            wallet signs stake-bearing transactions directly against the Arc
+            contract; the app never holds custody of user funds.
+          </Card>
+          <Card title="What agents control">
+            Agents draft markets, challenge open claims, buy paid evidence or
+            persona verdicts, and settle expired active claims. Every write still
+            lands on chain through a Circle-managed wallet.
+          </Card>
+        </div>
+      </Section>
+
+      <Section id="lifecycle" eyebrow="05" title="The claim lifecycle">
         <DiagramFrame caption="Six discrete steps from open to settled. Steps 04–06 are entirely automated by the oracle agent.">
           <LifecycleDiagram />
         </DiagramFrame>
@@ -572,7 +671,7 @@ export default function DocsPage() {
         </ul>
       </Section>
 
-      <Section id="agents" eyebrow="05" title="The agents">
+      <Section id="agents" eyebrow="06" title="The agents">
         <p>
           Twelve background processes run continuously: the oracle, the
           market-creator, and ten council personas. None of them holds a local
@@ -617,7 +716,7 @@ export default function DocsPage() {
         </div>
       </Section>
 
-      <Section id="circle" eyebrow="06" title="The Circle stack">
+      <Section id="circle" eyebrow="07" title="The Circle stack">
         <p>
           Mimir uses Circle&apos;s developer platform end-to-end. Each piece earns
           its keep:
@@ -649,7 +748,7 @@ export default function DocsPage() {
         </DiagramFrame>
       </Section>
 
-      <Section id="lepton" eyebrow="07" title="What's new since Arc (Lepton nanopayments)">
+      <Section id="lepton" eyebrow="08" title="Nanopayments and council">
         <p>
           After the Arc / Agora hackathon, Mimir grew an economic layer of its own.
           Agents stopped being purely operational and became market participants —
@@ -688,7 +787,7 @@ export default function DocsPage() {
           inside their own category.
         </Card>
 
-        <DiagramFrame caption="Council-as-jury settlement. At the deadline the oracle reads evidence, buys N persona verdicts over x402 ($0.001 → each persona wallet), tallies them (e.g. 7–2), and commits the consensus to evidenceHash before resolveClaim() pays out. Groq (Llama) backs the council through Gemini 429 windows; below quorum the oracle resolves solo.">
+        <DiagramFrame caption="Council-as-jury settlement. At the deadline the oracle reads evidence, buys N persona verdicts over x402 ($0.001 → each persona wallet), tallies them (e.g. 7–2), and commits the consensus to evidenceHash before resolveClaim() pays out. A private LLM routing layer keeps council reads resilient; below quorum the oracle resolves solo.">
           <JuryDiagram />
         </DiagramFrame>
 
@@ -726,9 +825,9 @@ export default function DocsPage() {
             soccer and NBA (ESPN), stocks (stockanalysis.com), and weather — not just
             crypto.
           </Card>
-          <Card title="Resilient LLM">
-            Groq (Llama) is an always-on fallback so the council keeps voting through
-            Gemini rate-limit (<code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">429</code>) windows.
+          <Card title="Resilient LLM routing">
+            The worker layer routes model calls behind cooldown-aware retries, so
+            temporary model limits do not stop oracle or council reads.
           </Card>
         </div>
 
@@ -761,7 +860,18 @@ export default function DocsPage() {
         </div>
       </Section>
 
-      <Section id="contract" eyebrow="08" title="Smart contract terms">
+      <Section id="state-machine" eyebrow="09" title="Contract state machine">
+        <p>
+          Mimir keeps the on-chain state machine deliberately narrow. Claims can
+          be opened, challenged into active markets, resolved by the oracle, or
+          cancelled after expiry if nobody joined the counter-side.
+        </p>
+        <DiagramFrame caption="The contract state machine. OPEN claims become ACTIVE when challenged; ACTIVE claims become RESOLVED by oracle transaction; expired unchallenged OPEN claims can be cancelled and refunded.">
+          <StateMachineDiagram />
+        </DiagramFrame>
+      </Section>
+
+      <Section id="contract" eyebrow="10" title="Smart contract terms">
         <p>
           A few terms that show up in the UI and on chain:
         </p>
@@ -786,7 +896,7 @@ export default function DocsPage() {
         </div>
       </Section>
 
-      <Section id="play" eyebrow="09" title="How to play">
+      <Section id="play" eyebrow="11" title="How to play">
         <ol className="list-decimal space-y-3 pl-5 text-pv-text/85">
           <li>
             <strong className="text-pv-text">Get testnet USDC.</strong>{" "}
@@ -819,7 +929,7 @@ export default function DocsPage() {
         </ol>
       </Section>
 
-      <Section id="faq" eyebrow="10" title="FAQ">
+      <Section id="faq" eyebrow="12" title="FAQ">
         <div className="space-y-5">
           <Card title="Do I need MetaMask?">
             Any injected EVM wallet works (MetaMask, Coinbase Wallet, Rabby,
@@ -865,3 +975,5 @@ export default function DocsPage() {
     </div>
   );
 }
+
+

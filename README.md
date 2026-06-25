@@ -34,9 +34,25 @@ Mimir won the Arc/Agora hackathon as a macro-stake claim market. For Lepton (nan
 - **v2 (live):** [`0x50036154a3bc51f2e7d604a2fbc596f02bb555a1`](https://testnet.arcscan.app/address/0x50036154a3bc51f2e7d604a2fbc596f02bb555a1) — adds pull-payment safety (`withdraw()`).
 - **v1 (legacy, immutable):** [`0x8c7016b1124983fb00dc022d88e3de997cdb5873`](https://testnet.arcscan.app/address/0x8c7016b1124983fb00dc022d88e3de997cdb5873) — the Arc/Agora track record: **181 claims created, 104 resolved** in native USDC.
 
-```
-oracle ──$0.001 USDC──►  /api/premium/price  ──►  Gateway facilitator  ──►  settled on Arc
-(W3S signs, no key)      (Circle Gateway mw)      (Circle hosted)            (payer=oracle)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Agent as Paying agent
+    participant W3S as Circle W3S
+    participant API as Paid endpoint
+    participant Gateway as Circle Gateway
+    participant Arc as Arc settlement
+    participant DB as Neon ledger
+
+    Agent->>API: request paid resource
+    API-->>Agent: HTTP 402 + price + payment requirements
+    Agent->>W3S: sign EIP-3009 authorization
+    W3S-->>Agent: payment payload
+    Agent->>API: retry with X-PAYMENT
+    API->>Gateway: verify and settle
+    Gateway->>Arc: USDC transfer
+    API->>DB: record receipt
+    API-->>Agent: paid response
 ```
 
 ---
@@ -45,7 +61,9 @@ oracle ──$0.001 USDC──►  /api/premium/price  ──►  Gateway facili
 
 - [What it does](#what-it-does)
 - [Architecture](#architecture)
+- [End-to-end market flow](#end-to-end-market-flow)
 - [The settlement lifecycle](#the-settlement-lifecycle)
+- [Contract state machine](#contract-state-machine)
 - [Agents as economic actors](#agents-as-economic-actors)
 - [Circle stack integration](#circle-stack-integration)
 - [Cross-chain inflow (CCTP V2)](#cross-chain-inflow-cctp-v2)
@@ -56,6 +74,7 @@ oracle ──$0.001 USDC──►  /api/premium/price  ──►  Gateway facili
 - [Production deploy (Vercel + Railway)](#production-deploy-vercel--railway)
 - [Configuration reference](#configuration-reference)
 - [Scripts](#scripts)
+- [Game modes roadmap](#game-modes-roadmap)
 - [Design principles](#design-principles)
 
 ---
@@ -100,7 +119,8 @@ flowchart LR
 
     subgraph railway[Railway - Worker tier]
         OR[Oracle agent<br/>settle + auto-challenge]
-        MC[Market creator agent<br/>CoinGecko, ESPN, weather]
+        MC[Market creator agent<br/>markets + duplicate guard]
+        CO[Council personas<br/>paid jurors + challengers]
     end
 
     subgraph circle[Circle stack]
@@ -111,12 +131,12 @@ flowchart LR
     end
 
     subgraph arc[Arc Testnet]
-        CT[Mimir.sol<br/>0x4947...2f12]
+        CT[Mimir.sol<br/>0x5003...5a1]
         USDC[Native USDC<br/>18 decimals]
     end
 
     NEON[(Neon Postgres<br/>read-index cache)]
-    LLM[LLM provider<br/>Gemini or Anthropic]
+    LLM[LLM layer<br/>verdicts, drafts, reasoning]
 
     U -->|connect| FE
     FE -->|signed tx| CT
@@ -127,9 +147,11 @@ flowchart LR
 
     OR -->|sign tx via| W3S
     MC -->|sign tx via| W3S
+    CO -->|sign tx via| W3S
     W3S -->|submit| CT
     OR -->|fetch evidence + verdict| LLM
     MC -->|draft candidates| LLM
+    CO -->|persona reasoning| LLM
     OR -->|index claims| NEON
     MC -->|index claims| NEON
 
@@ -147,6 +169,29 @@ The diagram shows three independent runtime tiers:
 
 ---
 
+## End-to-end market flow
+
+```mermaid
+flowchart LR
+    Q[Question + source + settlement rule]
+    C[Create claim<br/>creator stakes USDC]
+    B[Challenge claim<br/>counter-side stakes USDC]
+    D[Deadline passes<br/>market locks]
+    E[Fetch evidence<br/>hash raw bytes]
+    L[LLM read<br/>verdict + confidence]
+    J[Optional council vote<br/>paid persona verdicts]
+    R[resolveClaim<br/>write result on Arc]
+    P[Payout or refund<br/>native USDC]
+
+    Q --> C --> B --> D --> E --> L --> J --> R --> P
+    E -. evidenceHash .-> R
+    J -. quorum / fallback .-> R
+```
+
+The product keeps the primitive small: one question, one source, one deadline, and funded sides. The chain stores the funded state; workers handle reading, interpretation, paid council coordination, and the final settlement transaction.
+
+---
+
 ## The settlement lifecycle
 
 ```mermaid
@@ -157,7 +202,7 @@ sequenceDiagram
     participant Contract as Mimir.sol (Arc)
     participant Oracle as Oracle Agent
     participant W3S as Circle W3S
-    participant LLM as Gemini / Claude
+    participant LLM as LLM layer
     participant Source as Resolution URL
 
     Creator->>Contract: createClaim(question, URL, deadline, stake USDC)
@@ -189,6 +234,35 @@ Several details matter for trust:
 - **`UNRESOLVABLE` and `DRAW`** refund all sides instead of forcing an arbitrary winner. The protocol prefers refunding ambiguity over fabricating certainty.
 - **Challenge lock window.** `challengeClaim` rejects any tx that lands within `CHALLENGE_LOCK_SECONDS` (60s) of the deadline. Stops late-information actors from waiting until the outcome is observable and slipping in a zero-risk bet.
 - **Only the configured `oracle` address** can call `resolveClaim`. That address is a Circle-managed wallet — no human can quietly re-route it.
+
+---
+
+## Contract state machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> OPEN: createClaim + creator stake
+    OPEN --> ACTIVE: challengeClaim + counter stake
+    ACTIVE --> RESOLVED: oracle resolveClaim
+    OPEN --> CANCELLED: creator cancels expired unchallenged claim
+    RESOLVED --> [*]: payout or refund complete
+    CANCELLED --> [*]: creator stake refunded
+
+    note right of OPEN
+      Joinable market.
+      Creator side is funded.
+    end note
+    note right of ACTIVE
+      Both sides funded.
+      Deadline must pass before settlement.
+    end note
+    note right of RESOLVED
+      CREATOR, CHALLENGERS, DRAW,
+      or UNRESOLVABLE.
+    end note
+```
+
+This narrow state machine is why the UI can stay deterministic: open markets invite challengers, active markets wait for the deadline, resolved markets show receipts, and expired unchallenged markets can be cleaned up without touching live inventory.
 
 ---
 
@@ -344,7 +418,7 @@ Key facts:
 | Agent signer       | Circle W3S developer-controlled wallets                                           | Removes private-key handling from worker processes; satisfies prod-grade key management                          |
 | Cross-chain        | Circle CCTP V2 Fast Transfer + Iris attestation                                   | ~15s end-to-end, no third-party bridge trust                                                                     |
 | Unified balance    | Circle Gateway `POST /v1/balances`                                                | One-call multi-domain balance view, proxied through our API to keep the key server-side                          |
-| LLM (pluggable)    | Gemini, Claude, Groq, or OpenRouter                                               | `lib/llm.ts` auto-selects configured keys; force a choice with `LLM_PROVIDER`                                    |
+| LLM layer          | Routed language model layer                                                      | `lib/llm.ts` handles model calls, cooldowns, and fallback routing                                                  |
 | Messaging          | XMTP Browser SDK v7 (`@xmtp/browser-sdk`)                                         | Optional E2E-encrypted chat between creator and challenger before/after settlement                               |
 | Database           | Neon Postgres via `@neondatabase/serverless`                                      | Serverless-friendly driver, works on both Vercel functions and Railway long-running workers                      |
 | i18n               | next-intl (English + Spanish)                                                     | Locale-prefixed routing (`/en/*`, `/es/*`), runtime message loading                                              |
@@ -392,7 +466,7 @@ mimir/
 │   ├── circle-w3s.ts                     # W3S signer + transfer + tx polling
 │   ├── contract.ts                       # high-level TypeScript contract client
 │   ├── db.ts                             # Neon read-index
-│   ├── llm.ts                            # provider-agnostic LLM call
+│   ├── llm.ts                            # model-routed LLM call
 │   ├── mimir-abi.ts                      # generated ABI + state constants
 │   ├── wagmi-config.ts                   # multi-chain wagmi config
 │   ├── wallet.tsx                        # frontend wallet context
@@ -408,7 +482,7 @@ mimir/
 │   ├── check-claim.ts                    # inspect any claim
 │   ├── deploy-mimir-w3s.ts               # compile + deploy via W3S-funded key
 │   ├── smoke-test-w3s.ts                 # end-to-end W3S verification
-│   ├── test-llm.ts                       # sanity check the LLM provider
+│   ├── test-llm.ts                       # sanity check the LLM layer
 │   ├── demo-full-cycle.ts                # full create→challenge→settle in 90s
 │   ├── seed-claims.ts                    # bulk-seed demo markets
 │   └── warm-vs-index.ts                  # rebuild Neon cache from on-chain
@@ -428,7 +502,7 @@ mimir/
 
 - Node.js 20+
 - A Circle developer account at [console.circle.com](https://console.circle.com) for an **API Key** and a **Kit Key**
-- An LLM key — either **Google Gemini** ([aistudio.google.com/apikey](https://aistudio.google.com/apikey)) or **Anthropic Claude** ([console.anthropic.com](https://console.anthropic.com))
+- At least one LLM API key configured in `.env.local`
 - Optional: a Neon account at [console.neon.tech](https://console.neon.tech) for the read-index
 
 ### One-time bootstrap
@@ -501,7 +575,7 @@ flowchart TB
     A[market-creator W3S<br/>createClaim BTC > $100k<br/>2 USDC, 90s deadline] --> B[oracle W3S<br/>challengeClaim<br/>2 USDC counter-stake]
     B --> C{wait 95s}
     C --> D[oracle fetches CoinGecko<br/>BTC USD spot]
-    D --> E[Gemini evaluates evidence<br/>CHALLENGERS_WIN or CREATOR_WINS]
+    D --> E[LLM layer evaluates evidence<br/>CHALLENGERS_WIN or CREATOR_WINS]
     E --> F[oracle W3S<br/>resolveClaim]
     F --> G[contract pays winning side<br/>balances reconcile on-chain]
 ```
@@ -560,8 +634,8 @@ flowchart LR
 2. **Variables**, add everything Vercel has **plus**:
    - `CIRCLE_ENTITY_SECRET`, `CIRCLE_ORACLE_WALLET_ID`, `CIRCLE_ORACLE_ADDRESS`
    - `CIRCLE_CREATOR_WALLET_ID`, `CIRCLE_CREATOR_ADDRESS`
-   - `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`)
-   - `AUTO_CHALLENGE=1` (optional — enables Kelly auto-staking)
+   - at least one LLM API key from `.env.example`
+   - `AUTO_CHALLENGE=1` (optional - enables Kelly auto-staking)
 3. `railway.json` selects the NIXPACKS builder and runs `npm run workers`, which boots both agents in parallel via `concurrently` and restarts on failure. Logs are prefixed `oracle:` and `creator:`.
 
 ### Neon Postgres (optional)
@@ -591,13 +665,9 @@ Every env var lives in `.env.example`. Quick reference:
 | `CIRCLE_ORACLE_ADDRESS`           | oracle, contract `oracle` | Output of `circle-create-wallets.ts`                                               |
 | `CIRCLE_CREATOR_WALLET_ID`        | market-creator           | Output of `circle-create-wallets.ts`                                               |
 | `CIRCLE_CREATOR_ADDRESS`          | market-creator, deploy   | Output of `circle-create-wallets.ts`                                               |
-| `GEMINI_API_KEY`                  | LLM (preferred)          | If present, Gemini is the default primary provider                                 |
-| `ANTHROPIC_API_KEY`               | LLM (fallback)           | Claude fallback and optional primary provider                                      |
-| `GROQ_API_KEY`                    | LLM (fallback)           | Fast fallback after primary provider failures                                      |
-| `GROQ_API_KEYS`                   | LLM (fallback)           | Optional comma/space-separated Groq key pool; each 429 cools down only that key    |
-| `OPENROUTER_API_KEY`              | LLM (fallback)           | Final fallback after the configured primary/Groq pool; defaults to `openrouter/free` |
-| `LLM_PROVIDER`                    | optional                 | Force `gemini`, `anthropic`, `groq`, or `openrouter`                               |
-| `ORACLE_LLM_MODEL`                | optional                 | Override default model name                                                        |
+| LLM API keys                      | agents                   | At least one LLM API key; see `.env.example` for accepted variable names            |
+| `LLM_PROVIDER`                    | optional                 | Optional model routing override for worker-only deployments                        |
+| `ORACLE_LLM_MODEL`                | optional                 | Optional model name override                                                       |
 | `ORACLE_LLM_THROTTLE_MS`          | oracle                   | Min delay between oracle LLM calls; default `8000`                                 |
 | `COUNCIL_MAX_CLAIMS`              | council                  | Max joinable claims evaluated per council cycle; default `2`                       |
 | `COUNCIL_LLM_THROTTLE_MS`         | council                  | Min delay between council LLM calls; default `8000`                                |
@@ -634,9 +704,315 @@ Every env var lives in `.env.example`. Quick reference:
 | `npx tsx scripts/deploy-mimir-w3s.ts`        | Compile + deploy `Mimir.sol` via a W3S-funded ephemeral key                        |
 | `npx tsx scripts/demo-full-cycle.ts`         | Full create → challenge → settle demo in ~90s                                      |
 | `npx tsx scripts/smoke-test-w3s.ts`          | End-to-end W3S verification (no LLM key required)                                  |
-| `npx tsx scripts/test-llm.ts`                | Sanity-check whichever LLM provider is configured                                  |
+| `npx tsx scripts/test-llm.ts`                | Sanity-check whichever LLM layer is configured                                     |
 | `npx tsx scripts/check-claim.ts <id>`        | Print a claim's state and deadline                                                 |
 | `npx tsx scripts/check-agent-balances.ts`    | Print oracle + market-creator balances                                             |
+
+---
+
+## Game modes roadmap
+
+Mimir currently ships with the core claim-market primitive: a creator stakes one side, challengers stake the counter-side, and settlement pays the winning side from the funded pot. The next product layer should make that economic shape legible as different "game modes" instead of one generic staking form. The contract already supports `oddsMode` (`pool` or `fixed`), `maxChallengers`, challenger stake sizing, rematches, and private invite links, so several modes can be introduced mostly as UI/product policy before requiring deeper contract changes.
+
+### 1. Pool Market
+
+**Status:** live primitive, needs stronger UI education.
+
+Pool Market is the current pari-mutuel mode. The creator's stake forms one side of the pool; all challengers share the creator stake proportionally if the challenger side wins. If the creator wins, the creator receives their own stake plus all challenger stakes.
+
+Example:
+
+```text
+Creator stakes YES: 10 USDC
+10 challengers stake NO: 10 USDC each
+Total challenger side: 100 USDC
+Total pot: 110 USDC
+
+If NO wins:
+Each challenger receives 10 + (10 / 100 * 10) = 11 USDC
+Each challenger's net profit: 1 USDC
+
+If YES wins:
+Creator receives 110 USDC
+Creator net profit: 100 USDC
+```
+
+Why it matters:
+
+- Rewards contrarian conviction. A small, correct side can win a large pot.
+- Naturally prices crowd consensus. Joining an already-crowded side lowers expected upside.
+- Works well for public markets with many participants.
+
+Product work:
+
+- Keep the payout preview visible before a user stakes: total return, net profit, and where the profit comes from.
+- Show side-level pool imbalance clearly: creator stake, total challenger stake, total pot.
+- Warn users when they are joining a crowded side with low upside.
+- Add educational copy in `/vs/[id]` and `/docs` that explains "your profit comes from the losing side, not from Mimir."
+
+Risks:
+
+- Casual users may dislike staking 10 USDC to win only 1 USDC when joining a crowded side.
+- The creator can appear to have huge upside against many challengers, which is fair mathematically but needs clear framing.
+- UI must distinguish total payout from net profit at every step.
+
+### 2. Duel / 1v1 Fixed Challenge
+
+**Status:** recommended near-term mode.
+
+Duel is the simplest social format: one creator, one challenger, matched stake, winner takes the two-person pot. This is the cleanest mental model for "I challenge you."
+
+Default rules:
+
+```text
+Creator stakes 10 USDC
+Challenger stakes 10 USDC
+Winner receives 20 USDC
+Net profit: 10 USDC
+Draw / unresolvable: both refunded
+```
+
+Why it matters:
+
+- Extremely easy to understand.
+- Best fit for private links, friend challenges, social sharing, and XMTP conversations.
+- Avoids the "why did I only win 1 USDC?" problem from crowded pool markets.
+
+Product work:
+
+- Add a mode selector on create: `Duel` vs `Pool Market`.
+- For Duel, lock `maxChallengers = 1`.
+- Default challenger stake to creator stake.
+- Label the CTA as `Accept Duel` instead of generic `Join`.
+- On the detail page, use 1v1 language: creator, rival, winner takes pot.
+
+Contract notes:
+
+- Existing `maxChallengers = 1` plus pool mode already approximates this if stake sizes match.
+- A stricter version should enforce equal stake for the challenger or use fixed odds with sufficient creator liquidity.
+
+Risks:
+
+- Less market-like liquidity; only one person can take the other side.
+- Needs rematch flow to keep engagement after a single settlement.
+
+### 3. Creator-Backed Fixed Odds
+
+**Status:** partially supported by contract, needs product constraints.
+
+Fixed odds lets the creator define a guaranteed challenger return multiple, backed by creator liquidity. Example: a 2x challenger payout means a winning challenger who stakes 10 USDC receives 20 USDC total. The creator must have enough unreserved stake to cover challenger profit.
+
+Example:
+
+```text
+Creator deposits liquidity: 100 USDC
+Fixed odds: 2.00x
+Challenger stakes: 10 USDC
+
+If challenger wins:
+Challenger receives 20 USDC total
+10 USDC is their returned stake
+10 USDC profit comes from creator liquidity
+
+If creator wins:
+Creator keeps the challenger stake
+```
+
+Why it matters:
+
+- Predictable payout before joining.
+- Good for creators who want to "make a market" with a clear price.
+- Cleaner than pool mode for users who expect sportsbook-like odds.
+
+Product work:
+
+- Show available creator liquidity and remaining liability.
+- Prevent or clearly disable stake amounts that exceed available creator backing.
+- Explain total return multiple vs net profit.
+- Let creator choose from simple presets: 1.25x, 1.5x, 2x, 3x.
+
+Contract notes:
+
+- `Mimir.sol` already tracks `reservedCreatorLiability`.
+- `challengeClaim` checks creator liquidity before accepting a fixed-odds challenge.
+- UI should mirror that calculation before a transaction is submitted.
+
+Risks:
+
+- Creator liquidity can fragment across many small challengers.
+- Users may confuse "2x payout" with "2x profit"; UI must say "total return."
+
+### 4. Underdog Boost
+
+**Status:** future product layer, likely no contract change at first.
+
+Underdog Boost is a discovery and incentive layer for the less-funded side. The economics can remain pool-based, but the UI highlights markets where the minority side has large upside.
+
+Example signals:
+
+```text
+YES pool: 10 USDC
+NO pool: 100 USDC
+Joining YES has high upside if YES wins.
+Joining NO has low upside but follows consensus.
+```
+
+Why it matters:
+
+- Makes contrarian opportunities obvious.
+- Turns pool imbalance into a game mechanic.
+- Helps users understand why unpopular-but-correct predictions are valuable.
+
+Product work:
+
+- Add an `Underdog` badge in `/explorer`.
+- Sort or filter by upside multiple.
+- Show "minority side" and "crowded side" labels.
+- Add an "edge" explanation in the stake preview.
+
+Possible future mechanics:
+
+- Fee discount for joining the underdog side if protocol fees are introduced.
+- Leaderboard points for winning from the minority side.
+- Agent commentary explaining why a side is underpriced.
+
+Risks:
+
+- The product should not imply the underdog is more likely to win.
+- Badges must describe payout asymmetry, not prediction quality.
+
+### 5. Squad vs Squad
+
+**Status:** medium-term product mode.
+
+Squad vs Squad makes both sides feel like teams. Instead of "creator vs challengers," users choose or join `YES` or `NO`, and both sides can have many participants. Settlement pays the winning squad proportionally.
+
+Why it matters:
+
+- More social than a single creator defending against everyone.
+- Better for culture, sports, and community-driven claims.
+- Lets users rally around a side without feeling like they are merely "challenging" the creator.
+
+Product work:
+
+- Reframe positions as `Side A` and `Side B`.
+- Show participant count and total stake for both sides.
+- Add squad avatars or stacked wallet peeps.
+- Use copy like `Back YES` / `Back NO` instead of `Challenge`.
+
+Contract notes:
+
+- Current contract has one creator side and many challenger-side participants.
+- True two-sided squad deposits would require contract changes so multiple wallets can add to creator side too.
+- A first version can be approximated by treating creator as captain of side A and all challengers as side B.
+
+Risks:
+
+- Real two-sided deposits need careful accounting for proportional payouts on both sides.
+- The current "creator" role may feel too privileged unless the UI explains it.
+
+### 6. Streak Mode
+
+**Status:** future engagement layer, can start off-chain.
+
+Streak Mode rewards users for consecutive correct outcomes. The reward can begin as non-financial status (badges, leaderboard position, profile stats) before any token or payout mechanic is considered.
+
+Why it matters:
+
+- Gives users a reason to return after settlement.
+- Makes small bets feel meaningful.
+- Creates identity around forecasting skill rather than only money won.
+
+Product work:
+
+- Add profile stats: current streak, best streak, total resolved, win rate.
+- Add streak badges in `/dashboard` and `/agents`/feed rows.
+- Add claim cards that show "streak at risk" for the connected wallet.
+
+Possible future mechanics:
+
+- Streak-gated private markets.
+- Streak leaderboards by category.
+- Agent personas with their own visible streaks.
+
+Risks:
+
+- Streaks can encourage reckless betting if overemphasized.
+- Need clear handling for draws/refunds: recommended behavior is streak unchanged.
+
+### 7. Rematch Ladder
+
+**Status:** partially supported through `parentId` / rivalry chain.
+
+Rematch Ladder turns a settled claim into a series. After a result, either side can create the next round with inherited question metadata and a new deadline/stake.
+
+Why it matters:
+
+- Keeps social duels alive after one outcome.
+- Works especially well for sports series, recurring price targets, and narrative disputes.
+- Builds a visible history around rivalry rather than isolated claims.
+
+Product work:
+
+- Make the rivalry chain more prominent on resolved VS pages.
+- Add `Best of 3`, `Best of 5`, and `Run it back` flows.
+- Show series score: creator side wins vs challenger side wins.
+- Let rematch creators adjust stake and deadline while inheriting source/rules.
+
+Contract notes:
+
+- `createRematch` already inherits core fields from a parent claim.
+- Series scoring can be computed from the chain of parent/child claims in the read-index.
+
+Risks:
+
+- If the original settlement rule was weak, rematches inherit weak metadata.
+- UI should encourage tightening rules before launching the next round.
+
+### 8. Conviction Mode
+
+**Status:** future scoring layer.
+
+Conviction Mode scores not only whether a user was right, but how early and how strongly they backed a side. This is especially useful when monetary payout is small but forecasting quality is high.
+
+Why it matters:
+
+- Rewards early signal, not just late pile-ons.
+- Gives agents and humans a comparable skill metric.
+- Helps surface credible forecasters in the ecosystem.
+
+Possible score inputs:
+
+```text
+Conviction score =
+  outcome correctness
+  * stake size factor
+  * time-before-deadline factor
+  * underdog factor
+  * confidence / evidence quality factor
+```
+
+Product work:
+
+- Add per-market "early backer" markers.
+- Add leaderboard columns for realized PnL, win rate, and conviction score.
+- Show agent conviction separately from human conviction.
+- Let users filter markets by "high disagreement" or "early signal."
+
+Risks:
+
+- Any score can be gamed; keep it transparent and secondary to actual payouts.
+- Stake-size weighting should not simply make the richest wallet the highest-ranked forecaster.
+
+### Recommended rollout order
+
+1. **Improve Pool Market legibility** - done in the VS stake preview, continue in explorer cards and docs.
+2. **Ship Duel mode** - highest clarity, lowest conceptual risk.
+3. **Harden Fixed Odds UI** - expose creator liquidity, reserved liability, and total return copy.
+4. **Add Underdog discovery** - badges, sorting, and upside previews.
+5. **Expand Rematch Ladder** - use existing `parentId` to build social loops.
+6. **Prototype Streak and Conviction scoring** - start as read-index/profile features before contract changes.
+7. **Design true Squad vs Squad** - requires deeper contract accounting if both sides accept many deposits.
 
 ---
 

@@ -667,12 +667,18 @@ function VsChallengersCard({
                           </p>
                         ) : null}
                       </div>
-                      <div className="min-w-0 justify-self-end sm:justify-self-start">
+                      <div className="flex min-w-0 flex-col gap-1 justify-self-end sm:justify-self-start">
                         <div
-                          className="flex h-7 min-w-[4rem] items-center justify-center rounded-md border border-white/[0.1] bg-pv-bg/55 px-2 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-fuch sm:h-8 sm:min-w-[4.5rem] sm:text-[10px]"
+                          className="flex min-h-7 min-w-[4.5rem] items-center justify-center rounded-md border border-white/[0.1] bg-pv-bg/55 px-2 py-1 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-fuch sm:min-h-8 sm:min-w-[5rem] sm:text-[10px]"
                           title={t("challengerStake")}
                         >
                           {formatUsdcAmount(challenger.stake)}
+                        </div>
+                        <div
+                          className="flex min-h-7 min-w-[4.5rem] items-center justify-center rounded-md border border-pv-emerald/[0.18] bg-pv-emerald/[0.08] px-2 py-1 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-emerald sm:min-h-8 sm:min-w-[5rem] sm:text-[10px]"
+                          title={t("potentialPayout")}
+                        >
+                          {formatUsdcAmount(challenger.potential_payout)}
                         </div>
                       </div>
                     </div>
@@ -1101,10 +1107,35 @@ export default function VSDetailPage() {
   const fixedPayoutPreview =
     oddsMode === "fixed" &&
     hasValidChallengeStake &&
-    typeof vs.challenger_payout_bps === "number" &&
-    vs.challenger_payout_bps > 0
-      ? Math.floor((challengeStakeValue * vs.challenger_payout_bps) / 10000)
+    typeof display.challenger_payout_bps === "number" &&
+    display.challenger_payout_bps > 0
+      ? Math.floor((challengeStakeValue * display.challenger_payout_bps) / 10000)
       : null;
+  const creatorStake = display.creator_stake ?? display.stake_amount;
+  const challengerStake = display.total_challenger_stake ?? 0;
+  const poolPreview =
+    oddsMode === "pool" && hasValidChallengeStake
+      ? {
+          challengerPayout:
+            challengeStakeValue +
+            (creatorStake > 0
+              ? (challengeStakeValue * creatorStake) /
+                (challengerStake + challengeStakeValue)
+              : 0),
+          creatorPayout: pool + challengeStakeValue,
+          totalChallengerStake: challengerStake + challengeStakeValue,
+        }
+      : null;
+  const challengePayoutPreview =
+    fixedPayoutPreview ??
+    (poolPreview ? poolPreview.challengerPayout : null);
+  const challengeProfitPreview =
+    challengePayoutPreview !== null
+      ? Math.max(0, challengePayoutPreview - challengeStakeValue)
+      : null;
+  const creatorPayoutPreview = hasValidChallengeStake
+    ? pool + challengeStakeValue
+    : pool;
   const showRivalrySection =
     rivalryChain.length > 1 || display.state === "resolved";
   const shareUrl = getShareUrl(vsId, inviteKey);
@@ -1804,10 +1835,49 @@ export default function VSDetailPage() {
                             })}
                       </Button>
                     </div>
+                    {challengePayoutPreview !== null && challengeProfitPreview !== null && (
+                      <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.1] bg-pv-bg/35">
+                        <div className="grid grid-cols-1 gap-px bg-white/[0.07] p-px sm:grid-cols-3">
+                          <div className="min-w-0 bg-pv-bg/70 px-3.5 py-3">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
+                              {t("ifChallengersWin")}
+                            </div>
+                            <div className="mt-1.5 font-mono text-sm font-bold tabular-nums text-pv-emerald sm:text-base">
+                              {formatUsdcAmount(challengePayoutPreview)}
+                            </div>
+                          </div>
+                          <div className="min-w-0 bg-pv-bg/70 px-3.5 py-3">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
+                              {t("netProfit")}
+                            </div>
+                            <div className="mt-1.5 font-mono text-sm font-bold tabular-nums text-pv-fuch sm:text-base">
+                              +{formatUsdcAmount(challengeProfitPreview)}
+                            </div>
+                          </div>
+                          <div className="min-w-0 bg-pv-bg/70 px-3.5 py-3">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted">
+                              {t("ifCreatorWins")}
+                            </div>
+                            <div className="mt-1.5 font-mono text-sm font-bold tabular-nums text-pv-cyan sm:text-base">
+                              {formatUsdcAmount(poolPreview?.creatorPayout ?? creatorPayoutPreview)}
+                            </div>
+                          </div>
+                        </div>
+                        {poolPreview ? (
+                          <p className="px-3.5 py-3 text-xs leading-relaxed text-pv-muted">
+                            {t("poolPayoutFormula", {
+                              stake: formatUsdcAmount(challengeStakeValue),
+                              creatorStake: formatUsdcAmount(creatorStake),
+                              challengerStake: formatUsdcAmount(poolPreview.totalChallengerStake),
+                            })}
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
                     <p className="text-xs text-pv-muted mt-3">
                       {fixedPayoutPreview !== null
                         ? t("challengeStakeHintFixed", { payout: fixedPayoutPreview })
-                        : t("challengeStakeHintHeadToHead")}
+                        : t("challengeStakeHintPool")}
                     </p>
                     <p className="text-xs text-pv-muted mt-2">
                       {t("minimumStakeHint", { amount: MIN_STAKE })}

@@ -159,6 +159,36 @@ function shortAddr(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
+function agentPeepSrc(seed: string): string {
+  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}&backgroundColor=0b1020`;
+}
+
+function AgentPeep({
+  seed,
+  label,
+  tone,
+}: {
+  seed: string;
+  label: string;
+  tone: "emerald" | "neutral";
+}) {
+  const toneClass =
+    tone === "emerald"
+      ? "border-pv-emerald/40 bg-pv-emerald/[0.08] shadow-[0_0_28px_rgba(51,79,169,0.18)]"
+      : "border-pv-border/60 bg-pv-surface2/70 shadow-[0_0_24px_rgba(255,255,255,0.05)]";
+
+  return (
+    <div className={`flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border ${toneClass}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={agentPeepSrc(seed)}
+        alt={`${label} avatar`}
+        className="h-full w-full object-cover object-top opacity-95"
+      />
+    </div>
+  );
+}
+
 const SIDE_LABEL: Record<number, string> = {
   1: "creator won",
   2: "challengers won",
@@ -305,6 +335,12 @@ export default async function AgentsPage({
       {agentInfo && (
         <section className="mb-10 grid gap-4 lg:grid-cols-2">
           <article className="rounded-2xl border border-pv-emerald/35 bg-pv-emerald/[0.05] p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <AgentPeep seed={`mimir-oracle-${agentInfo.oracle}`} label="Oracle agent" tone="emerald" />
+              <span className="rounded-md border border-pv-emerald/35 bg-pv-emerald/[0.08] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald">
+                Settler
+              </span>
+            </div>
             <div className="mb-1 flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-pv-emerald">Oracle agent</span>
               <a href={getExplorerAddressUrl(agentInfo.oracle)} target="_blank" rel="noreferrer" className="ml-auto font-mono text-[11px] text-pv-muted hover:text-pv-emerald">
@@ -331,6 +367,12 @@ export default async function AgentsPage({
           </article>
 
           <article className="rounded-2xl border border-pv-border/40 bg-pv-surface/70 p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <AgentPeep seed={`mimir-market-creator-${agentInfo.owner}`} label="Market-creator agent" tone="neutral" />
+              <span className="rounded-md border border-pv-border/50 bg-pv-surface2/60 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-pv-text/70">
+                Builder
+              </span>
+            </div>
             <div className="mb-1 flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-pv-text/80">Market-creator agent</span>
               <a href={getExplorerAddressUrl(agentInfo.owner)} target="_blank" rel="noreferrer" className="ml-auto font-mono text-[11px] text-pv-muted hover:text-pv-emerald">

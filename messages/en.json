@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "title": "Mimir — Claims, settled in USDC on Arc.",
+    "title": "Mimir Markets on Arc",
     "description": "1v1 prediction challenges settled by AI. No referees. No arguments. Mimir decides."
   },
   "common": {
@@ -802,6 +802,10 @@
     "challengeStakeHintFixed": "At the current fixed odds, a winning challenger bet returns {payout} USDC.",
     "challengeStakeHintPool": "Pool odds split creator stake proportionally across the challenger side.",
     "challengeStakeHintHeadToHead": "Use any valid stake size your wallet can fund.",
+    "ifChallengersWin": "If your side wins",
+    "ifCreatorWins": "If creator wins",
+    "netProfit": "Net profit",
+    "poolPayoutFormula": "Pool payout: your {stake} returns plus your proportional share of the creator's {creatorStake}. Challenger side after you join: {challengerStake}.",
     "privateInviteRequired": "This challenge is private",
     "privateInviteHint": "You need the creator's private invite link to view and join this challenge.",
     "sendLinkToChallengers": "Send this link to challengers",
