@@ -64,7 +64,8 @@ const POLL_INTERVAL_MS = Number(process.env.COUNCIL_POLL_INTERVAL_MS ?? 180_000)
  * Claims are sorted by deadline-proximity so the council focuses on
  * the markets closest to settling.
  */
-const MAX_CLAIMS_PER_CYCLE = Number(process.env.COUNCIL_MAX_CLAIMS ?? 2);
+const MAX_CLAIMS_PER_CYCLE = Number(process.env.COUNCIL_MAX_CLAIMS ?? 1);
+const DECISION_DELAY_MS    = Number(process.env.COUNCIL_DECISION_DELAY_MS ?? 30000);
 const CONTRACT_ADDRESS     = getContractAddress();
 const publicClient         = createArcPublicClient();
 
@@ -222,6 +223,9 @@ async function poll(): Promise<void> {
           err instanceof Error ? err.message : err,
         );
       }
+      if (DECISION_DELAY_MS > 0) {
+        await new Promise((resolve) => setTimeout(resolve, DECISION_DELAY_MS));
+      }
     }
   }
 
@@ -240,6 +244,8 @@ async function main(): Promise<void> {
   console.log(`  Network        : Arc Testnet (${arcTestnet.id})`);
   console.log(`  LLM            : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Active personas: ${ACTIVE_PERSONAS.length} / ${COUNCIL_PERSONAS.length}`);
+  console.log(`  Max claims/cycle: ${MAX_CLAIMS_PER_CYCLE}`);
+  console.log(`  Decision gap   : ${DECISION_DELAY_MS / 1000}s`);
   console.log(`  Poll every     : ${POLL_INTERVAL_MS / 1000}s`);
   console.log("───────────────────────────────────────────────");
 

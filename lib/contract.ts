@@ -897,23 +897,51 @@ export function didUserLoseVS(vs: VSData, address?: string | null) {
   return involved && !didUserWinVS(vs, address);
 }
 
+function getVSUserChallenger(vs: VSData, address?: string | null) {
+  if (!address) return null;
+  return (vs.challengers ?? []).find((challenger) =>
+    isSameAddress(challenger.address, address)
+  ) ?? null;
+}
+
+function getVSUserChallengerStake(vs: VSData, address?: string | null): number {
+  const challenger = getVSUserChallenger(vs, address);
+  if (challenger && Number.isFinite(challenger.stake)) return challenger.stake;
+  const n = Math.max(1, getVSChallengerCount(vs));
+  if ((vs.total_challenger_stake ?? 0) > 0) {
+    return n <= 1 ? vs.total_challenger_stake! : vs.total_challenger_stake! / n;
+  }
+  return vs.stake_amount ?? 0;
+}
+
 export function getVSUserCommittedStake(vs: VSData, address?: string | null): number {
   if (!address) return 0;
   if (isSameAddress(vs.creator, address)) {
     return vs.creator_stake ?? vs.stake_amount ?? 0;
   }
   if (!didUserChallengeVS(vs, address)) return 0;
-  const n = Math.max(1, getVSChallengerCount(vs));
-  if ((vs.total_challenger_stake ?? 0) > 0) {
-    return n <= 1 ? vs.total_challenger_stake! : Math.floor(vs.total_challenger_stake! / n);
-  }
-  return vs.stake_amount ?? 0;
+  return getVSUserChallengerStake(vs, address);
 }
 
 export function getVSUserWinAmount(vs: VSData, address?: string | null) {
   if (!didUserWinVS(vs, address)) return 0;
   if (vs.winner_side === "creator") return getVSTotalPot(vs);
-  if (vs.winner_side === "challengers") return getVSSingleWinnerPayout(vs) ?? 0;
+  if (vs.winner_side === "challengers") {
+    const challenger = getVSUserChallenger(vs, address);
+    if (challenger && Number.isFinite(challenger.potential_payout)) {
+      return challenger.potential_payout;
+    }
+
+    const stake = getVSUserChallengerStake(vs, address);
+    if (vs.odds_mode === "fixed" && (vs.challenger_payout_bps ?? 0) > 0) {
+      return (stake * vs.challenger_payout_bps!) / 10_000;
+    }
+
+    const totalChallengerStake = vs.total_challenger_stake ?? stake;
+    const creatorStake = vs.creator_stake ?? vs.stake_amount ?? 0;
+    if (totalChallengerStake <= 0) return stake;
+    return stake + (stake * creatorStake) / totalChallengerStake;
+  }
   return getVSTotalPot(vs);
 }
 

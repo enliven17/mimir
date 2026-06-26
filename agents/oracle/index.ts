@@ -86,6 +86,7 @@ const COUNCIL_SETTLEMENT  = process.env.COUNCIL_SETTLEMENT === "1";
 const COUNCIL_BASE_URL    = process.env.MIMIR_BASE_URL ?? "http://localhost:3000";
 const COUNCIL_QUORUM      = Number(process.env.COUNCIL_QUORUM ?? "3");
 const COUNCIL_VOTE_CAP    = Number(process.env.COUNCIL_VOTE_CAP_USDC ?? "0.005");
+const SETTLEMENT_DELAY_MS = Number(process.env.ORACLE_SETTLEMENT_DELAY_MS ?? "900000");
 
 // Module-scoped throttle gate. Free-tier Gemini is 5 RPM on new accounts and
 // the oracle has no other rate limiter — every claim in a poll fires an LLM
@@ -586,10 +587,15 @@ async function poll(): Promise<void> {
 
   const settled: number[]   = [];
   const challenged: number[] = [];
+  const expiredActive: ClaimOnChain[] = [];
 
   for (let id = 1; id <= Number(total); id++) {
     const claim = await fetchClaim(id);
     if (!claim) continue;
+    if (claim.state === STATE.ACTIVE && claim.deadline <= now) {
+      expiredActive.push(claim);
+      continue;
+    }
 
     try {
       // Role 1: Settle expired active claims
@@ -614,6 +620,21 @@ async function poll(): Promise<void> {
     }
   }
 
+  expiredActive.sort((a, b) => Number(a.deadline - b.deadline));
+  for (let i = 0; i < expiredActive.length; i++) {
+    const claim = expiredActive[i];
+    try {
+      await settle(claim);
+      settled.push(claim.id);
+      if (i < expiredActive.length - 1 && SETTLEMENT_DELAY_MS > 0) {
+        console.log(`[oracle] Cooling down ${(SETTLEMENT_DELAY_MS / 60000).toFixed(1)} min before next settlement...`);
+        await new Promise((resolve) => setTimeout(resolve, SETTLEMENT_DELAY_MS));
+      }
+    } catch (err) {
+      console.error(`[oracle] Error settling claim ${claim.id}:`, err);
+    }
+  }
+
   const summary = [
     settled.length    ? `Settled: [${settled.join(", ")}]`    : null,
     challenged.length ? `Challenged: [${challenged.join(", ")}]` : null,
@@ -635,6 +656,7 @@ async function main(): Promise<void> {
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
   console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Throttle   : ${LLM_THROTTLE_MS > 0 ? `${LLM_THROTTLE_MS}ms (${(60_000 / LLM_THROTTLE_MS).toFixed(1)} RPM cap)` : "OFF"}`);
+  console.log(`  Settle gap : ${SETTLEMENT_DELAY_MS / 1000}s`);
   console.log(`  Poll every : ${POLL_INTERVAL_MS / 1000}s`);
   console.log(`  Auto-challenge: ${AUTO_CHALLENGE ? `YES (≥${CHALLENGE_CONFIDENCE}% confidence, ${CHALLENGE_STAKE_USDC} USDC/claim)` : "OFF (set AUTO_CHALLENGE=1 to enable)"}`);
   console.log("═══════════════════════════════════════════════\n");

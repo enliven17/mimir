@@ -48,6 +48,7 @@ import {
   getMarketCreatorAddress,
 } from "../../lib/circle-w3s";
 import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
+import { gatherCouncilPreflight } from "./council-preflight";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const CONTRACT_ADDRESS    = getContractAddress();
@@ -58,6 +59,15 @@ const RUN_INTERVAL_HOURS  = Number(process.env.RUN_INTERVAL_HOURS ?? "6");
 const MIN_QUALITY_SCORE   = 70; // 0-100
 const CRYPTO_MIN_THRESHOLD_RATIO = Number(process.env.CRYPTO_MIN_THRESHOLD_RATIO ?? "0.65");
 const CRYPTO_MAX_THRESHOLD_RATIO = Number(process.env.CRYPTO_MAX_THRESHOLD_RATIO ?? "1.35");
+const CREATE_DELAY_MS = Number(process.env.MARKET_CREATE_DELAY_MS ?? "600000");
+const CANCEL_DELAY_MS = Number(process.env.MARKET_CANCEL_DELAY_MS ?? "60000");
+const PREFLIGHT_ENABLED =
+  process.env.MARKET_CREATOR_PREFLIGHT === "1" || Boolean(process.env.MIMIR_BASE_URL?.trim());
+const PREFLIGHT_BASE_URL = process.env.MIMIR_BASE_URL ?? "http://localhost:3000";
+const PREFLIGHT_MIN_SCORE = Number(process.env.MARKET_CREATOR_PREFLIGHT_MIN_SCORE ?? "60");
+const PREFLIGHT_CAP_USDC = Number(process.env.MARKET_CREATOR_PREFLIGHT_CAP_USDC ?? "0.005");
+const PREFLIGHT_PERSONAS = process.env.MARKET_CREATOR_PREFLIGHT_PERSONAS;
+const PREFLIGHT_DELAY_MS = Number(process.env.MARKET_CREATOR_PREFLIGHT_DELAY_MS ?? "30000");
 
 for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLET_ID", "CIRCLE_CREATOR_ADDRESS"]) {
   if (!process.env[v]) {
@@ -83,6 +93,10 @@ const SIG_CANCEL_CLAIM = buildAbiFunctionSignature("cancelClaim", MIMIR_ABI);
 const publicClient   = createArcPublicClient();
 const CREATOR_WALLET = getMarketCreatorWalletId();
 const CREATOR_ADDR   = getMarketCreatorAddress();
+const CREATOR_PAYER  = {
+  walletId: CREATOR_WALLET,
+  address: CREATOR_ADDR as `0x${string}`,
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ClaimCandidate {
@@ -264,6 +278,69 @@ function filterDuplicateCandidates(
     if (sig.questionKey) seenQuestionKeys.add(questionKey);
     return true;
   });
+}
+
+async function applyCouncilPreflight(candidates: ClaimCandidate[]): Promise<ClaimCandidate[]> {
+  if (!PREFLIGHT_ENABLED || candidates.length === 0) {
+    return candidates;
+  }
+
+  const kept: Array<{ candidate: ClaimCandidate; score: number }> = [];
+  console.log(
+    `[market-creator] Buying council preflight for ${candidates.length} candidate(s) ` +
+    `(min score ${PREFLIGHT_MIN_SCORE}, ${PREFLIGHT_DELAY_MS / 1000}s persona gap)...`,
+  );
+
+  for (const candidate of candidates) {
+    const result = await gatherCouncilPreflight({
+      candidate,
+      baseUrl: PREFLIGHT_BASE_URL,
+      payer: CREATOR_PAYER,
+      personaCsv: PREFLIGHT_PERSONAS,
+      capUsdc: PREFLIGHT_CAP_USDC,
+      delayMs: PREFLIGHT_DELAY_MS,
+    }).catch((err) => {
+      console.warn(
+        `[market-creator] Council preflight failed for "${candidate.question.slice(0, 70)}...":`,
+        err instanceof Error ? err.message : err,
+      );
+      return null;
+    });
+
+    if (!result || result.opinions.length === 0 || result.averageScore === null) {
+      console.warn(
+        `[market-creator] Council preflight unavailable; keeping candidate: ${candidate.question.slice(0, 70)}...`,
+      );
+      kept.push({ candidate, score: candidate.qualityScore });
+      continue;
+    }
+
+    const paidUsdc = Number(result.totalPaidAtomic) / 1_000_000;
+    const avg = Math.round(result.averageScore);
+    console.log(
+      `[market-creator] Council preflight ${avg}/100 ` +
+      `(open=${result.openVotes}, revise=${result.reviseVotes}, skip=${result.skipVotes}, paid=${paidUsdc.toFixed(6)} USDC) ` +
+      `for "${candidate.question.slice(0, 70)}..."`,
+    );
+
+    if (avg < PREFLIGHT_MIN_SCORE || result.skipVotes > result.openVotes + result.reviseVotes) {
+      console.warn(
+        `[market-creator] Drop candidate after council preflight (${avg}/100): ${candidate.question.slice(0, 90)}`,
+      );
+      continue;
+    }
+
+    // Blend draft quality and paid council judgment so high-consensus markets
+    // are created first when headroom is tight.
+    kept.push({
+      candidate,
+      score: Math.round(candidate.qualityScore * 0.6 + avg * 0.4),
+    });
+  }
+
+  return kept
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.candidate);
 }
 
 async function fetchCryptoEvents(): Promise<{ text: string; events: CryptoEvent[] }> {
@@ -665,8 +742,9 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number; j
       });
       console.log(`[market-creator] ✓ Cancelled #${id} — ${getExplorerTxUrl(txHash)}`);
       cancelled++;
-      // brief gap to avoid nonce races
-      await new Promise((r) => setTimeout(r, 1500));
+      if (CANCEL_DELAY_MS > 0) {
+        await new Promise((r) => setTimeout(r, CANCEL_DELAY_MS));
+      }
     } catch (err) {
       console.error(`[market-creator] Failed to cancel #${id}:`, err);
     }
@@ -731,24 +809,35 @@ async function run(): Promise<void> {
     return;
   }
 
-  console.log(`[market-creator] ${candidates.length} candidates (score ≥ ${MIN_QUALITY_SCORE}):`);
-  candidates.forEach((c, i) => {
+  const approvedCandidates = await applyCouncilPreflight(candidates);
+
+  if (approvedCandidates.length === 0) {
+    console.log("[market-creator] No candidates passed council preflight this run.");
+    return;
+  }
+
+  console.log(`[market-creator] ${approvedCandidates.length} candidates ready to create:`);
+  approvedCandidates.forEach((c, i) => {
     console.log(`  ${i + 1}. [${c.qualityScore}] ${c.question.slice(0, 70)}...`);
   });
 
   let created = 0;
-  for (const candidate of candidates.slice(0, toCreate)) {
+  const selected = approvedCandidates.slice(0, toCreate);
+  for (let i = 0; i < selected.length; i++) {
+    const candidate = selected[i];
     console.log(`\n[market-creator] Creating: "${candidate.question.slice(0, 60)}..."`);
     const txHash = await createClaim(candidate);
     if (txHash) {
       console.log(`[market-creator] ✓ Created — ${getExplorerTxUrl(txHash)}`);
       created++;
     }
-    // Brief pause between claims to avoid nonce issues
-    await new Promise((r) => setTimeout(r, 2000));
+    if (i < selected.length - 1 && CREATE_DELAY_MS > 0) {
+      console.log(`[market-creator] Cooling down ${(CREATE_DELAY_MS / 60000).toFixed(1)} min before next market...`);
+      await new Promise((r) => setTimeout(r, CREATE_DELAY_MS));
+    }
   }
 
-  console.log(`\n[market-creator] Created ${created}/${candidates.length} markets this run.`);
+  console.log(`\n[market-creator] Created ${created}/${approvedCandidates.length} approved markets this run.`);
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -766,6 +855,9 @@ async function main(): Promise<void> {
   console.log(`  Stake/mkt  : ${CREATOR_STAKE_USDC} USDC`);
   console.log(`  Max/run    : ${MAX_CLAIMS_PER_RUN} claims`);
   console.log(`  Active cap : ${MAX_ACTIVE_CLAIMS} unresolved (skip run above this)`);
+  console.log(`  Preflight  : ${PREFLIGHT_ENABLED ? `on via ${PREFLIGHT_BASE_URL}` : "off"}`);
+  console.log(`  Create gap : ${CREATE_DELAY_MS / 1000}s`);
+  console.log(`  Cancel gap : ${CANCEL_DELAY_MS / 1000}s`);
   console.log(`  Interval   : every ${RUN_INTERVAL_HOURS}h`);
   console.log("═══════════════════════════════════════════════\n");
 

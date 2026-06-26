@@ -20,6 +20,7 @@ Mimir won the Arc/Agora hackathon as a macro-stake claim market. For Lepton (nan
 | **Premium data API** | Sells price snapshots per call ($0.001) — any agent can buy | `GET /api/premium/price` | ✅ paid e2e |
 | **Oracle-as-a-Service** | Sells the oracle's verdict per call ($0.005) | `POST /api/oracle` | ✅ |
 | **Creator monetization** (primary RFB) | Each of the 10 council personas sells its reasoning pay-per-read ($0.001); **revenue settles into that persona's own wallet** | `GET /api/council/reasoning` | ✅ paid → persona wallet |
+| **Market-creator preflight** | Market-creator buys council persona opinions before opening a market, then filters low-consensus candidates | `POST /api/council/preflight`, `agents/market-creator/council-preflight.ts` | ✅ |
 | **Gateway deposit via W3S** | Enables gasless batched payments without a private key | `npm run gateway:deposit` | ✅ 5 USDC deposited |
 | **Agent-to-agent payment** | One Mimir agent buys from another, real USDC flowing | `npm run x402:demo` | ✅ |
 | **Traction generator** | Drives real nanopayments for the traction story | `npm run x402:traffic` | ✅ 10/10 settled |
@@ -303,7 +304,7 @@ stateDiagram-v2
 
 Runs every 6 hours. Fetches public data feeds (CoinGecko, ESPN, OpenWeather), asks the LLM to draft 1–5 verifiable claim candidates, scores each candidate for quality, and creates the highest-scoring ones on-chain — staking the creator side from its own balance. This means **opening a claim is itself an economic commitment from an AI agent**, not a free tweet.
 
-The agent treats curation as the scarce resource. The default cap is 5 markets per run with a quality floor of 70/100, so the surface stays sparse and challenge-ready rather than noisy.
+The agent treats curation as the scarce resource. The default cap is 5 markets per run with a quality floor of 70/100, so the surface stays sparse and challenge-ready rather than noisy. When `MIMIR_BASE_URL` or `MARKET_CREATOR_PREFLIGHT=1` is configured, it also buys paid council preflight opinions from selected personas before opening a market. Low-consensus candidates are dropped; high-consensus candidates are opened gradually with `MARKET_CREATE_DELAY_MS` spacing transactions.
 
 ### The Mimir Council (`agents/council/index.ts`)
 
@@ -318,6 +319,8 @@ Ten distinct AI personas, each with its own W3S-managed wallet and its own way o
 | 🗣️ Yapper | Micro-stakes (0.5 USDC) at a low 60% confidence threshold for maximum market presence. |
 
 Personas can only call `challengeClaim` (settlement stays with the oracle, market creation stays with the market-creator). A persona that agrees with the creator simply abstains. Decisions are made through the same Kelly-sized, evidence-hashed pipeline the oracle uses — just with persona-specific prompt biases and a shared per-cycle evidence cache so ten personas don't re-fetch the same URL.
+
+The worker runs slowly by default: one deadline-prioritized claim per cycle, with `COUNCIL_DECISION_DELAY_MS` spacing persona decisions to avoid LLM 429s and clustered on-chain stakes.
 
 The council surfaces in the UI on [`/council`](app/[locale]/council/page.tsx) (full roster + balances + bets), in the [`/agents`](app/[locale]/agents/page.tsx) live feed with persona badges and a per-persona dropdown, in the [`/stats`](app/[locale]/stats/page.tsx) "First N stakers" wall, and as a `Council verdict` card on every claim detail page that lists each persona's stake or abstention.
 
@@ -669,18 +672,24 @@ Every env var lives in `.env.example`. Quick reference:
 | `LLM_PROVIDER`                    | optional                 | Optional model routing override for worker-only deployments                        |
 | `ORACLE_LLM_MODEL`                | optional                 | Optional model name override                                                       |
 | `ORACLE_LLM_THROTTLE_MS`          | oracle                   | Min delay between oracle LLM calls; default `8000`                                 |
-| `COUNCIL_MAX_CLAIMS`              | council                  | Max joinable claims evaluated per council cycle; default `2`                       |
-| `COUNCIL_LLM_THROTTLE_MS`         | council                  | Min delay between council LLM calls; default `8000`                                |
+| `ORACLE_SETTLEMENT_DELAY_MS`      | oracle                   | Delay between multiple expired settlements in one poll; default `900000` (15 min)  |
 | `AUTO_CHALLENGE`                  | oracle (worker)          | `1` to enable Kelly auto-stake                                                     |
 | `CHALLENGE_STAKE_USDC`            | oracle (worker)          | Min stake per auto-challenge (default 2)                                            |
 | `CHALLENGE_CONFIDENCE`            | oracle (worker)          | Min LLM confidence % to auto-stake (default 80)                                    |
+| `MAX_CLAIMS_PER_RUN`              | market-creator           | Max candidates created per run; creation is paced by `MARKET_CREATE_DELAY_MS`      |
+| `MARKET_CREATE_DELAY_MS`          | market-creator           | Delay between opening approved markets; default `600000` (10 min)                 |
+| `MARKET_CANCEL_DELAY_MS`          | market-creator           | Delay between stale-market cancels; default `60000` (1 min)                       |
+| `MARKET_CREATOR_PREFLIGHT`        | market-creator           | `1` to force paid council preflight; also enabled when `MIMIR_BASE_URL` is set     |
+| `MARKET_CREATOR_PREFLIGHT_*`      | market-creator           | Paid council preflight score, cap, persona list, and pacing controls              |
+| `MIMIR_BASE_URL`                  | oracle, market-creator   | Public app URL for paid council vote/preflight endpoints                           |
 | `DATABASE_URL`                    | optional (Neon)          | Read-index cache. Pages that need it fail gracefully if absent                     |
 | `CRON_SECRET`                     | optional                 | Vercel cron shared secret                                                          |
 | `NEXT_PUBLIC_FEATURE_XMTP`        | optional                 | Toggle the XMTP inbox feature                                                      |
 | `CIRCLE_COUNCIL_<SLUG>_WALLET_ID` | council (worker)         | Per-persona W3S wallet ID; created by `npm run council:create-wallets`             |
 | `CIRCLE_COUNCIL_<SLUG>_ADDRESS`   | council (worker, UI)     | Per-persona EVM address; used to label on-chain events with the right persona      |
 | `COUNCIL_POLL_INTERVAL_MS`        | council (worker)         | Cycle interval (default 180_000 = 3 min)                                            |
-| `COUNCIL_MAX_CLAIMS`              | council (worker)         | Max claims per cycle, deadline-sorted (default 2). Raise only with paid quota.     |
+| `COUNCIL_MAX_CLAIMS`              | council (worker)         | Max claims per cycle, deadline-sorted (default 1). Raise only with paid quota.     |
+| `COUNCIL_DECISION_DELAY_MS`       | council (worker)         | Delay between persona decisions/stakes; default `30000`                            |
 | `COUNCIL_LLM_THROTTLE_MS`         | council (worker)         | Min ms between LLM calls (default 8000)                                             |
 
 ---
