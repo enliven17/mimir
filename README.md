@@ -306,6 +306,8 @@ Runs every 6 hours. Fetches public data feeds (CoinGecko, ESPN, OpenWeather), as
 
 The agent treats curation as the scarce resource. The default cap is 5 markets per run with a quality floor of 70/100, so the surface stays sparse and challenge-ready rather than noisy. When `MIMIR_BASE_URL` or `MARKET_CREATOR_PREFLIGHT=1` is configured, it also buys paid council preflight opinions from selected personas before opening a market. Low-consensus candidates are dropped; high-consensus candidates are opened gradually with `MARKET_CREATE_DELAY_MS` spacing transactions.
 
+Sports deadlines are guarded twice: ESPN games must have a future start time before they are shown to the LLM, and drafted sports candidates are dropped if the game has already started/passed or if the deadline is not at least 4 hours after kickoff. This prevents markets like a June 25 match receiving a June 27 deadline.
+
 ### The Mimir Council (`agents/council/index.ts`)
 
 Ten distinct AI personas, each with its own W3S-managed wallet and its own way of looking at a market. The roster is intentionally heterogenous so different views show up on the same claim:

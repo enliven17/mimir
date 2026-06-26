@@ -375,12 +375,17 @@ async function fetchCryptoEvents(): Promise<{ text: string; events: CryptoEvent[
 // Generic ESPN scoreboard reader. Pulls scheduled (not-started) games for any
 // sport/league. Live games make deadline math uncertain and finished games
 // resolve immediately — both are dead inventory, so we keep only `pre` state.
+const SPORTS_POST_GAME_BUFFER_MS = 4 * 3600 * 1000;
+const MAX_DEADLINE_HOURS = 72;
+
 async function fetchEspnScoreboard(
   url: string,
   fallbackName: string,
   matchPath: string,
 ): Promise<SportEvent[]> {
   try {
+    const nowMs = Date.now();
+    const latestStartMs = nowMs + MAX_DEADLINE_HOURS * 3600 * 1000 - SPORTS_POST_GAME_BUFFER_MS;
     const res = await fetch(url, { headers: { "User-Agent": "Mimir-MarketCreator/1.0" } });
     const data = (await res.json()) as any;
     const all = (data.events ?? []) as any[];
@@ -408,7 +413,13 @@ async function fetchEspnScoreboard(
           status:        String(e.status?.type?.detail ?? "scheduled"),
         };
       })
-      .filter((ev) => ev.id && ev.resolutionUrl);
+      .filter((ev) =>
+        ev.id &&
+        ev.resolutionUrl &&
+        Number.isFinite(ev.startMs) &&
+        ev.startMs > nowMs &&
+        ev.startMs <= latestStartMs
+      );
   } catch (err) {
     console.warn(`[market-creator] ESPN fetch failed (${url}):`, err);
     return [];
@@ -472,10 +483,6 @@ async function fetchWeatherEvents(): Promise<string> {
 }
 
 // ── Claude drafts claims ──────────────────────────────────────────────────────
-
-// Sports games need their result + ESPN boxscore page settled before the
-// oracle can read a final score. Two-hour NBA game + ~2h boxscore lag buffer.
-const SPORTS_POST_GAME_BUFFER_MS = 4 * 3600 * 1000;
 
 async function draftClaimCandidates(sourceData: {
   cryptoText:   string;
@@ -575,6 +582,11 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
     if (typeof c?.qualityScore !== "number" || c.qualityScore < MIN_QUALITY_SCORE) {
       return false;
     }
+    const deadlineHours = Number(c.deadlineHours ?? 0);
+    if (!Number.isFinite(deadlineHours) || deadlineHours < 2 || deadlineHours > MAX_DEADLINE_HOURS) {
+      console.warn(`[market-creator] Drop candidate - invalid deadlineHours=${String(c.deadlineHours)}: ${String(c.question ?? "").slice(0, 90)}`);
+      return false;
+    }
     const cat = String(c.category ?? "").toLowerCase();
     const url = String(c.resolutionUrl ?? "");
 
@@ -584,10 +596,19 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
         console.warn(`[market-creator] Drop sports candidate — URL not in allowlist: ${url}`);
         return false;
       }
-      const deadlineMs = nowMs + Number(c.deadlineHours ?? 0) * 3600 * 1000;
-      const minDeadline = Number.isFinite(game.startMs)
-        ? game.startMs + SPORTS_POST_GAME_BUFFER_MS
-        : nowMs;
+      if (!Number.isFinite(game.startMs)) {
+        console.warn(`[market-creator] Drop sports candidate - missing start time: ${c.question.slice(0, 90)}`);
+        return false;
+      }
+      if (game.startMs <= nowMs) {
+        console.warn(
+          `[market-creator] Drop sports candidate - game already started/passed ` +
+          `(${new Date(game.startMs).toISOString()}): ${c.question.slice(0, 90)}`
+        );
+        return false;
+      }
+      const deadlineMs = nowMs + deadlineHours * 3600 * 1000;
+      const minDeadline = game.startMs + SPORTS_POST_GAME_BUFFER_MS;
       if (deadlineMs < minDeadline) {
         console.warn(
           `[market-creator] Drop sports candidate — deadline ${new Date(deadlineMs).toISOString()} ` +
