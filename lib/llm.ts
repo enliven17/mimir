@@ -19,9 +19,39 @@ export interface CallLLMOptions {
   temperature?: number;
   /** Ask the model for JSON output. Gemini uses responseMimeType; Claude is prompt-hinted. */
   jsonOnly?: boolean;
+  /**
+   * Preferred Gemini model for this call (e.g. "gemma-4-26b-it"). Used to spread
+   * agent load across models so each gets its own rate-limit bucket. Ignored by
+   * non-Gemini providers. Falls back to the rest of the pool if this model is
+   * rate-limited. Pick a stable one per agent with `pickGeminiModel(seed)`.
+   */
+  model?: string;
 }
 
 const DEFAULT_GEMINI_MODEL = process.env.ORACLE_LLM_MODEL || "gemini-2.5-flash";
+
+/**
+ * Gemini model pool for load-spreading. Free-tier limits are per-model, so
+ * assigning different agents to different models multiplies effective throughput.
+ * Set GEMINI_MODELS to a comma-separated list of exact model ids (from AI Studio),
+ * highest-limit first. Defaults to just the primary model (no spreading).
+ */
+function geminiModelPool(): string[] {
+  const raw = (process.env.GEMINI_MODELS ?? "")
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const pool = raw.length > 0 ? raw : [DEFAULT_GEMINI_MODEL];
+  return pool.filter((m, i) => pool.indexOf(m) === i);
+}
+
+/** Stable model assignment for an agent/persona seed → spreads load deterministically. */
+export function pickGeminiModel(seed: string): string {
+  const pool = geminiModelPool();
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return pool[hash % pool.length];
+}
 const DEFAULT_ANTHROPIC_MODEL = process.env.ORACLE_LLM_MODEL || "claude-sonnet-4-6";
 const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "openrouter/free";
@@ -31,17 +61,24 @@ const GROQ_QUOTA_COOLDOWN_MS = Number(process.env.GROQ_QUOTA_COOLDOWN_MS ?? "270
 const OPENROUTER_QUOTA_COOLDOWN_MS = Number(process.env.OPENROUTER_QUOTA_COOLDOWN_MS ?? "2700000"); // 45 min
 
 let anthropicClient: Anthropic | null = null;
-let geminiCooldownUntil = 0;
 let openrouterCooldownUntil = 0;
 const groqCooldownByKey = new Map<string, number>();
+const geminiCooldownByModel = new Map<string, number>();
 
 function cooldownRemaining(until: number): number {
   const remaining = until - Date.now();
   return remaining > 0 ? remaining : 0;
 }
 
+function geminiModelCooldown(model: string): number {
+  return cooldownRemaining(geminiCooldownByModel.get(model) ?? 0);
+}
+
+/** Gemini is "available" while any model in the pool is out of cooldown. */
 function geminiCooldownRemaining(): number {
-  return cooldownRemaining(geminiCooldownUntil);
+  const pool = geminiModelPool();
+  if (pool.some((m) => geminiModelCooldown(m) === 0)) return 0;
+  return Math.min(...pool.map(geminiModelCooldown));
 }
 
 function openrouterCooldownRemaining(): number {
@@ -84,8 +121,8 @@ function groqKeyFingerprint(key: string): string {
   return `...${key.slice(-6)}`;
 }
 
-function tripGeminiCooldown(): void {
-  geminiCooldownUntil = Date.now() + GEMINI_QUOTA_COOLDOWN_MS;
+function tripGeminiCooldown(model: string): void {
+  geminiCooldownByModel.set(model, Date.now() + GEMINI_QUOTA_COOLDOWN_MS);
 }
 
 function tripOpenRouterCooldown(): void {
@@ -154,6 +191,7 @@ export async function callLLM(prompt: string, opts: CallLLMOptions = {}): Promis
     maxTokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0.2,
     jsonOnly: opts.jsonOnly ?? false,
+    model: opts.model,
   };
   const candidates = fallbackProviders(primary);
   let lastError: unknown = null;
@@ -299,16 +337,53 @@ async function callOpenRouter(
 
 async function callGemini(
   prompt: string,
+  opts: { maxTokens: number; temperature: number; jsonOnly: boolean; model?: string },
+): Promise<string> {
+  // Try the assigned model first, then borrow other pool models if it's rate-limited.
+  const pool = geminiModelPool();
+  const preferred = opts.model && opts.model.trim().length > 0 ? opts.model.trim() : pool[0];
+  const order = [preferred, ...pool.filter((m) => m !== preferred)];
+
+  let lastError: unknown = null;
+  for (const model of order) {
+    if (geminiModelCooldown(model) > 0) {
+      lastError = new Error(`${model} in cooldown - ${Math.ceil(geminiModelCooldown(model) / 1000)}s remaining`);
+      continue;
+    }
+    try {
+      return await callGeminiModel(model, prompt, opts);
+    } catch (err) {
+      lastError = err;
+      const nextModel = order.find((m) => m !== model && geminiModelCooldown(m) === 0);
+      if (nextModel) {
+        console.warn(`[llm] Gemini ${model} failed -> ${nextModel}: ${err instanceof Error ? err.message.slice(0, 90) : err}`);
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("All Gemini models failed");
+}
+
+async function callGeminiModel(
+  model: string,
+  prompt: string,
   opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY!.trim();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_GEMINI_MODEL}:generateContent`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  // Gemma models (gemma-*) share the Gemini API but reject Gemini-only config
+  // fields: thinkingConfig and responseMimeType both 400. Drop them for Gemma and
+  // ask for JSON in the prompt instead.
+  const isGemma = model.toLowerCase().startsWith("gemma");
   const generationConfig: Record<string, unknown> = {
     temperature: opts.temperature,
     maxOutputTokens: opts.maxTokens,
-    thinkingConfig: { thinkingBudget: 0 },
   };
-  if (opts.jsonOnly) generationConfig.responseMimeType = "application/json";
+  if (!isGemma) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  let effectivePrompt = prompt;
+  if (opts.jsonOnly) {
+    if (isGemma) effectivePrompt = `${prompt}\n\nReturn valid JSON only — no markdown, no code fences.`;
+    else generationConfig.responseMimeType = "application/json";
+  }
 
   const transient = new Set([408, 500, 502, 503, 504]);
   const maxAttempts = 4;
@@ -320,7 +395,7 @@ async function callGemini(
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: [{ role: "user", parts: [{ text: effectivePrompt }] }],
         generationConfig,
       }),
       signal: AbortSignal.timeout(60_000),
@@ -329,16 +404,16 @@ async function callGemini(
 
     lastBody = (await res.text()).slice(0, 500);
     if (res.status === 429) {
-      tripGeminiCooldown();
-      console.warn(`[llm] Gemini 429 - entering ${Math.round(GEMINI_QUOTA_COOLDOWN_MS / 1000)}s cooldown`);
-      throw new Error(`Gemini 429: ${lastBody}`);
+      tripGeminiCooldown(model);
+      console.warn(`[llm] Gemini ${model} 429 - entering ${Math.round(GEMINI_QUOTA_COOLDOWN_MS / 1000)}s cooldown`);
+      throw new Error(`Gemini ${model} 429: ${lastBody}`);
     }
     if (!transient.has(res.status) || attempt === maxAttempts) {
-      throw new Error(`Gemini ${res.status}: ${lastBody}`);
+      throw new Error(`Gemini ${model} ${res.status}: ${lastBody}`);
     }
 
     const delayMs = 1000 * 2 ** (attempt - 1);
-    console.warn(`[llm] Gemini ${res.status} (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs}ms`);
+    console.warn(`[llm] Gemini ${model} ${res.status} (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs}ms`);
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
@@ -350,7 +425,7 @@ async function callGemini(
   if (!text) {
     const finishReason = json?.candidates?.[0]?.finishReason ?? "unknown";
     const safety = JSON.stringify(json?.candidates?.[0]?.safetyRatings ?? json?.promptFeedback ?? {});
-    throw new Error(`Gemini empty response (finishReason=${finishReason}, safety=${safety})`);
+    throw new Error(`Gemini ${model} empty response (finishReason=${finishReason}, safety=${safety})`);
   }
   return text;
 }

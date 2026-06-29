@@ -35,7 +35,7 @@
 }
 
 import { keccak256, toBytes, formatEther } from "viem";
-import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint } from "../../lib/llm";
+import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
@@ -315,7 +315,7 @@ Return JSON only:
 - UNRESOLVABLE only if the fetched evidence is missing, ambiguous, or doesn't contain the data needed.
 - Be strict about confidence — only go above 80 when evidence is unambiguous.`;
 
-  const text = await throttledLLM(prompt, { maxTokens: 512, jsonOnly: true });
+  const text = await throttledLLM(prompt, { maxTokens: 512, jsonOnly: true, model: pickGeminiModel("oracle") });
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON");

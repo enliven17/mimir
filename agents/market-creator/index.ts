@@ -31,7 +31,7 @@
 }
 
 import { formatEther } from "viem";
-import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint } from "../../lib/llm";
+import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
@@ -557,7 +557,7 @@ For each candidate, provide:
 
 Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
 
-  const text = await callLLM(prompt, { maxTokens: 2000, jsonOnly: true });
+  const text = await callLLM(prompt, { maxTokens: 2000, jsonOnly: true, model: pickGeminiModel("market-creator") });
   let candidates: ClaimCandidate[];
   try {
     const jsonMatch = text.match(/\[[\s\S]*\]/);

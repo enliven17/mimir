@@ -7,7 +7,7 @@
  * downstream Kelly sizing + commit logic can be shared.
  */
 
-import { callLLM } from "../../../lib/llm";
+import { callLLM, pickGeminiModel } from "../../../lib/llm";
 import { microToUsdc } from "../../../lib/arc";
 import type { PersonaSpec } from "../personas";
 import type { ClaimOnChain } from "./types";
@@ -76,7 +76,11 @@ Return JSON only:
 - Stay in character (${persona.displayName}) when writing the explanation.
 - Never invent evidence. Cite what you actually saw above.`;
 
-  const text = await callLLM(prompt, { maxTokens: 512, jsonOnly: true });
+  const text = await callLLM(prompt, {
+    maxTokens: 512,
+    jsonOnly: true,
+    model: pickGeminiModel(persona.slug),
+  });
 
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
