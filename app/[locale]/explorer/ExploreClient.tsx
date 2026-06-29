@@ -15,6 +15,7 @@ import {
   getAllVSSnapshot,
   getVSChallengerCount,
   isVSJoinable,
+  didUserChallengeVS,
   type VSData,
   type VSFeedSnapshot,
 } from "@/lib/contract";
@@ -282,10 +283,24 @@ export default function ExploreClient() {
     }
   }, []);
 
-  const openChallenges = useMemo(
-    () => allVS.filter((vs) => isVSJoinable(vs, address ?? undefined)),
-    [address, allVS]
-  );
+  // Live arena = open/accepted markets. Participation filter decides whether to
+  // show only markets I can join, only ones I've joined, or both. Joined markets
+  // stay visible (with a badge) instead of vanishing once I bet.
+  const openChallenges = useMemo(() => {
+    const live = allVS.filter((vs) => vs.state === "open" || vs.state === "accepted");
+    if (address && filters.participation === "joined") {
+      return live.filter((vs) => didUserChallengeVS(vs, address));
+    }
+    if (address && filters.participation === "available") {
+      return live.filter((vs) => isVSJoinable(vs, address));
+    }
+    // "all": joinable by me OR already joined (no wallet → just joinable)
+    return live.filter(
+      (vs) =>
+        isVSJoinable(vs, address ?? undefined) ||
+        (address ? didUserChallengeVS(vs, address) : false)
+    );
+  }, [address, allVS, filters.participation]);
 
   const filteredOpenChallenges = useMemo(
     () => applyExploreFilters(openChallenges, filters),
@@ -363,7 +378,8 @@ export default function ExploreClient() {
     sort !== DEFAULT_EXPLORE_FILTERS.sort ||
     search.trim().length > 0 ||
     needsChallengers !== DEFAULT_EXPLORE_FILTERS.needsChallengers ||
-    expiringSoon !== DEFAULT_EXPLORE_FILTERS.expiringSoon;
+    expiringSoon !== DEFAULT_EXPLORE_FILTERS.expiringSoon ||
+    filters.participation !== DEFAULT_EXPLORE_FILTERS.participation;
 
   /**
    * Proving Ground only narrows on category, search, and expiring window.
@@ -577,7 +593,33 @@ export default function ExploreClient() {
     }
 
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <>
+        {address && (
+          <div className="mb-4 inline-flex gap-1 border border-pv-border/20 bg-pv-bg p-1">
+            {(["all", "available", "joined"] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => updateFilters({ participation: p })}
+                aria-pressed={filters.participation === p}
+                className={`px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition-colors ${
+                  filters.participation === p
+                    ? "bg-pv-emerald/[0.18] text-pv-text"
+                    : "text-pv-muted hover:text-pv-text"
+                }`}
+              >
+                {t(
+                  p === "all"
+                    ? "participationAll"
+                    : p === "joined"
+                      ? "participationJoined"
+                      : "participationAvailable"
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {filteredOpenChallenges.map((vs) => (
           <motion.div
             key={vs.id}
@@ -595,7 +637,8 @@ export default function ExploreClient() {
             />
           </motion.div>
         ))}
-      </div>
+        </div>
+      </>
     );
   };
 

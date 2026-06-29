@@ -428,7 +428,7 @@ export default function HomePage() {
               <div className="p-5 sm:p-6 text-center bg-pv-bg">
                 <LiveStat
                   value={rev.totalUsd}
-                  format={(n) => n.toFixed(3)}
+                  format={(n) => n.toFixed(2)}
                   label={t("usdcEarned")}
                   labelPosition="below"
                   size="lg"

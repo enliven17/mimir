@@ -12,6 +12,9 @@ export const EXPLORE_SORT_OPTIONS: ExploreSort[] = [
   "strength",
 ];
 
+/** Wallet participation filter for the live arena. Applied in ExploreClient (needs address). */
+export type ParticipationFilter = "all" | "joined" | "available";
+
 export interface ExploreFilterState {
   cat: string;
   minStake: number;
@@ -19,6 +22,7 @@ export interface ExploreFilterState {
   search: string;
   needsChallengers: boolean;
   expiringSoon: boolean;
+  participation: ParticipationFilter;
 }
 
 export const DEFAULT_EXPLORE_FILTERS: ExploreFilterState = {
@@ -28,6 +32,7 @@ export const DEFAULT_EXPLORE_FILTERS: ExploreFilterState = {
   search: "",
   needsChallengers: false,
   expiringSoon: false,
+  participation: "all",
 };
 
 /** Valores permitidos para `minStake` (URL `?min=`) y chips del sidebar Explore */
@@ -64,8 +69,11 @@ export function parseExploreSearchParams(sp: URLSearchParams): ExploreFilterStat
   const search = sp.get("q") ?? "";
   const needsChallengers = sp.get("needs") === "1";
   const expiringSoon = sp.get("soon") === "1";
+  const mineRaw = sp.get("mine");
+  const participation: ParticipationFilter =
+    mineRaw === "joined" || mineRaw === "available" ? mineRaw : "all";
 
-  return { cat, minStake, sort, search, needsChallengers, expiringSoon };
+  return { cat, minStake, sort, search, needsChallengers, expiringSoon, participation };
 }
 
 /** Serializa solo desviaciones respecto a defaults (URLs limpias). */
@@ -76,6 +84,7 @@ export function serializeExploreFilters(f: ExploreFilterState): string {
   if (f.sort !== "newest") p.set("sort", f.sort);
   if (f.needsChallengers) p.set("needs", "1");
   if (f.expiringSoon) p.set("soon", "1");
+  if (f.participation !== "all") p.set("mine", f.participation);
   const q = f.search.trim();
   if (q) p.set("q", q);
   return p.toString();

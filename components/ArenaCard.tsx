@@ -1,7 +1,7 @@
 "use client";
 
 import { Link } from "@/i18n/navigation";
-import { getVSChallengerCount, isVSJoinable, type VSData } from "@/lib/contract";
+import { getVSChallengerCount, isVSJoinable, didUserChallengeVS, type VSData } from "@/lib/contract";
 import { computeClaimQuality } from "@/lib/claimQuality";
 import { useTranslations } from "next-intl";
 
@@ -118,6 +118,7 @@ export default function ArenaCard({
         deadline: vs.deadline ?? 0,
       });
   const canJoin = isVSJoinable(vs as VSData, viewerAddress ?? undefined);
+  const joined = viewerAddress ? didUserChallengeVS(vs as VSData, viewerAddress) : false;
   const showNeedsBadge =
     !hideQualityPills && !isArchived && activeChallengers < 2 && canJoin;
 
@@ -154,6 +155,11 @@ export default function ArenaCard({
             <span className={`shrink-0 ${sampleBadgePillClass}`}>{sampleBadgeLabel}</span>
           ) : null}
           <span className={statusPillClass}>{t(statusPillMessageKey)}</span>
+          {joined ? (
+            <span className="font-display text-xs font-semibold uppercase tracking-wide text-pv-emerald bg-pv-emerald/15 px-2 py-1 ring-1 ring-pv-emerald/30">
+              {t("arenaJoinedBadge")}
+            </span>
+          ) : null}
         </div>
         <span className="rounded px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-pv-muted ring-1 ring-white/[0.1] bg-white/[0.03] backdrop-blur-sm">
           {t("arenaIdBadge", { code: formatArenaIdCode(vs.id) })}
@@ -261,12 +267,12 @@ export default function ArenaCard({
           <Link
             href={`/vs/${vs.id}`}
             className={
-              isArchived
+              isArchived || joined
                 ? "inline-flex shrink-0 items-center justify-center rounded-md border border-white/[0.15] bg-transparent px-5 py-2 font-display text-[10px] font-bold uppercase tracking-[0.18em] text-pv-muted shadow-none transition-[color,border-color,transform,box-shadow] duration-200 ease-out hover:-translate-y-px hover:border-white/[0.28] hover:bg-transparent hover:text-pv-text hover:shadow-[0_4px_18px_-6px_rgba(0,0,0,0.45)] active:translate-y-0 active:scale-[0.98] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-surface"
                 : "inline-flex shrink-0 items-center justify-center rounded-md bg-pv-text px-5 py-2 font-display text-[10px] font-bold uppercase tracking-[0.18em] text-pv-bg shadow-none transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out hover:-translate-y-px hover:bg-pv-emerald hover:text-pv-bg hover:shadow-[0_6px_18px_-4px_rgba(51,79,169,0.35)] active:translate-y-0 active:scale-[0.98] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/40 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-surface"
             }
           >
-            {isArchived ? t("arenaViewDetails") : t("arenaJoin")}
+            {isArchived ? t("arenaViewDetails") : joined ? t("arenaViewDetails") : t("arenaJoin")}
           </Link>
         </div>
       </div>

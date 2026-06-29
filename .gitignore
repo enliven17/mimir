@@ -33,6 +33,9 @@ deploy/keystore/
 *.key
 *.pem
 
+scripts/traction-bet.ts
+traction-wallets.env
+
 # ========================
 # Testing & coverage
 # ========================

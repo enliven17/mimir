@@ -114,6 +114,7 @@ test("explore filter URL serialization round-trips new flags", () => {
     search: "btc",
     needsChallengers: true,
     expiringSoon: true,
+    participation: "joined",
   });
 
   const parsed = parseExploreSearchParams(new URLSearchParams(serialized));
@@ -125,5 +126,6 @@ test("explore filter URL serialization round-trips new flags", () => {
     search: "btc",
     needsChallengers: true,
     expiringSoon: true,
+    participation: "joined",
   });
 });
