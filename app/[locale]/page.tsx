@@ -203,6 +203,7 @@ function AnimatedStatNumber({
 export default function HomePage() {
   const [allVS, setAllVS]     = useState<VSData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rev, setRev] = useState<{ totalCalls: number; totalUsd: number; uniqueSellers: number } | null>(null);
   const t  = useTranslations("home");
   const tStamp = useTranslations("stamp");
 
@@ -225,6 +226,13 @@ export default function HomePage() {
   useEffect(() => {
     void loadVS({ showPageLoading: true });
   }, [loadVS]);
+
+  useEffect(() => {
+    fetch("/api/x402/revenue")
+      .then((r) => r.json())
+      .then((s) => setRev({ totalCalls: s.totalCalls, totalUsd: s.totalUsd, uniqueSellers: s.uniqueSellers }))
+      .catch(() => setRev(null));
+  }, []);
 
   const openVS     = allVS.filter((v) => isVSJoinable(v));
   const resolvedVS = allVS.filter((v) => v.state === "resolved");
@@ -402,6 +410,47 @@ export default function HomePage() {
               />
             </div>
           </div>
+
+          {/* x402 nanopayment strip — live agent-to-agent earnings */}
+          {rev && (
+            <div className="grid grid-cols-1 gap-px border-x border-t border-pv-border/25 bg-pv-border/25 sm:grid-cols-3">
+              <div className="p-5 sm:p-6 text-center bg-pv-bg">
+                <LiveStat
+                  value={rev.totalCalls}
+                  label={t("x402Payments")}
+                  labelPosition="below"
+                  size="lg"
+                  color="cyan"
+                  labelClassName="text-[12px]"
+                  className="items-center"
+                />
+              </div>
+              <div className="p-5 sm:p-6 text-center bg-pv-bg">
+                <LiveStat
+                  value={rev.totalUsd}
+                  format={(n) => n.toFixed(3)}
+                  label={t("usdcEarned")}
+                  labelPosition="below"
+                  size="lg"
+                  color="gold"
+                  suffix="USDC"
+                  labelClassName="text-[12px]"
+                  className="items-center"
+                />
+              </div>
+              <div className="p-5 sm:p-6 text-center bg-pv-bg">
+                <LiveStat
+                  value={rev.uniqueSellers}
+                  label={t("sellerWallets")}
+                  labelPosition="below"
+                  size="lg"
+                  color="emerald"
+                  labelClassName="text-[12px]"
+                  className="items-center"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </AnimatedItem>
 
