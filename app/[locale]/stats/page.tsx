@@ -8,12 +8,13 @@ import {
   getExplorerAddressUrl,
   getExplorerTxUrl,
 } from "@/lib/arc";
-import { MIMIR_ABI } from "@/lib/mimir-abi";
+import { MIMIR_ABI, STATE } from "@/lib/mimir-abi";
 import { getPersonaForAddress } from "@/lib/council-resolver";
 import type { PersonaSpec } from "@/agents/council/personas";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
@@ -322,8 +323,9 @@ export default async function StatsPage() {
   const humanStakers   = stakers.filter((s) => s.kind === "human");
   const councilStakers = stakers.filter((s) => s.kind === "council");
 
+  const resolvedClaims = claims.filter((c) => c.state === STATE.RESOLVED);
   const totalClaims    = claims.length;
-  const totalResolved  = settlements.length;
+  const totalResolved  = resolvedClaims.length;
   const openClaims     = claims.filter((c) => c.state === 0 || c.state === 1).length;
 
   // Total wagered = creator stakes + challenger stakes across all claims, in USDC.
@@ -333,19 +335,20 @@ export default async function StatsPage() {
   );
   const totalWageredUsdc = microToUsdc(totalWageredWei);
 
-  // Confidence tiers from on-chain settlement events.
-  const firm      = settlements.filter((s) => s.confidence >= 80).length;
-  const contested = settlements.filter((s) => s.confidence >= 60 && s.confidence < 80).length;
-  const low       = settlements.filter((s) => s.confidence < 60 && s.confidence > 0).length;
+  // Confidence tiers from resolved on-chain claim state. The settlement
+  // timeline below is intentionally capped; aggregate stats must not be.
+  const firm      = resolvedClaims.filter((c) => c.confidence >= 80).length;
+  const contested = resolvedClaims.filter((c) => c.confidence >= 60 && c.confidence < 80).length;
+  const low       = resolvedClaims.filter((c) => c.confidence < 60 && c.confidence > 0).length;
   const accuracyPct =
     totalResolved > 0 ? Math.round((firm / totalResolved) * 100) : 0;
 
   // Refund rate: DRAW (3) or UNRESOLVABLE (4)
-  const refunds  = settlements.filter((s) => s.winnerSide === 3 || s.winnerSide === 4).length;
+  const refunds  = resolvedClaims.filter((c) => c.winnerSide === 3 || c.winnerSide === 4).length;
   const refundPct = totalResolved > 0 ? Math.round((refunds / totalResolved) * 100) : 0;
 
-  const creatorWins    = settlements.filter((s) => s.winnerSide === 1).length;
-  const challengerWins = settlements.filter((s) => s.winnerSide === 2).length;
+  const creatorWins    = resolvedClaims.filter((c) => c.winnerSide === 1).length;
+  const challengerWins = resolvedClaims.filter((c) => c.winnerSide === 2).length;
   const decided        = creatorWins + challengerWins;
 
   return (
@@ -354,7 +357,7 @@ export default async function StatsPage() {
       <div className="mx-auto max-w-[1100px] px-4 pt-6 sm:px-6 lg:px-8">
       <header className="mb-8">
         <p className="text-center text-sm text-pv-muted">
-          Every number on this page is read directly from the Mimir contract on Arc Testnet. Cached for 30 seconds.
+          Every number on this page is read directly from the Mimir contract on Arc Testnet.
         </p>
       </header>
 
