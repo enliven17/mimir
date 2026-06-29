@@ -19,8 +19,10 @@ import {
   getVSTotalPot,
   getUserVSDirect,
   hasVSWinner,
+  hasZeroAddressWinner,
   isVSJoinable,
   isVSPrivate,
+  isVSMultiChallengerWin,
   requestResolveVS,
   resetVSResolveRequest,
   type ClaimChallenger,
@@ -1091,7 +1093,10 @@ export default function VSDetailPage() {
       ? tStamp("lost")
       : isDesignSampleWin
         ? tStamp("youWon")
-        : tStamp("won", { address: shortenAddress(display.winner) });
+        : display.winner_side === "challengers" &&
+            (isVSMultiChallengerWin(display) || hasZeroAddressWinner(display))
+          ? "Challengers won"
+          : tStamp("won", { address: shortenAddress(display.winner) });
   const provenResultTone = isDesignSampleLost ? "lost" : isDesignSampleWin ? "win" : undefined;
   const winnerAmountLabel =
     !hasWinner

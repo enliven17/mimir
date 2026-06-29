@@ -18,6 +18,7 @@ interface PaymentEvent {
   resource: string;
   priceUsd: number;
   payer: string | null;
+  seller: string | null;
   txId: string | null;
   at: number;
 }
@@ -25,7 +26,9 @@ interface RevenueSummary {
   totalCalls: number;
   totalUsd: number;
   uniquePayers: number;
+  uniqueSellers: number;
   byResource: Array<{ resource: string; calls: number; usd: number }>;
+  bySeller: Array<{ seller: string; calls: number; usd: number }>;
   recent: PaymentEvent[];
 }
 
@@ -79,10 +82,11 @@ export default function RevenuePage() {
 
       {data && (
         <>
-          <section className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <section className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-4">
             <Stat label="Paid calls" value={data.totalCalls.toLocaleString()} />
             <Stat label="Total earned" value={`$${data.totalUsd.toFixed(6)}`} accent />
             <Stat label="Paying agents" value={data.uniquePayers.toLocaleString()} />
+            <Stat label="Seller wallets" value={data.uniqueSellers.toLocaleString()} />
           </section>
 
           <section className="mt-10">
@@ -96,6 +100,33 @@ export default function RevenuePage() {
               {data.byResource.map((r) => (
                 <div key={r.resource} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <code className="min-w-0 break-all font-mono text-sm text-pv-text">{r.resource}</code>
+                  <div className="shrink-0 text-left text-sm sm:text-right">
+                    <span className="font-mono font-semibold text-pv-text">${r.usd.toFixed(6)}</span>
+                    <span className="ml-3 font-mono text-pv-muted">{r.calls} calls</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-10">
+            <h2 className="label">By seller wallet</h2>
+            <div className="card mt-3 divide-y divide-white/[0.08]">
+              {data.bySeller.length === 0 && (
+                <p className="px-4 py-6 font-mono text-sm text-pv-muted">
+                  Seller wallet accounting appears after the next settled payment.
+                </p>
+              )}
+              {data.bySeller.map((r) => (
+                <div key={r.seller} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <a
+                    href={`${ARCSCAN}/address/${r.seller}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 break-all font-mono text-sm text-pv-text underline-offset-2 hover:text-pv-emerald hover:underline"
+                  >
+                    {short(r.seller)}
+                  </a>
                   <div className="shrink-0 text-left text-sm sm:text-right">
                     <span className="font-mono font-semibold text-pv-text">${r.usd.toFixed(6)}</span>
                     <span className="ml-3 font-mono text-pv-muted">{r.calls} calls</span>
@@ -121,17 +152,18 @@ export default function RevenuePage() {
               <table className="w-full table-fixed text-sm">
                 <thead className="border-b border-white/[0.08] text-left">
                   <tr className="font-mono text-[11px] uppercase tracking-[0.12em] text-pv-muted">
-                    <th className="w-[18%] px-4 py-2.5 font-bold">When</th>
-                    <th className="w-[30%] px-4 py-2.5 font-bold">Endpoint</th>
-                    <th className="w-[18%] px-4 py-2.5 font-bold">Payer</th>
-                    <th className="w-[16%] px-4 py-2.5 text-right font-bold">USDC</th>
-                    <th className="w-[18%] px-4 py-2.5 text-right font-bold">Receipt</th>
+                    <th className="w-[14%] px-4 py-2.5 font-bold">When</th>
+                    <th className="w-[26%] px-4 py-2.5 font-bold">Endpoint</th>
+                    <th className="w-[15%] px-4 py-2.5 font-bold">Payer</th>
+                    <th className="w-[15%] px-4 py-2.5 font-bold">Seller</th>
+                    <th className="w-[14%] px-4 py-2.5 text-right font-bold">USDC</th>
+                    <th className="w-[16%] px-4 py-2.5 text-right font-bold">Receipt</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
                   {data.recent.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center font-mono text-pv-muted">
+                      <td colSpan={6} className="px-4 py-8 text-center font-mono text-pv-muted">
                         Waiting for the first payment…
                       </td>
                     </tr>
@@ -145,6 +177,7 @@ export default function RevenuePage() {
                         <code className="block truncate font-mono text-pv-text" title={e.resource}>{e.resource}</code>
                       </td>
                       <td className="px-4 py-2.5 font-mono text-pv-muted">{short(e.payer)}</td>
+                      <td className="px-4 py-2.5 font-mono text-pv-muted">{short(e.seller)}</td>
                       <td className="px-4 py-2.5 text-right font-mono font-semibold text-pv-text">
                         ${e.priceUsd.toFixed(6)}
                       </td>
@@ -189,7 +222,7 @@ export default function RevenuePage() {
               >
                 Gateway Wallet contract ↗
               </a>
-              . Each receipt links to the paying agent&apos;s on-chain account.
+              . Seller wallets show which persona or platform wallet earned each read.
             </p>
           </section>
         </>
@@ -239,8 +272,11 @@ function PaymentCard({ event }: { event: PaymentEvent }) {
           ${event.priceUsd.toFixed(6)}
         </span>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-3 font-mono text-xs">
-        <span className="min-w-0 truncate text-pv-muted">{short(event.payer)}</span>
+      <div className="mt-3 grid grid-cols-1 gap-1 font-mono text-xs text-pv-muted">
+        <span className="min-w-0 truncate">payer {short(event.payer)}</span>
+        <span className="min-w-0 truncate">seller {short(event.seller)}</span>
+      </div>
+      <div className="mt-3 flex items-center justify-end gap-3 font-mono text-xs">
         <span className="shrink-0">{receipt}</span>
       </div>
     </div>

@@ -53,6 +53,10 @@ const DEFAULT_STAKE_USDC     = 2;
 const LLM_THROTTLE_MS = Number(process.env.COUNCIL_LLM_THROTTLE_MS ?? 8000);
 let lastLlmCallAt = 0;
 
+function peerReasoningKey(claimId: number, personaSlug: string): string {
+  return `${claimId}:${personaSlug}`;
+}
+
 async function throttleLlm(): Promise<void> {
   const now = Date.now();
   const since = now - lastLlmCallAt;
@@ -131,7 +135,12 @@ export async function evaluatePersonaForClaim(
   let verdict: PersonaVerdict;
   try {
     await throttleLlm();
-    verdict = await evaluateClaimAsPersona(persona, claim, evidence.text);
+    verdict = await evaluateClaimAsPersona(
+      persona,
+      claim,
+      evidence.text,
+      ctx.peerReasoning?.get(peerReasoningKey(claim.id, persona.slug)) ?? [],
+    );
   } catch (err) {
     return {
       shouldStake: false,

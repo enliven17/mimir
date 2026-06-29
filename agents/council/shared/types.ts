@@ -63,6 +63,7 @@ export interface PersonaRunnerContext {
   publicClient:     PublicClient;
   contractAddress:  `0x${string}`;
   evidenceCache:    Map<number, EvidenceCacheEntry>;
+  peerReasoning?:   Map<string, string[]>;
 }
 
 export interface EvidenceCacheEntry {

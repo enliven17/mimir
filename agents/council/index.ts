@@ -52,6 +52,7 @@ import {
   personaWalletIdEnv,
 } from "./personas";
 import { runPersonaForClaim } from "./shared/persona-runner";
+import { buyPeerReasoning } from "./shared/peer-reasoning";
 import type {
   ClaimOnChain,
   PersonaRunnerContext,
@@ -66,6 +67,11 @@ const POLL_INTERVAL_MS = Number(process.env.COUNCIL_POLL_INTERVAL_MS ?? 180_000)
  */
 const MAX_CLAIMS_PER_CYCLE = Number(process.env.COUNCIL_MAX_CLAIMS ?? 1);
 const DECISION_DELAY_MS    = Number(process.env.COUNCIL_DECISION_DELAY_MS ?? 30000);
+const PEER_READS_ENABLED   = process.env.COUNCIL_PEER_READS === "1";
+const PEER_READS_BASE_URL  = process.env.MIMIR_BASE_URL ?? "http://localhost:3000";
+const PEER_READS_PER_PERSONA = Number(process.env.COUNCIL_PEER_READS_PER_PERSONA ?? 2);
+const PEER_READ_DELAY_MS   = Number(process.env.COUNCIL_PEER_READ_DELAY_MS ?? 15000);
+const PEER_READ_CAP_USDC   = Number(process.env.COUNCIL_PEER_READ_CAP_USDC ?? "0.003");
 const CONTRACT_ADDRESS     = getContractAddress();
 const publicClient         = createArcPublicClient();
 
@@ -179,10 +185,12 @@ async function poll(): Promise<void> {
   // Shared per-cycle evidence cache — one HTTP fetch per claim no matter
   // how many personas need it.
   const evidenceCache = new Map<number, EvidenceCacheEntry>();
+  const peerReasoning = new Map<string, string[]>();
   const ctx: PersonaRunnerContext = {
     publicClient,
     contractAddress: CONTRACT_ADDRESS,
     evidenceCache,
+    peerReasoning,
   };
 
   // Pre-load joinable claims so we don't refetch in the inner loop.
@@ -215,6 +223,31 @@ async function poll(): Promise<void> {
   for (const persona of ACTIVE_PERSONAS) {
     for (const claim of claims) {
       try {
+        if (PEER_READS_ENABLED && PEER_READS_PER_PERSONA > 0) {
+          const reads = await buyPeerReasoning({
+            buyer: persona,
+            activePersonas: ACTIVE_PERSONAS,
+            claimId: claim.id,
+            baseUrl: PEER_READS_BASE_URL,
+            readsPerPersona: PEER_READS_PER_PERSONA,
+            capUsdc: PEER_READ_CAP_USDC,
+            delayMs: PEER_READ_DELAY_MS,
+          });
+          if (reads.length > 0) {
+            const formattedReads = reads.map(
+              (read) => `${read.sellerName}: ${read.reasoning}`,
+            );
+            peerReasoning.set(`${claim.id}:${persona.slug}`, formattedReads);
+            const paidUsdc = reads.reduce(
+              (sum, read) => sum + Number(read.pricePaidAtomic ?? "0") / 1_000_000,
+              0,
+            );
+            console.log(
+              `[council:${persona.slug}] bought ${reads.length} peer read(s) for claim #${claim.id} ` +
+              `(${paidUsdc.toFixed(6)} USDC)`,
+            );
+          }
+        }
         const receipt = await runPersonaForClaim(persona, claim, ctx);
         if (receipt) stakesThisCycle += 1;
       } catch (err) {
@@ -246,6 +279,8 @@ async function main(): Promise<void> {
   console.log(`  Active personas: ${ACTIVE_PERSONAS.length} / ${COUNCIL_PERSONAS.length}`);
   console.log(`  Max claims/cycle: ${MAX_CLAIMS_PER_CYCLE}`);
   console.log(`  Decision gap   : ${DECISION_DELAY_MS / 1000}s`);
+  console.log(`  Peer reads     : ${PEER_READS_ENABLED ? `${PEER_READS_PER_PERSONA}/persona via ${PEER_READS_BASE_URL}` : "off"}`);
+  console.log(`  Peer read gap  : ${PEER_READ_DELAY_MS / 1000}s`);
   console.log(`  Poll every     : ${POLL_INTERVAL_MS / 1000}s`);
   console.log("───────────────────────────────────────────────");
 

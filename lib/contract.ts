@@ -796,8 +796,8 @@ export function mapClaimToVS(claim: ClaimData): VSData {
 
   let winner = ZERO_ADDRESS;
   if (claim.winner_side === "creator") winner = claim.creator;
-  else if (claim.winner_side === "challengers" && claim.challenger_count === 1) {
-    winner = firstChallenger;
+  else if (claim.winner_side === "challengers") {
+    winner = claim.challenger_addresses?.[0] ?? firstChallenger;
   }
 
   return {
@@ -825,6 +825,14 @@ export function getVSChallengerCount(vs: VSData) {
     return vs.challenger_count;
   }
   return vs.opponent !== ZERO_ADDRESS ? 1 : 0;
+}
+
+export function hasZeroAddressWinner(vs: VSData) {
+  return !vs.winner || vs.winner === ZERO_ADDRESS;
+}
+
+export function isVSMultiChallengerWin(vs: VSData) {
+  return vs.winner_side === "challengers" && getVSChallengerCount(vs) !== 1;
 }
 
 export function getVSTotalPot(vs: VSData) {

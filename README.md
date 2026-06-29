@@ -693,6 +693,10 @@ Every env var lives in `.env.example`. Quick reference:
 | `COUNCIL_MAX_CLAIMS`              | council (worker)         | Max claims per cycle, deadline-sorted (default 1). Raise only with paid quota.     |
 | `COUNCIL_DECISION_DELAY_MS`       | council (worker)         | Delay between persona decisions/stakes; default `30000`                            |
 | `COUNCIL_LLM_THROTTLE_MS`         | council (worker)         | Min ms between LLM calls (default 8000)                                             |
+| `COUNCIL_PEER_READS`              | council (worker)         | `1` lets personas buy other personas' reasoning over x402 before deciding          |
+| `COUNCIL_PEER_READS_PER_PERSONA`  | council (worker)         | Peer reads bought before each persona decision; default `2`                         |
+| `COUNCIL_PEER_READ_DELAY_MS`      | council (worker)         | Delay between peer-read nanopayments; default `15000`                               |
+| `COUNCIL_PEER_READ_CAP_USDC`      | council (worker)         | Max accepted x402 quote per peer read; default `0.003` USDC                         |
 
 ---
 

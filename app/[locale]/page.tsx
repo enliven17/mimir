@@ -10,7 +10,9 @@ import {
   getVSSingleWinnerPayout,
   getVSTotalPot,
   hasVSWinner,
+  hasZeroAddressWinner,
   isVSJoinable,
+  isVSMultiChallengerWin,
   type VSData,
 } from "@/lib/contract";
 import { ZERO_ADDRESS, shortenAddress } from "@/lib/constants";
@@ -700,7 +702,11 @@ export default function HomePage() {
             <div className="grid gap-px border-x border-pv-border/25 bg-pv-border/25">
               {decidedResolvedVS.slice(0, 6).map((vs) => {
                 const payout = getVSSingleWinnerPayout(vs);
-                const winnerLabel = tStamp("won", { address: shortenAddress(vs.winner) });
+                const winnerLabel =
+                  vs.winner_side === "challengers" &&
+                  (isVSMultiChallengerWin(vs) || hasZeroAddressWinner(vs))
+                    ? "Challengers won"
+                    : tStamp("won", { address: shortenAddress(vs.winner) });
 
                 return (
                   <Link

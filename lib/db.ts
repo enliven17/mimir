@@ -193,11 +193,14 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     resource TEXT NOT NULL,
     price_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
     payer TEXT,
+    seller TEXT,
     tx_id TEXT,
     at BIGINT NOT NULL DEFAULT 0
   )` },
+  { sql: "ALTER TABLE x402_payments ADD COLUMN IF NOT EXISTS seller TEXT" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_at ON x402_payments(at DESC)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_resource ON x402_payments(resource)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_seller ON x402_payments(seller)" },
   {
     sql: "INSERT INTO sync_meta(key, value) VALUES($1, $2) ON CONFLICT(key) DO NOTHING",
     args: ["last_claim_count", "0"],
@@ -842,6 +845,7 @@ export interface X402PaymentRow {
   resource: string;
   price_usd: number;
   payer: string | null;
+  seller: string | null;
   tx_id: string | null;
   at: number;
 }
@@ -850,15 +854,17 @@ export interface X402RevenueSummary {
   totalCalls: number;
   totalUsd: number;
   uniquePayers: number;
+  uniqueSellers: number;
   byResource: Array<{ resource: string; calls: number; usd: number }>;
+  bySeller: Array<{ seller: string; calls: number; usd: number }>;
   recent: X402PaymentRow[];
 }
 
 export async function insertX402Payment(e: X402PaymentRow): Promise<void> {
   const pool = await getDb();
   await execute(pool, {
-    sql: "INSERT INTO x402_payments(resource, price_usd, payer, tx_id, at) VALUES (?, ?, ?, ?, ?)",
-    args: [e.resource, e.price_usd, e.payer, e.tx_id, e.at],
+    sql: "INSERT INTO x402_payments(resource, price_usd, payer, seller, tx_id, at) VALUES (?, ?, ?, ?, ?, ?)",
+    args: [e.resource, e.price_usd, e.payer, e.seller, e.tx_id, e.at],
   });
 }
 
@@ -867,7 +873,8 @@ export async function getX402RevenueSummary(limit = 25): Promise<X402RevenueSumm
   const [totals, byResource, recent] = await Promise.all([
     execute(pool, {
       sql: `SELECT COUNT(*) AS calls, COALESCE(SUM(price_usd), 0) AS usd,
-              COUNT(DISTINCT LOWER(payer)) FILTER (WHERE payer IS NOT NULL) AS payers
+              COUNT(DISTINCT LOWER(payer)) FILTER (WHERE payer IS NOT NULL) AS payers,
+              COUNT(DISTINCT LOWER(seller)) FILTER (WHERE seller IS NOT NULL) AS sellers
             FROM x402_payments`,
     }),
     execute(pool, {
@@ -875,17 +882,30 @@ export async function getX402RevenueSummary(limit = 25): Promise<X402RevenueSumm
             FROM x402_payments GROUP BY resource ORDER BY usd DESC`,
     }),
     execute(pool, {
-      sql: "SELECT resource, price_usd, payer, tx_id, at FROM x402_payments ORDER BY at DESC, id DESC LIMIT ?",
+      sql: "SELECT resource, price_usd, payer, seller, tx_id, at FROM x402_payments ORDER BY at DESC, id DESC LIMIT ?",
       args: [limit],
     }),
   ]);
+  const bySeller = await execute(pool, {
+    sql: `SELECT seller, COUNT(*) AS calls, COALESCE(SUM(price_usd), 0) AS usd
+          FROM x402_payments
+          WHERE seller IS NOT NULL
+          GROUP BY seller
+          ORDER BY usd DESC`,
+  });
   const t = totals.rows[0] ?? {};
   return {
     totalCalls: getNumber(t.calls),
     totalUsd: Math.round(getNumber(t.usd) * 1e6) / 1e6,
     uniquePayers: getNumber(t.payers),
+    uniqueSellers: getNumber(t.sellers),
     byResource: byResource.rows.map((r) => ({
       resource: getString(r.resource),
+      calls: getNumber(r.calls),
+      usd: Math.round(getNumber(r.usd) * 1e6) / 1e6,
+    })),
+    bySeller: bySeller.rows.map((r) => ({
+      seller: getString(r.seller),
       calls: getNumber(r.calls),
       usd: Math.round(getNumber(r.usd) * 1e6) / 1e6,
     })),
@@ -893,6 +913,7 @@ export async function getX402RevenueSummary(limit = 25): Promise<X402RevenueSumm
       resource: getString(r.resource),
       price_usd: getNumber(r.price_usd),
       payer: getNullableString(r.payer),
+      seller: getNullableString(r.seller),
       tx_id: getNullableString(r.tx_id),
       at: getNumber(r.at),
     })),

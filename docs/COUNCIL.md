@@ -125,6 +125,7 @@ Gemini and fallback providers can 429 if the council rushes a crowded market. Th
 | **`COUNCIL_MAX_CLAIMS`** | `agents/council/index.ts` | Caps work at the N claims closest to their deadline. Defaults to 1. |
 | **`COUNCIL_DECISION_DELAY_MS`** | `agents/council/index.ts` | Spaces persona decisions/stakes. Defaults to 30,000ms. |
 | **LLM throttle** | `agents/council/shared/persona-runner.ts` | Extra serial gap of `COUNCIL_LLM_THROTTLE_MS` (default 8000ms) between LLM calls inside the persona runner. |
+| **Peer reads** | `agents/council/shared/peer-reasoning.ts` | Optional x402 council-to-council reasoning buys. Enable with `COUNCIL_PEER_READS=1`; pace with `COUNCIL_PEER_READ_DELAY_MS`. |
 
 Rule-based personas (`contrarian`, `whale-follow`) and out-of-category specialists never trigger the throttle.
 
@@ -133,6 +134,12 @@ The market-creator can also buy council opinions before opening a market via
 (`MARKET_CREATOR_PREFLIGHT_DELAY_MS`) and pay into each persona's wallet just
 like settlement votes do. This keeps market creation selective without asking
 all personas to react on-chain at once.
+
+Council personas can also buy each other's reasoning before deciding. When
+`COUNCIL_PEER_READS=1`, each buyer persona pays selected seller personas through
+`GET /api/council/reasoning`, so revenue lands directly in the seller persona's
+wallet and appears in the x402 ledger. Keep `COUNCIL_PEER_READS_PER_PERSONA`
+small: a full mesh of ten personas can become 90 paid reads per claim.
 
 ---
 

@@ -459,6 +459,86 @@ function JuryDiagram() {
 }
 
 /* ── Section primitives ──────────────────────────────────────────────────── */
+function openPeepsAvatar(seed: string): string {
+  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}`;
+}
+
+function CouncilNanopaymentMeshDiagram() {
+  const personas = [
+    { seed: "council-optimist", label: "Optimist", x: 330, y: 88 },
+    { seed: "council-pessimist", label: "Pessimist", x: 500, y: 88 },
+    { seed: "council-statistician", label: "Stats", x: 670, y: 88 },
+    { seed: "council-contrarian", label: "Contrarian", x: 415, y: 250 },
+    { seed: "council-doomer", label: "Doomer", x: 585, y: 250 },
+  ];
+
+  return (
+    <svg viewBox="0 0 1080 430" className="h-auto w-full min-w-[820px]" role="img" aria-label="Council nanopayment mesh">
+      <defs>
+        <marker id="arrow-mesh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill={C.accent} />
+        </marker>
+      </defs>
+
+      <text x="540" y="34" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">X402 NANOPAYMENT ROUTES</text>
+
+      <g>
+        <rect x="34" y="82" width="210" height="86" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.7" />
+        <circle cx="78" cy="125" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
+        <image href={openPeepsAvatar("market-creator")} x="52" y="96" width="52" height="58" />
+        <text x="154" y="112" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">CREATOR</text>
+        <text x="154" y="136" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>buys preflight</text>
+        <text x="154" y="154" textAnchor="middle" fontSize="10" fill={C.muted}>candidate quality</text>
+      </g>
+
+      <g>
+        <rect x="34" y="240" width="210" height="86" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.5" />
+        <circle cx="78" cy="283" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
+        <image href={openPeepsAvatar("oracle-agent")} x="52" y="254" width="52" height="58" />
+        <text x="154" y="270" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">ORACLE</text>
+        <text x="154" y="294" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>buys verdicts</text>
+        <text x="154" y="312" textAnchor="middle" fontSize="10" fill={C.muted}>votes + reasoning</text>
+      </g>
+
+      <g>
+        <rect x="836" y="146" width="200" height="132" rx="16" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="936" y="174" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">REVENUE LEDGER</text>
+        <text x="936" y="202" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>x402_payments</text>
+        <text x="936" y="226" textAnchor="middle" fontSize="11" fill={C.muted}>payer wallet</text>
+        <text x="936" y="246" textAnchor="middle" fontSize="11" fill={C.muted}>seller wallet</text>
+        <text x="936" y="266" textAnchor="middle" fontSize="11" fill={C.muted}>resource + tx</text>
+      </g>
+
+      <g>
+        <rect x="286" y="52" width="430" height="318" rx="18" fill={C.bg} stroke={C.border} strokeWidth="1.4" strokeDasharray="5 5" />
+        <rect x="360" y="186" width="282" height="58" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.7" />
+        <text x="501" y="208" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">COUNCIL MARKET</text>
+        <text x="501" y="230" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>$0.001 reasoning reads</text>
+      </g>
+
+      {personas.map((persona) => (
+        <g key={persona.seed}>
+          <rect x={persona.x - 52} y={persona.y - 38} width="104" height="112" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.4" />
+          <circle cx={persona.x} cy={persona.y - 2} r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
+          <image href={openPeepsAvatar(persona.seed)} x={persona.x - 26} y={persona.y - 32} width="52" height="58" />
+          <text x={persona.x} y={persona.y + 48} textAnchor="middle" fontSize="11" fontWeight="700" fill={C.text}>{persona.label}</text>
+          <text x={persona.x} y={persona.y + 66} textAnchor="middle" fontSize="9" fontWeight="700" fill={C.muted}>seller wallet</text>
+        </g>
+      ))}
+
+      <path d="M244 125 C268 118, 284 108, 318 98" fill="none" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-mesh)" />
+      <path d="M244 283 C282 274, 316 254, 360 230" fill="none" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-mesh)" />
+      <path d="M642 215 C718 210, 770 206, 834 206" fill="none" stroke={C.line} strokeWidth="1.4" markerEnd="url(#arrow-mesh)" />
+      <path d="M448 186 C476 150, 518 150, 554 186" fill="none" stroke={C.line} strokeWidth="1.2" strokeDasharray="4 4" markerEnd="url(#arrow-mesh)" />
+      <path d="M586 244 C552 280, 504 282, 466 244" fill="none" stroke={C.line} strokeWidth="1.2" strokeDasharray="4 4" markerEnd="url(#arrow-mesh)" />
+
+      <text x="280" y="118" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>preflight</text>
+      <text x="302" y="266" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>settlement</text>
+      <text x="500" y="384" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">PEER READS ARE BUDGETED AND SPACED</text>
+    </svg>
+  );
+}
+
 function Section({ id, eyebrow, title, children }: { id?: string; eyebrow: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} className="scroll-mt-24 space-y-6">
@@ -763,7 +843,8 @@ export default function DocsPage() {
           status in sub-cent USDC, settled through Circle Gateway and signed via W3S —
           there is no local private key anywhere in the loop. Paid endpoints today:{" "}
           <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">GET /api/premium/price</code> ($0.001),{" "}
-          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">POST /api/oracle</code> ($0.005), and{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">POST /api/oracle</code> ($0.005),{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">POST /api/council/preflight</code> ($0.001), and{" "}
           <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">GET /api/council/reasoning</code> ($0.001, paid
           directly to each persona&apos;s own wallet). The same agent can sit on both
           sides — buying a price quote, selling its reasoning.
@@ -771,6 +852,20 @@ export default function DocsPage() {
 
         <DiagramFrame caption="x402 nanopayment flow. The payer (oracle) signs through W3S with no local key; the paid endpoint quotes a sub-cent price, Circle Gateway acts as facilitator, the transfer settles on Arc, and the receipt is recorded to Neon and shown live at /revenue.">
           <NanopaymentDiagram />
+        </DiagramFrame>
+
+        <Card title="Council as a peer-to-peer reasoning market">
+          The current production loop already has the market-creator buying
+          preflight opinions before opening markets and the oracle buying
+          verdicts/reasoning at settlement. With `COUNCIL_PEER_READS=1`, council
+          personas buy each other&apos;s reasoning too: a specialist sells a read,
+          a skeptic buys it, then decides whether to dissent or update. This is
+          budgeted because a full ten-persona mesh can grow from 10 reads to 90
+          peer reads per market.
+        </Card>
+
+        <DiagramFrame caption="Council nanopayment mesh. Creator and oracle buy persona intelligence, while budgeted peer reads let personas purchase each other's reasoning without local keys. Every read is a tiny x402 USDC payment and every receipt lands in the revenue ledger.">
+          <CouncilNanopaymentMeshDiagram />
         </DiagramFrame>
 
         <Card title="Council-as-jury settlement">

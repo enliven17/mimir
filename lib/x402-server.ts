@@ -160,6 +160,7 @@ export async function requirePayment(
       resource: u.pathname,
       priceUsd: parsePriceUsd(price),
       payer,
+      seller: (opts?.payTo ?? process.env.X402_SELLER_ADDRESS ?? null)?.toLowerCase() ?? null,
       txId,
       at: Date.now(),
     });

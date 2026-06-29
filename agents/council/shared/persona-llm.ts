@@ -28,6 +28,7 @@ export async function evaluateClaimAsPersona(
   persona: PersonaSpec,
   claim: ClaimOnChain,
   evidenceText: string,
+  peerReasoning: string[] = [],
 ): Promise<PersonaVerdict> {
   const deadlineDate = new Date(Number(claim.deadline) * 1000).toISOString();
   const nowDate      = new Date().toISOString();
@@ -35,6 +36,9 @@ export async function evaluateClaimAsPersona(
 
   const biasSection = persona.promptBias
     ? `\n## Your character\n${persona.promptBias}\n`
+    : "";
+  const peerSection = peerReasoning.length > 0
+    ? `\n## Paid peer reads you bought over x402\n${peerReasoning.map((read, i) => `${i + 1}. ${read}`).join("\n")}\n\nUse these as other council members' opinions, not as primary evidence. You may agree, dissent, or discount them.\n`
     : "";
 
   const prompt = `You are ${persona.displayName}, one of ten AI personas on the Mimir Council — a USDC prediction-market jury on Arc blockchain.
@@ -57,6 +61,7 @@ ${biasSection}
 <evidence>
 ${evidenceText}
 </evidence>
+${peerSection}
 
 Decide which side will win when the claim is resolved.
 
