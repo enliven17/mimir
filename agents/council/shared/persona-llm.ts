@@ -7,7 +7,7 @@
  * downstream Kelly sizing + commit logic can be shared.
  */
 
-import { callLLM, pickGeminiModel } from "../../../lib/llm";
+import { callLLM, pickGeminiModel, extractJson } from "../../../lib/llm";
 import { microToUsdc } from "../../../lib/arc";
 import type { PersonaSpec } from "../personas";
 import type { ClaimOnChain } from "./types";
@@ -83,9 +83,9 @@ Return JSON only:
   });
 
   try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON");
-    const parsed = JSON.parse(jsonMatch[0]) as PersonaVerdict;
+    const jsonStr = extractJson(text);
+    if (!jsonStr) throw new Error("No JSON");
+    const parsed = JSON.parse(jsonStr) as PersonaVerdict;
     if (!["CREATOR_WINS", "CHALLENGERS_WIN", "DRAW", "UNRESOLVABLE"].includes(parsed.verdict)) {
       throw new Error("Invalid verdict");
     }

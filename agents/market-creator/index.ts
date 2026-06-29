@@ -31,7 +31,7 @@
 }
 
 import { formatEther } from "viem";
-import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel } from "../../lib/llm";
+import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
@@ -560,9 +560,9 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
   const text = await callLLM(prompt, { maxTokens: 2000, jsonOnly: true, model: pickGeminiModel("market-creator") });
   let candidates: ClaimCandidate[];
   try {
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error("No JSON array in response");
-    candidates = JSON.parse(jsonMatch[0]) as ClaimCandidate[];
+    const jsonStr = extractJson(text, "[");
+    if (!jsonStr) throw new Error("No JSON array in response");
+    candidates = JSON.parse(jsonStr) as ClaimCandidate[];
   } catch (err) {
     console.warn("[market-creator] Failed to parse candidates:", err);
     return [];

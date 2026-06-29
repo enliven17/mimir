@@ -45,6 +45,39 @@ function geminiModelPool(): string[] {
   return pool.filter((m, i) => pool.indexOf(m) === i);
 }
 
+/**
+ * Extract the first balanced JSON object/array from chatty model output.
+ * Gemma (and other non-forced-JSON models) often reason before/after the JSON,
+ * which breaks a greedy `\{[\s\S]*\}` match. This scans for the first complete
+ * `{...}` or `[...]`, respecting strings/escapes, and ignores surrounding prose.
+ * `prefer` forces the opener to look for ("[" for array-returning prompts).
+ */
+export function extractJson(text: string, prefer?: "{" | "["): string | null {
+  const cleaned = text.replace(/```(?:json)?/gi, "");
+  const start = prefer
+    ? cleaned.indexOf(prefer)
+    : cleaned.search(/[{[]/);
+  if (start === -1) return null;
+  const open = cleaned[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const c = cleaned[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === open) depth++;
+    else if (c === close && --depth === 0) return cleaned.slice(start, i + 1);
+  }
+  return null;
+}
+
 /** Stable model assignment for an agent/persona seed → spreads load deterministically. */
 export function pickGeminiModel(seed: string): string {
   const pool = geminiModelPool();
@@ -63,22 +96,47 @@ const OPENROUTER_QUOTA_COOLDOWN_MS = Number(process.env.OPENROUTER_QUOTA_COOLDOW
 let anthropicClient: Anthropic | null = null;
 let openrouterCooldownUntil = 0;
 const groqCooldownByKey = new Map<string, number>();
-const geminiCooldownByModel = new Map<string, number>();
+// Keyed by `${keyFingerprint}|${model}` — rate limits are per project (key) per model.
+const geminiCooldownByCombo = new Map<string, number>();
 
 function cooldownRemaining(until: number): number {
   const remaining = until - Date.now();
   return remaining > 0 ? remaining : 0;
 }
 
-function geminiModelCooldown(model: string): number {
-  return cooldownRemaining(geminiCooldownByModel.get(model) ?? 0);
+function keyFingerprint(key: string): string {
+  return key.slice(-6);
 }
 
-/** Gemini is "available" while any model in the pool is out of cooldown. */
+/** Primary Gemini key (possibly per-agent overridden) plus backup keys from GEMINI_API_KEYS. */
+function geminiKeyList(): string[] {
+  const raw = [
+    process.env.GEMINI_API_KEY,
+    ...(process.env.GEMINI_API_KEYS ?? "").split(/[,\s]+/),
+  ];
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const value of raw) {
+    const key = value?.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
+
+function geminiComboCooldown(key: string, model: string): number {
+  return cooldownRemaining(geminiCooldownByCombo.get(`${keyFingerprint(key)}|${model}`) ?? 0);
+}
+
+/** Gemini is "available" while any (key, model) combination is out of cooldown. */
 function geminiCooldownRemaining(): number {
+  const keys = geminiKeyList();
   const pool = geminiModelPool();
-  if (pool.some((m) => geminiModelCooldown(m) === 0)) return 0;
-  return Math.min(...pool.map(geminiModelCooldown));
+  if (keys.length === 0) return 0;
+  const combos = keys.flatMap((k) => pool.map((m) => geminiComboCooldown(k, m)));
+  if (combos.some((c) => c === 0)) return 0;
+  return Math.min(...combos);
 }
 
 function openrouterCooldownRemaining(): number {
@@ -121,8 +179,8 @@ function groqKeyFingerprint(key: string): string {
   return `...${key.slice(-6)}`;
 }
 
-function tripGeminiCooldown(model: string): void {
-  geminiCooldownByModel.set(model, Date.now() + GEMINI_QUOTA_COOLDOWN_MS);
+function tripGeminiCooldown(key: string, model: string): void {
+  geminiCooldownByCombo.set(`${keyFingerprint(key)}|${model}`, Date.now() + GEMINI_QUOTA_COOLDOWN_MS);
 }
 
 function tripOpenRouterCooldown(): void {
@@ -130,7 +188,7 @@ function tripOpenRouterCooldown(): void {
 }
 
 function hasProviderKey(provider: LLMProvider): boolean {
-  if (provider === "gemini") return !!process.env.GEMINI_API_KEY?.trim();
+  if (provider === "gemini") return geminiKeyList().length > 0;
   if (provider === "groq") return getGroqKeys().length > 0;
   if (provider === "openrouter") return !!process.env.OPENROUTER_API_KEY?.trim();
   return !!process.env.ANTHROPIC_API_KEY?.trim();
@@ -339,36 +397,38 @@ async function callGemini(
   prompt: string,
   opts: { maxTokens: number; temperature: number; jsonOnly: boolean; model?: string },
 ): Promise<string> {
-  // Try the assigned model first, then borrow other pool models if it's rate-limited.
+  // Try the assigned model first (then borrow other pool models), and for each
+  // model try the primary key first (then backup keys). Limits are per key×model,
+  // so this exhausts every combination before giving up.
   const pool = geminiModelPool();
   const preferred = opts.model && opts.model.trim().length > 0 ? opts.model.trim() : pool[0];
-  const order = [preferred, ...pool.filter((m) => m !== preferred)];
+  const models = [preferred, ...pool.filter((m) => m !== preferred)];
+  const keys = geminiKeyList();
 
   let lastError: unknown = null;
-  for (const model of order) {
-    if (geminiModelCooldown(model) > 0) {
-      lastError = new Error(`${model} in cooldown - ${Math.ceil(geminiModelCooldown(model) / 1000)}s remaining`);
-      continue;
-    }
-    try {
-      return await callGeminiModel(model, prompt, opts);
-    } catch (err) {
-      lastError = err;
-      const nextModel = order.find((m) => m !== model && geminiModelCooldown(m) === 0);
-      if (nextModel) {
-        console.warn(`[llm] Gemini ${model} failed -> ${nextModel}: ${err instanceof Error ? err.message.slice(0, 90) : err}`);
+  for (const model of models) {
+    for (const key of keys) {
+      if (geminiComboCooldown(key, model) > 0) {
+        lastError = new Error(`${model}@${keyFingerprint(key)} cooldown`);
+        continue;
+      }
+      try {
+        return await callGeminiModel(key, model, prompt, opts);
+      } catch (err) {
+        lastError = err;
+        console.warn(`[llm] Gemini ${model}@${keyFingerprint(key)} failed: ${err instanceof Error ? err.message.slice(0, 80) : err}`);
       }
     }
   }
-  throw lastError instanceof Error ? lastError : new Error("All Gemini models failed");
+  throw lastError instanceof Error ? lastError : new Error("All Gemini key/model combinations failed");
 }
 
 async function callGeminiModel(
+  apiKey: string,
   model: string,
   prompt: string,
   opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY!.trim();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   // Gemma models (gemma-*) share the Gemini API but reject Gemini-only config
   // fields: thinkingConfig and responseMimeType both 400. Drop them for Gemma and
@@ -404,8 +464,8 @@ async function callGeminiModel(
 
     lastBody = (await res.text()).slice(0, 500);
     if (res.status === 429) {
-      tripGeminiCooldown(model);
-      console.warn(`[llm] Gemini ${model} 429 - entering ${Math.round(GEMINI_QUOTA_COOLDOWN_MS / 1000)}s cooldown`);
+      tripGeminiCooldown(apiKey, model);
+      console.warn(`[llm] Gemini ${model}@${keyFingerprint(apiKey)} 429 - ${Math.round(GEMINI_QUOTA_COOLDOWN_MS / 1000)}s cooldown`);
       throw new Error(`Gemini ${model} 429: ${lastBody}`);
     }
     if (!transient.has(res.status) || attempt === maxAttempts) {

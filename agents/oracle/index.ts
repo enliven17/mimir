@@ -35,7 +35,7 @@
 }
 
 import { keccak256, toBytes, formatEther } from "viem";
-import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel } from "../../lib/llm";
+import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
@@ -317,9 +317,9 @@ Return JSON only:
 
   const text = await throttledLLM(prompt, { maxTokens: 512, jsonOnly: true, model: pickGeminiModel("oracle") });
   try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON");
-    const parsed = JSON.parse(jsonMatch[0]) as OracleVerdict;
+    const jsonStr = extractJson(text);
+    if (!jsonStr) throw new Error("No JSON");
+    const parsed = JSON.parse(jsonStr) as OracleVerdict;
     if (!["CREATOR_WINS","CHALLENGERS_WIN","DRAW","UNRESOLVABLE"].includes(parsed.verdict)) {
       throw new Error("Invalid verdict");
     }
