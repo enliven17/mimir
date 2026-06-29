@@ -464,77 +464,85 @@ function openPeepsAvatar(seed: string): string {
 }
 
 function CouncilNanopaymentMeshDiagram() {
+  // x,y = card top-left center column; rows arranged 3-over-2 inside the council container
   const personas = [
-    { seed: "council-optimist", label: "Optimist", x: 330, y: 88 },
-    { seed: "council-pessimist", label: "Pessimist", x: 500, y: 88 },
-    { seed: "council-statistician", label: "Stats", x: 670, y: 88 },
-    { seed: "council-contrarian", label: "Contrarian", x: 415, y: 250 },
-    { seed: "council-doomer", label: "Doomer", x: 585, y: 250 },
+    { seed: "council-optimist", label: "Optimist", x: 386, y: 150 },
+    { seed: "council-pessimist", label: "Pessimist", x: 516, y: 150 },
+    { seed: "council-statistician", label: "Stats", x: 646, y: 150 },
+    { seed: "council-contrarian", label: "Contrarian", x: 451, y: 298 },
+    { seed: "council-doomer", label: "Doomer", x: 581, y: 298 },
   ];
 
   return (
-    <svg viewBox="0 0 1080 430" className="h-auto w-full min-w-[820px]" role="img" aria-label="Council nanopayment mesh">
+    <svg viewBox="0 0 1080 470" className="h-auto w-full min-w-[760px]" role="img" aria-label="Council nanopayment mesh">
       <defs>
         <marker id="arrow-mesh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 Z" fill={C.accent} />
         </marker>
       </defs>
 
-      <text x="540" y="34" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">X402 NANOPAYMENT ROUTES</text>
+      <text x="540" y="32" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">X402 NANOPAYMENT ROUTES</text>
 
-      <g>
-        <rect x="34" y="82" width="210" height="86" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.7" />
-        <circle cx="78" cy="125" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
-        <image href={openPeepsAvatar("market-creator")} x="52" y="96" width="52" height="58" />
-        <text x="154" y="112" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">CREATOR</text>
-        <text x="154" y="136" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>buys preflight</text>
-        <text x="154" y="154" textAnchor="middle" fontSize="10" fill={C.muted}>candidate quality</text>
-      </g>
+      {/* Council container */}
+      <rect x="286" y="64" width="460" height="372" rx="18" fill={C.bg} stroke={C.border} strokeWidth="1.4" strokeDasharray="5 5" />
+      <text x="516" y="98" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent} letterSpacing="2">COUNCIL MARKET</text>
+      <text x="516" y="120" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>$0.001 peer reasoning reads</text>
 
-      <g>
-        <rect x="34" y="240" width="210" height="86" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.5" />
-        <circle cx="78" cy="283" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
-        <image href={openPeepsAvatar("oracle-agent")} x="52" y="254" width="52" height="58" />
-        <text x="154" y="270" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">ORACLE</text>
-        <text x="154" y="294" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>buys verdicts</text>
-        <text x="154" y="312" textAnchor="middle" fontSize="10" fill={C.muted}>votes + reasoning</text>
-      </g>
-
-      <g>
-        <rect x="836" y="146" width="200" height="132" rx="16" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
-        <text x="936" y="174" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">REVENUE LEDGER</text>
-        <text x="936" y="202" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>x402_payments</text>
-        <text x="936" y="226" textAnchor="middle" fontSize="11" fill={C.muted}>payer wallet</text>
-        <text x="936" y="246" textAnchor="middle" fontSize="11" fill={C.muted}>seller wallet</text>
-        <text x="936" y="266" textAnchor="middle" fontSize="11" fill={C.muted}>resource + tx</text>
-      </g>
-
-      <g>
-        <rect x="286" y="52" width="430" height="318" rx="18" fill={C.bg} stroke={C.border} strokeWidth="1.4" strokeDasharray="5 5" />
-        <rect x="360" y="186" width="282" height="58" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.7" />
-        <text x="501" y="208" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">COUNCIL MARKET</text>
-        <text x="501" y="230" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>$0.001 reasoning reads</text>
-      </g>
+      {/* Peer reads — subtle dashed links between personas */}
+      <path d="M438 178 C470 162, 484 162, 516 178" fill="none" stroke={C.line} strokeWidth="1.2" strokeDasharray="4 4" markerEnd="url(#arrow-mesh)" />
+      <path d="M646 200 C612 250, 560 264, 516 290" fill="none" stroke={C.line} strokeWidth="1.2" strokeDasharray="4 4" markerEnd="url(#arrow-mesh)" />
+      <path d="M503 326 C525 312, 539 312, 561 326" fill="none" stroke={C.line} strokeWidth="1.2" strokeDasharray="4 4" markerEnd="url(#arrow-mesh)" />
 
       {personas.map((persona) => (
         <g key={persona.seed}>
-          <rect x={persona.x - 52} y={persona.y - 38} width="104" height="112" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.4" />
-          <circle cx={persona.x} cy={persona.y - 2} r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
-          <image href={openPeepsAvatar(persona.seed)} x={persona.x - 26} y={persona.y - 32} width="52" height="58" />
-          <text x={persona.x} y={persona.y + 48} textAnchor="middle" fontSize="11" fontWeight="700" fill={C.text}>{persona.label}</text>
-          <text x={persona.x} y={persona.y + 66} textAnchor="middle" fontSize="9" fontWeight="700" fill={C.muted}>seller wallet</text>
+          <rect x={persona.x - 52} y={persona.y} width="104" height="116" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.4" />
+          <circle cx={persona.x} cy={persona.y + 36} r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
+          <image href={openPeepsAvatar(persona.seed)} x={persona.x - 26} y={persona.y + 6} width="52" height="58" />
+          <text x={persona.x} y={persona.y + 92} textAnchor="middle" fontSize="11" fontWeight="700" fill={C.text}>{persona.label}</text>
+          <text x={persona.x} y={persona.y + 108} textAnchor="middle" fontSize="9" fontWeight="700" fill={C.muted}>seller wallet</text>
         </g>
       ))}
 
-      <path d="M244 125 C268 118, 284 108, 318 98" fill="none" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-mesh)" />
-      <path d="M244 283 C282 274, 316 254, 360 230" fill="none" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-mesh)" />
-      <path d="M642 215 C718 210, 770 206, 834 206" fill="none" stroke={C.line} strokeWidth="1.4" markerEnd="url(#arrow-mesh)" />
-      <path d="M448 186 C476 150, 518 150, 554 186" fill="none" stroke={C.line} strokeWidth="1.2" strokeDasharray="4 4" markerEnd="url(#arrow-mesh)" />
-      <path d="M586 244 C552 280, 504 282, 466 244" fill="none" stroke={C.line} strokeWidth="1.2" strokeDasharray="4 4" markerEnd="url(#arrow-mesh)" />
+      {/* Buyers (left) */}
+      <g>
+        <rect x="34" y="118" width="210" height="88" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.7" />
+        <circle cx="80" cy="162" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
+        <image href={openPeepsAvatar("market-creator")} x="54" y="133" width="52" height="58" />
+        <text x="170" y="148" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">CREATOR</text>
+        <text x="170" y="172" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>buys preflight</text>
+        <text x="170" y="190" textAnchor="middle" fontSize="10" fill={C.muted}>candidate quality</text>
+      </g>
 
-      <text x="280" y="118" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>preflight</text>
-      <text x="302" y="266" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>settlement</text>
-      <text x="500" y="384" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">PEER READS ARE BUDGETED AND SPACED</text>
+      <g>
+        <rect x="34" y="296" width="210" height="88" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.5" />
+        <circle cx="80" cy="340" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
+        <image href={openPeepsAvatar("oracle-agent")} x="54" y="311" width="52" height="58" />
+        <text x="170" y="326" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">ORACLE</text>
+        <text x="170" y="350" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>buys verdicts</text>
+        <text x="170" y="368" textAnchor="middle" fontSize="10" fill={C.muted}>votes + reasoning</text>
+      </g>
+
+      {/* Revenue ledger (right) */}
+      <g>
+        <rect x="836" y="186" width="200" height="132" rx="16" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="936" y="214" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">REVENUE LEDGER</text>
+        <text x="936" y="242" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>x402_payments</text>
+        <text x="936" y="266" textAnchor="middle" fontSize="11" fill={C.muted}>payer wallet</text>
+        <text x="936" y="286" textAnchor="middle" fontSize="11" fill={C.muted}>seller wallet</text>
+        <text x="936" y="306" textAnchor="middle" fontSize="11" fill={C.muted}>resource + tx</text>
+      </g>
+
+      {/* Buyer → council flows */}
+      <path d="M244 162 C268 162, 280 175, 312 195" fill="none" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-mesh)" />
+      <path d="M244 340 C268 340, 286 330, 320 312" fill="none" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-mesh)" />
+      <text x="278" y="150" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>preflight</text>
+      <text x="278" y="368" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>settlement</text>
+
+      {/* Council → ledger */}
+      <path d="M746 252 C780 252, 802 252, 834 252" fill="none" stroke={C.line} strokeWidth="1.4" markerEnd="url(#arrow-mesh)" />
+      <text x="790" y="242" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>receipts</text>
+
+      <text x="516" y="458" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">PEER READS ARE BUDGETED AND SPACED</text>
     </svg>
   );
 }
