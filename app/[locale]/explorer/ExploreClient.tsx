@@ -1090,15 +1090,15 @@ export default function ExploreClient() {
               </div>
 
               {address && activeView === "open" ? (
-                <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-4">
-                  <div className="inline-flex gap-1 border border-pv-border/20 bg-pv-bg p-1">
+                <div className="mt-4 border-t border-white/[0.06] pt-4">
+                  <div className="flex w-full gap-1 border border-pv-border/20 bg-pv-bg p-1">
                     {(["all", "available", "joined"] as const).map((p) => (
                       <button
                         key={p}
                         type="button"
                         onClick={() => updateFilters({ participation: p })}
                         aria-pressed={filters.participation === p}
-                        className={`px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition-colors ${
+                        className={`flex-1 whitespace-nowrap px-3 py-2.5 text-center font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition-colors ${
                           filters.participation === p
                             ? "bg-pv-emerald/[0.18] text-pv-text"
                             : "text-pv-muted hover:text-pv-text"
