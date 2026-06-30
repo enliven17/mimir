@@ -1091,17 +1091,17 @@ export default function ExploreClient() {
 
               {address && activeView === "open" ? (
                 <div className="mt-4 border-t border-white/[0.06] pt-4">
-                  <div className="flex w-full gap-1 border border-pv-border/20 bg-pv-bg p-1">
+                  <div className="grid w-full grid-cols-3 gap-2 border border-pv-border/15 bg-pv-bg p-2">
                     {(["all", "available", "joined"] as const).map((p) => (
                       <button
                         key={p}
                         type="button"
                         onClick={() => updateFilters({ participation: p })}
                         aria-pressed={filters.participation === p}
-                        className={`flex-1 whitespace-nowrap px-3 py-2.5 text-center font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition-colors ${
+                        className={`flex min-h-[44px] w-full items-center justify-center whitespace-nowrap px-4 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.2em] transition-all duration-200 ${
                           filters.participation === p
-                            ? "bg-pv-emerald/[0.18] text-pv-text"
-                            : "text-pv-muted hover:text-pv-text"
+                            ? "border border-pv-emerald/40 bg-pv-emerald/[0.18] text-pv-text"
+                            : "border border-transparent text-pv-muted hover:border-white/[0.08] hover:bg-white/[0.03] hover:text-pv-text"
                         }`}
                       >
                         {t(
