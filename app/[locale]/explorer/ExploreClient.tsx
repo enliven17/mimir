@@ -1090,7 +1090,7 @@ export default function ExploreClient() {
               </div>
 
               {address && activeView === "open" ? (
-                <div className="mt-4 border-t border-white/[0.06] pt-4">
+                <div className="col-span-full mt-4 border-t border-white/[0.06] pt-4">
                   <div className="grid w-full grid-cols-3 gap-2 border border-pv-border/15 bg-pv-bg p-2">
                     {(["all", "available", "joined"] as const).map((p) => (
                       <button
