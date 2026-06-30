@@ -410,12 +410,55 @@ function applyFetcherTrust(
   };
 }
 
+// Sports markets close betting at kickoff, so the claim is "expired" (settleable)
+// while the match may still be in progress. Defer settlement until the match is
+// final — but never longer than this grace window past the deadline, so a data
+// outage can't lock funds forever. Override with SPORTS_SETTLE_GRACE_HOURS.
+const SPORTS_SETTLE_GRACE_SECS = Math.max(1, Number(process.env.SPORTS_SETTLE_GRACE_HOURS ?? 12)) * 3600;
+
+/** True if the evidence shows the sports event has definitively concluded. */
+async function isSportsEventFinal(claim: ClaimOnChain, evidenceText: string): Promise<boolean> {
+  const prompt = `Determine if the underlying match/event has DEFINITIVELY CONCLUDED with a final result.
+
+Question: ${claim.question}
+Resolution URL: ${claim.resolutionUrl}
+Current UTC time: ${new Date().toISOString()}
+
+Evidence (fetched now):
+<evidence>
+${evidenceText}
+</evidence>
+
+Reply JSON only: { "final": true | false }
+- final=true ONLY if the evidence shows the event is over and a final result is available.
+- final=false if it is upcoming, scheduled, in progress, postponed, or the evidence does not confirm completion.`;
+  try {
+    const text = await throttledLLM(prompt, { maxTokens: 64, jsonOnly: true, model: pickGeminiModel("oracle") });
+    const parsed = JSON.parse(extractJson(text) ?? "{}");
+    return parsed.final === true;
+  } catch {
+    return false; // unknown → defer (safe); the grace window prevents a permanent lock
+  }
+}
+
 // ── ROLE 1: Settle expired claim ──────────────────────────────────────────────
-async function settle(claim: ClaimOnChain): Promise<void> {
+// Returns true if resolved on-chain, false if deferred (e.g. match not final yet).
+async function settle(claim: ClaimOnChain): Promise<boolean> {
   console.log(`\n[settle] Claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
 
   const evidence     = await fetchEvidence(claim);
   console.log(`[settle] Evidence fetcher: ${evidence.fetcher}`);
+
+  // Sports: betting closed at kickoff, so don't resolve until the match is final
+  // (unless we're past the grace window, to avoid locking funds on a data outage).
+  if (claim.category.toLowerCase() === "sports") {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const pastGrace = now > claim.deadline + BigInt(SPORTS_SETTLE_GRACE_SECS);
+    if (!pastGrace && !(await isSportsEventFinal(claim, evidence.text))) {
+      console.log(`[settle] Claim #${claim.id}: match not final yet — deferring to a later poll.`);
+      return false;
+    }
+  }
   if (evidence.payment) {
     const usdc = Number(evidence.payment.priceAtomic) / 1_000_000;
     console.log(`[settle] 💸 Paid ${usdc} ${evidence.payment.asset} for evidence (x402 nanopayment)`);
@@ -479,6 +522,7 @@ async function settle(claim: ClaimOnChain): Promise<void> {
   });
 
   console.log(`[settle] ✓ Resolved — ${getExplorerTxUrl(txHash)}`);
+  return true;
 }
 
 // ── ROLE 2: Challenge mispriced open claim ────────────────────────────────────
@@ -624,7 +668,8 @@ async function poll(): Promise<void> {
   for (let i = 0; i < expiredActive.length; i++) {
     const claim = expiredActive[i];
     try {
-      await settle(claim);
+      const resolved = await settle(claim);
+      if (!resolved) continue; // deferred (e.g. sports match not final) — retry next poll
       settled.push(claim.id);
       if (i < expiredActive.length - 1 && SETTLEMENT_DELAY_MS > 0) {
         console.log(`[oracle] Cooling down ${(SETTLEMENT_DELAY_MS / 60000).toFixed(1)} min before next settlement...`);

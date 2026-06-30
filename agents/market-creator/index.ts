@@ -607,15 +607,21 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
         );
         return false;
       }
-      const deadlineMs = nowMs + deadlineHours * 3600 * 1000;
-      const minDeadline = game.startMs + SPORTS_POST_GAME_BUFFER_MS;
-      if (deadlineMs < minDeadline) {
+      // Pin the betting deadline to KICKOFF, not the LLM's deadlineHours.
+      // The contract uses a single `deadline` for both bet-cutoff and oracle
+      // settlement. If betting stayed open until after the match, anyone could
+      // bet on a known result (sniping). So betting closes at kickoff (the
+      // contract's 60s lock means the last bet lands ~1 min before); the oracle
+      // then waits for the match to be FINAL before resolving (see settle()).
+      const targetHours = (game.startMs - nowMs) / 3_600_000;
+      if (targetHours < 2 || targetHours > MAX_DEADLINE_HOURS) {
         console.warn(
-          `[market-creator] Drop sports candidate — deadline ${new Date(deadlineMs).toISOString()} ` +
-          `is before tipoff+4h (${new Date(minDeadline).toISOString()})`
+          `[market-creator] Drop sports candidate — kickoff (${new Date(game.startMs).toISOString()}) ` +
+          `is outside the 2-${MAX_DEADLINE_HOURS}h window`
         );
         return false;
       }
+      c.deadlineHours = targetHours; // betting closes at kickoff; no sniping window
       return true;
     }
 
