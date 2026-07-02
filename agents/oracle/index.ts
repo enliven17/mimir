@@ -315,22 +315,28 @@ Return JSON only:
 - UNRESOLVABLE only if the fetched evidence is missing, ambiguous, or doesn't contain the data needed.
 - Be strict about confidence — only go above 80 when evidence is unambiguous.`;
 
-  const text = await throttledLLM(prompt, { maxTokens: 512, jsonOnly: true, model: pickGeminiModel("oracle") });
-  try {
-    const jsonStr = extractJson(text);
-    if (!jsonStr) throw new Error("No JSON");
-    const parsed = JSON.parse(jsonStr) as OracleVerdict;
-    if (!["CREATOR_WINS","CHALLENGERS_WIN","DRAW","UNRESOLVABLE"].includes(parsed.verdict)) {
-      throw new Error("Invalid verdict");
-    }
-    return {
-      verdict: parsed.verdict,
-      confidence: Math.max(0, Math.min(100, Math.round(parsed.confidence ?? 50))),
-      explanation: (parsed.explanation ?? "").slice(0, 500),
-    };
-  } catch {
-    return { verdict: "UNRESOLVABLE", confidence: 0, explanation: "Oracle failed to parse response." };
+  // 1024 tokens: a 512 cap truncated JSON mid-string on chatty fallback models,
+  // which used to settle claims as UNRESOLVABLE. Parse failure now THROWS so the
+  // poll loop retries next round instead of finalizing a refund on-chain.
+  const text = await throttledLLM(prompt, { maxTokens: 1024, jsonOnly: true, model: pickGeminiModel("oracle") });
+  const jsonStr = extractJson(text);
+  if (!jsonStr) {
+    throw new Error(`Oracle verdict unparseable (no JSON): ${text.slice(0, 200)}`);
   }
+  let parsed: OracleVerdict;
+  try {
+    parsed = JSON.parse(jsonStr) as OracleVerdict;
+  } catch {
+    throw new Error(`Oracle verdict unparseable (bad JSON): ${jsonStr.slice(0, 200)}`);
+  }
+  if (!["CREATOR_WINS","CHALLENGERS_WIN","DRAW","UNRESOLVABLE"].includes(parsed.verdict)) {
+    throw new Error(`Oracle verdict invalid: ${String(parsed.verdict).slice(0, 50)}`);
+  }
+  return {
+    verdict: parsed.verdict,
+    confidence: Math.max(0, Math.min(100, Math.round(parsed.confidence ?? 50))),
+    explanation: (parsed.explanation ?? "").slice(0, 500),
+  };
 }
 
 function verdictToSide(verdict: OracleVerdict["verdict"]): number {

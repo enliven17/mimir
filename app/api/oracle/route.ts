@@ -14,7 +14,7 @@
 
 import { keccak256, toBytes } from "viem";
 import { requirePayment, json } from "@/lib/x402-server";
-import { callLLM } from "@/lib/llm";
+import { callLLM, extractJson } from "@/lib/llm";
 import { fetchEvidence } from "@/lib/server/evidence-fetcher";
 
 const PRICE = "$0.005";
@@ -85,10 +85,10 @@ Return JSON only:
   let confidence = 0;
   let explanation = "Oracle failed to parse response.";
   try {
-    const text = await callLLM(prompt, { maxTokens: 512, jsonOnly: true });
-    const m = text.match(/\{[\s\S]*\}/);
+    const text = await callLLM(prompt, { maxTokens: 1024, jsonOnly: true });
+    const m = extractJson(text);
     if (m) {
-      const parsed = JSON.parse(m[0]) as { verdict?: string; confidence?: number; explanation?: string };
+      const parsed = JSON.parse(m) as { verdict?: string; confidence?: number; explanation?: string };
       if (["SIDE_A", "SIDE_B", "DRAW", "UNRESOLVABLE"].includes(parsed.verdict ?? "")) {
         verdict = parsed.verdict!;
         confidence = Math.max(0, Math.min(100, Math.round(parsed.confidence ?? 50)));
