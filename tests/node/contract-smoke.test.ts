@@ -21,7 +21,9 @@ function makeClaim(overrides: Partial<ClaimData> = {}): ClaimData {
     total_challenger_stake: 3,
     reserved_creator_liability: 0,
     available_creator_liability: 5,
-    deadline: 1_700_000_000,
+    // Far future — isVSJoinable compares against the real clock, so a past
+    // deadline silently turns every joinability assertion false.
+    deadline: 4_100_000_000,
     state: "active",
     winner_side: "",
     resolution_summary: "",
