@@ -382,79 +382,121 @@ function NanopaymentDiagram() {
   );
 }
 
-/* ── 6. Council-as-jury settlement ───────────────────────────────────────── */
+/* ── 6. Self-resolving council settlement ────────────────────────────────── */
 function JuryDiagram() {
+  const jurors = [
+    { seed: "council-optimist", label: "Optimist", q: "q₁ = 0.85", x: 300 },
+    { seed: "council-statistician", label: "Stats", q: "q₂ = 0.90", x: 445 },
+    { seed: "council-doomer", label: "Doomer", q: "q₃ = 0.92", x: 590 },
+  ];
+
   return (
-    <svg viewBox="0 0 900 420" className="h-auto w-full" role="img" aria-label="Council-as-jury settlement flow">
+    <svg viewBox="0 -40 1000 600" className="h-auto w-full min-w-[760px]" role="img" aria-label="Self-resolving council settlement flow">
       <defs>
         <marker id="arrow-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 Z" fill={C.accent} />
         </marker>
+        <marker id="arrow-e-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill={C.line} />
+        </marker>
       </defs>
 
-      {/* 1 deadline */}
+      {/* 01 trigger */}
       <g>
-        <rect x="30" y="40" width="200" height="70" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
-        <text x="130" y="68" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">01 · TRIGGER</text>
-        <text x="130" y="90" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>deadline reached</text>
+        <rect x="30" y="40" width="195" height="64" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="127" y="66" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">01 · TRIGGER</text>
+        <text x="127" y="88" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>deadline reached</text>
       </g>
 
-      {/* 2 fetch evidence */}
+      {/* 02 independent evidence */}
       <g>
-        <rect x="30" y="150" width="200" height="70" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
-        <text x="130" y="178" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">02 · READ</text>
-        <text x="130" y="200" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>oracle fetches evidence</text>
+        <rect x="30" y="140" width="195" height="86" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="127" y="166" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">02 · INDEPENDENT READ</text>
+        <text x="127" y="188" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>oracle fetches evidence</text>
+        <text x="127" y="208" textAnchor="middle" fontSize="10" fill={C.muted}>jurors can&apos;t touch it</text>
       </g>
 
-      {/* 3 buy votes */}
+      {/* 03 sequential jury container */}
       <g>
-        <rect x="300" y="120" width="280" height="130" rx="16" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
-        <text x="440" y="148" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent} letterSpacing="2">03 · BUY N VERDICTS (x402)</text>
-        <text x="440" y="172" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>GET /api/council/vote</text>
-        <text x="440" y="194" textAnchor="middle" fontSize="11" fill={C.muted}>$0.001 → each persona&apos;s wallet</text>
-        <text x="440" y="214" textAnchor="middle" fontSize="11" fill={C.muted}>rule-based abstain · specialists in-category</text>
-        <text x="440" y="234" textAnchor="middle" fontSize="11" fill={C.muted}>quorum = 3 decisive votes (default)</text>
+        <rect x="265" y="40" width="455" height="310" rx="18" fill={C.bg} stroke={C.accent} strokeWidth="1.6" strokeDasharray="6 4" />
+        <text x="492" y="68" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent} letterSpacing="2">03 · SEQUENTIAL JURY — SHUFFLED ORDER</text>
+        <text x="492" y="88" textAnchor="middle" fontSize="10" fill={C.muted}>GET /api/council/vote · $0.001 x402 → juror wallet · prior q&#8320; = 0.50</text>
+
+        {jurors.map((j) => (
+          <g key={j.seed}>
+            <rect x={j.x - 55} y="104" width="110" height="132" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.4" />
+            <circle cx={j.x} cy="144" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
+            <image href={diagramAvatar(j.seed)} x={j.x - 26} y="114" width="52" height="58" />
+            <text x={j.x} y="200" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.text}>{j.label}</text>
+            <text x={j.x} y="220" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent}>{j.q}</text>
+          </g>
+        ))}
+
+        {/* history flows between jurors — labels live in the sub-caption below */}
+        <line x1="357" y1="170" x2="388" y2="170" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+        <line x1="502" y1="170" x2="533" y2="170" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+
+        {/* q chain */}
+        <text x="492" y="262" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.text}>q&#8320; 0.50 → 0.85 → 0.90 → 0.92</text>
+        <text x="492" y="280" textAnchor="middle" fontSize="9" fill={C.muted}>each juror sees the prior reports — beliefs aggregate, parrots add nothing</text>
+
+        {/* alpha coin */}
+        <rect x="300" y="296" width="385" height="40" rx="10" fill={C.surf2} stroke={C.border} strokeWidth="1.3" />
+        <text x="492" y="321" textAnchor="middle" fontSize="10" fill={C.text}>after quorum every further vote flips an α-coin — the market may stop</text>
       </g>
 
-      {/* Private model routing note */}
+      {/* independent evidence arc → terminal (over the jury) */}
+      <path d="M 225 150 C 420 -8, 660 -8, 858 84" fill="none" stroke={C.line} strokeWidth="1.4" strokeDasharray="5 4" markerEnd="url(#arrow-e-muted)" />
+      <text x="540" y="-14" textAnchor="middle" fontSize="10" fill={C.muted}>independent evidence — outside juror influence</text>
+
+      {/* 04 terminal reference */}
       <g>
-        <rect x="630" y="50" width="240" height="64" rx="12" fill={C.bg} stroke={C.border} strokeWidth="1.5" strokeDasharray="4 3" />
-        <text x="750" y="74" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">LLM ROUTING</text>
-        <text x="750" y="96" textAnchor="middle" fontSize="11" fill={C.text}>private model routing</text>
+        <rect x="760" y="90" width="210" height="150" rx="16" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
+        <text x="865" y="116" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent} letterSpacing="2">04 · TERMINAL REPORT</text>
+        <circle cx="800" cy="158" r="24" fill={C.bg} stroke={C.border} strokeWidth="1" />
+        <image href={diagramAvatar("oracle-agent")} x="778" y="132" width="44" height="50" />
+        <text x="895" y="152" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>oracle referee</text>
+        <text x="895" y="172" textAnchor="middle" fontSize="10" fill={C.muted}>evidence + full history</text>
+        <text x="865" y="210" textAnchor="middle" fontSize="15" fontWeight="700" fill={C.text}>qT = 0.91</text>
+        <text x="865" y="228" textAnchor="middle" fontSize="9" fill={C.muted}>settles the claim · grades the jury</text>
       </g>
 
-      {/* 4 tally */}
+      {/* 05 on-chain */}
       <g>
-        <rect x="650" y="135" width="220" height="100" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
-        <text x="760" y="162" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">04 · TALLY</text>
-        <text x="760" y="188" textAnchor="middle" fontSize="18" fontWeight="700" fill={C.text}>7 – 2</text>
-        <text x="760" y="210" textAnchor="middle" fontSize="11" fill={C.muted}>consensus → evidenceHash</text>
+        <rect x="760" y="286" width="210" height="110" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
+        <text x="865" y="312" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent} letterSpacing="2">05 · ON-CHAIN</text>
+        <text x="865" y="338" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>resolveClaim()</text>
+        <text x="865" y="358" textAnchor="middle" fontSize="10" fill={C.muted}>evidenceHash ⊃ q-chain + scores</text>
+        <text x="865" y="376" textAnchor="middle" fontSize="10" fill={C.muted}>→ payout</text>
       </g>
 
-      {/* solo fallback */}
+      {/* 06 cross-entropy bonus */}
       <g>
-        <rect x="300" y="290" width="280" height="64" rx="12" fill={C.bg} stroke={C.border} strokeWidth="1.5" strokeDasharray="4 3" />
-        <text x="440" y="314" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">BELOW QUORUM</text>
-        <text x="440" y="336" textAnchor="middle" fontSize="11" fill={C.text}>fall back to solo oracle verdict</text>
+        <rect x="265" y="420" width="455" height="112" rx="16" fill={C.surface} stroke={C.border} strokeWidth="1.6" />
+        <text x="492" y="446" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.muted} letterSpacing="2">06 · CROSS-ENTROPY BONUS</text>
+        <text x="492" y="472" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>S = qT·ln(qt/qprev) + (1−qT)·ln((1−qt)/(1−qprev))</text>
+        <text x="492" y="494" textAnchor="middle" fontSize="10" fill={C.muted}>positive scorers split the bonus pool · no update = exactly zero</text>
+        <text x="492" y="512" textAnchor="middle" fontSize="10" fill={C.muted}>native USDC → juror wallets, after settlement</text>
       </g>
 
-      {/* 5 resolveClaim */}
+      {/* below-quorum fallback */}
       <g>
-        <rect x="630" y="280" width="240" height="100" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.8" />
-        <text x="750" y="307" textAnchor="middle" fontSize="11" fontWeight="700" fill={C.accent} letterSpacing="2">05 · ON-CHAIN</text>
-        <text x="750" y="333" textAnchor="middle" fontSize="13" fontWeight="700" fill={C.text}>resolveClaim()</text>
-        <text x="750" y="353" textAnchor="middle" fontSize="11" fill={C.muted}>verdict + evidenceHash</text>
-        <text x="750" y="371" textAnchor="middle" fontSize="11" fill={C.muted}>→ payout</text>
+        <rect x="30" y="440" width="195" height="72" rx="12" fill={C.bg} stroke={C.border} strokeWidth="1.5" strokeDasharray="4 3" />
+        <text x="127" y="466" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">BELOW QUORUM</text>
+        <text x="127" y="488" textAnchor="middle" fontSize="11" fill={C.text}>solo oracle verdict</text>
       </g>
 
-      {/* Arrows */}
-      <line x1="130" y1="110" x2="130" y2="148" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
-      <line x1="230" y1="185" x2="298" y2="185" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
-      <line x1="580" y1="185" x2="648" y2="185" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
-      <line x1="760" y1="235" x2="760" y2="278" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
-      <line x1="440" y1="250" x2="440" y2="288" stroke={C.accent} strokeWidth="1.5" strokeDasharray="3 3" markerEnd="url(#arrow-e)" />
-      <line x1="580" y1="322" x2="628" y2="322" stroke={C.accent} strokeWidth="1.5" strokeDasharray="3 3" markerEnd="url(#arrow-e)" />
-      <line x1="690" y1="114" x2="700" y2="133" stroke={C.accent} strokeWidth="1.3" strokeDasharray="3 3" />
+      {/* flow arrows */}
+      <line x1="127" y1="104" x2="127" y2="138" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+      <line x1="225" y1="183" x2="263" y2="183" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+      <line x1="720" y1="170" x2="758" y2="170" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+      <line x1="865" y1="240" x2="865" y2="284" stroke={C.accent} strokeWidth="1.5" markerEnd="url(#arrow-e)" />
+      <path d="M 758 356 C 736 420, 736 448, 722 462" fill="none" stroke={C.accent} strokeWidth="1.5" strokeDasharray="3 3" markerEnd="url(#arrow-e)" />
+      <text x="758" y="432" textAnchor="middle" fontSize="9" fill={C.muted}>after settle</text>
+      <line x1="400" y1="418" x2="400" y2="356" stroke={C.line} strokeWidth="1.3" strokeDasharray="4 4" markerEnd="url(#arrow-e-muted)" />
+      <line x1="585" y1="418" x2="585" y2="356" stroke={C.line} strokeWidth="1.3" strokeDasharray="4 4" markerEnd="url(#arrow-e-muted)" />
+      <text x="493" y="394" textAnchor="middle" fontSize="9" fill={C.muted}>USDC bonuses</text>
+      <path d="M 263 330 C 190 360, 150 400, 132 436" fill="none" stroke={C.line} strokeWidth="1.3" strokeDasharray="4 4" markerEnd="url(#arrow-e-muted)" />
     </svg>
   );
 }
@@ -535,8 +577,10 @@ function CouncilNanopaymentMeshDiagram() {
       {/* Buyer → council flows */}
       <path d="M244 162 C268 162, 280 175, 312 195" fill="none" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-mesh)" />
       <path d="M244 340 C268 340, 286 330, 320 312" fill="none" stroke={C.accent} strokeWidth="1.6" markerEnd="url(#arrow-mesh)" />
+      <path d="M244 372 C280 400, 340 400, 400 384" fill="none" stroke={C.line} strokeWidth="1.4" strokeDasharray="4 4" markerEnd="url(#arrow-mesh)" />
       <text x="278" y="150" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>preflight</text>
       <text x="278" y="368" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>settlement</text>
+      <text x="330" y="412" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted}>CE bonuses</text>
 
       {/* Council → ledger */}
       <path d="M746 252 C780 252, 802 252, 834 252" fill="none" stroke={C.line} strokeWidth="1.4" markerEnd="url(#arrow-mesh)" />
@@ -872,25 +916,31 @@ export default function DocsPage() {
           peer reads per market.
         </Card>
 
-        <DiagramFrame caption="Council nanopayment mesh. Creator and oracle buy persona intelligence, while budgeted peer reads let personas purchase each other's reasoning without local keys. Every read is a tiny x402 USDC payment and every receipt lands in the revenue ledger.">
+        <DiagramFrame caption="Council nanopayment mesh. Creator and oracle buy persona intelligence, while budgeted peer reads let personas purchase each other's reasoning without local keys. Every read is a tiny x402 USDC payment, every receipt lands in the revenue ledger — and after a self-resolving settlement the oracle routes cross-entropy bonuses back into the wallets of jurors who actually moved the market's belief.">
           <CouncilNanopaymentMeshDiagram />
         </DiagramFrame>
 
-        <Card title="Council-as-jury settlement">
-          At settlement the oracle no longer decides alone. It <em>buys</em> each
-          eligible council persona&apos;s verdict via an x402 nanopayment —{" "}
-          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">$0.001</code> straight to that persona&apos;s
-          wallet through{" "}
-          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">GET /api/council/vote</code> — tallies the
-          votes into the on-chain verdict, and commits the consensus tally into the
-          claim&apos;s{" "}
-          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">evidenceHash</code>. A quorum (default three
-          decisive votes) is required; below quorum it falls back to a solo oracle
-          verdict. Rule-based personas abstain, and category specialists only vote
-          inside their own category.
+        <Card title="Self-resolving jury settlement">
+          At settlement the oracle no longer decides alone — it runs a{" "}
+          <em>self-resolving prediction market</em> over the council (adapted from{" "}
+          <a href="https://arxiv.org/abs/2306.04305" target="_blank" rel="noopener noreferrer" className="text-pv-emerald underline-offset-2 hover:underline">arXiv:2306.04305</a>).
+          Jurors vote <em>sequentially in shuffled order</em>, each buying costs{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">$0.001</code> over x402 straight into that
+          persona&apos;s wallet, and each juror sees the prior reports in its prompt.
+          Once a quorum of decisive reports exists, every further vote flips an
+          α-coin — the market may stop, so nobody knows who reports last. The
+          oracle then makes the <em>terminal reference report</em> from its own
+          independently fetched evidence plus the full history: that belief
+          settles the claim and grades the jury. Every report is scored with a
+          cross-entropy market scoring rule against the reference — parroting the
+          prior earns exactly zero, informative updates split a USDC bonus pool
+          paid into juror wallets after settlement. The q-chain and scores are
+          committed inside{" "}
+          <code className="rounded bg-pv-surface2 px-1.5 py-0.5 text-xs">evidenceHash</code>, so the whole scored
+          market is auditable on-chain.
         </Card>
 
-        <DiagramFrame caption="Council-as-jury settlement. At the deadline the oracle reads evidence, buys N persona verdicts over x402 ($0.001 → each persona wallet), tallies them (e.g. 7–2), and commits the consensus to evidenceHash before resolveClaim() pays out. A private LLM routing layer keeps council reads resilient; below quorum the oracle resolves solo.">
+        <DiagramFrame caption="Self-resolving jury settlement. Jurors report sequentially in shuffled order (each seeing the prior reports), an α-coin bounds the market length, and the oracle's terminal report — built from evidence the jurors cannot touch — both settles the claim and grades every juror with a cross-entropy score. Positive scorers split a USDC bonus pool; below quorum the oracle resolves solo.">
           <JuryDiagram />
         </DiagramFrame>
 
