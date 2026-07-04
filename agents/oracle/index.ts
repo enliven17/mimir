@@ -34,7 +34,7 @@ applyWorkerGeminiKey("ORACLE_GEMINI_API_KEY");
 import { keccak256, toBytes, formatEther } from "viem";
 import { requireEnv, requireAnyLLMKey, applyWorkerGeminiKey, createThrottle } from "../../lib/agent-bootstrap";
 import { kellyFraction } from "../../lib/kelly";
-import type { Verdict } from "../../lib/verdict";
+import { isVerdict, type Verdict } from "../../lib/verdict";
 import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson } from "../../lib/llm";
 import {
   createArcPublicClient,
@@ -60,7 +60,14 @@ import {
   type EvidencePayment,
 } from "../../lib/server/evidence-fetcher";
 import { fetchWithBudget, usdcToAtomic, atomicToUsdc } from "../../lib/x402";
-import { gatherCouncilVerdict } from "./council-vote";
+import {
+  gatherCouncilVerdict,
+  scoreCouncilVotes,
+  payCouncilBonuses,
+  verdictToProbability,
+  Q_PRIOR,
+  type CouncilVote,
+} from "./council-vote";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = Number(process.env.ORACLE_POLL_INTERVAL_MS ?? "60000");
@@ -87,6 +94,14 @@ const COUNCIL_SETTLEMENT  = process.env.COUNCIL_SETTLEMENT === "1";
 const COUNCIL_BASE_URL    = process.env.MIMIR_BASE_URL ?? "http://localhost:3000";
 const COUNCIL_QUORUM      = Number(process.env.COUNCIL_QUORUM ?? "3");
 const COUNCIL_VOTE_CAP    = Number(process.env.COUNCIL_VOTE_CAP_USDC ?? "0.005");
+
+// Self-resolving jury (arXiv:2306.04305): jurors vote sequentially in random
+// order seeing prior reports, the market stops with probability ALPHA per vote
+// once quorum is met, and positive cross-entropy scorers (judged against the
+// oracle's terminal, history-informed assessment) split a bonus pool.
+const COUNCIL_SELF_RESOLVING = COUNCIL_SETTLEMENT && process.env.COUNCIL_SELF_RESOLVING === "1";
+const COUNCIL_ALPHA          = Number(process.env.COUNCIL_ALPHA ?? "0.25");
+const COUNCIL_BONUS_USDC     = Number(process.env.COUNCIL_BONUS_USDC ?? "0.01");
 const SETTLEMENT_DELAY_MS = Number(process.env.ORACLE_SETTLEMENT_DELAY_MS ?? "900000");
 
 // Free-tier Gemini is 5 RPM on new accounts and the oracle has no other rate
@@ -202,10 +217,20 @@ async function fetchEvidence(claim: ClaimOnChain): Promise<EvidenceResult> {
 }
 
 // ── LLM evaluation ────────────────────────────────────────────────────────────
-async function evaluateClaim(claim: ClaimOnChain, evidence: string): Promise<OracleVerdict> {
+async function evaluateClaim(
+  claim: ClaimOnChain,
+  evidence: string,
+  jurorHistory: string[] = [],
+): Promise<OracleVerdict> {
   const deadlineDate = new Date(Number(claim.deadline) * 1000).toISOString();
   const nowDate      = new Date().toISOString();
   const potUsdc = weiToUsdc(claim.creatorStake + claim.totalChallengerStake);
+
+  // Terminal (reference) assessment for self-resolving settlement: the oracle
+  // sees every juror's report on top of its own independent evidence.
+  const jurySection = jurorHistory.length > 0
+    ? `\n## Council juror reports (sequential, most recent last)\n${jurorHistory.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n\nTreat these as other jurors' opinions, not primary evidence. Weigh them against the fetched evidence; you may agree, dissent, or discount them.\n`
+    : "";
 
   const prompt = `You are Mimir, an impartial AI oracle for a USDC prediction market on Arc blockchain.
 
@@ -228,7 +253,7 @@ async function evaluateClaim(claim: ClaimOnChain, evidence: string): Promise<Ora
 <evidence>
 ${evidence}
 </evidence>
-
+${jurySection}
 Evaluate whether Side A (creator) or Side B (challengers) is correct based on the evidence above.
 Do NOT refuse because of date / deadline concerns — those are handled by the contract.
 
@@ -256,7 +281,7 @@ Return JSON only:
   } catch {
     throw new Error(`Oracle verdict unparseable (bad JSON): ${jsonStr.slice(0, 200)}`);
   }
-  if (!["CREATOR_WINS","CHALLENGERS_WIN","DRAW","UNRESOLVABLE"].includes(parsed.verdict)) {
+  if (!isVerdict(parsed.verdict)) {
     throw new Error(`Oracle verdict invalid: ${String(parsed.verdict).slice(0, 50)}`);
   }
   return {
@@ -389,8 +414,12 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
   // Council-as-jury: buy each persona's verdict (x402 → persona wallet) and
   // settle by their tally. Commit the tally into the evidence hash so the
   // consensus is verifiable on-chain. Falls back to the solo oracle verdict.
+  // In self-resolving mode the jury votes sequentially with visible history
+  // and the oracle's terminal, history-informed assessment both settles the
+  // claim and serves as the reference report jurors are scored against.
   let rawVerdict: OracleVerdict;
   let commit = evidence.text;
+  let bonusVotes: CouncilVote[] | null = null;
   if (COUNCIL_SETTLEMENT) {
     const council = await gatherCouncilVerdict({
       claimId:       claim.id,
@@ -399,11 +428,26 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
       payer:         { walletId: ORACLE_WALLET, address: ORACLE_ADDR },
       capUsdc:       COUNCIL_VOTE_CAP,
       quorum:        COUNCIL_QUORUM,
+      ...(COUNCIL_SELF_RESOLVING
+        ? { selfResolving: { alpha: COUNCIL_ALPHA, minVotes: COUNCIL_QUORUM } }
+        : {}),
     }).catch((err) => {
       console.warn(`[settle] council vote failed, falling back to solo:`, err instanceof Error ? err.message : err);
       return null;
     });
-    if (council) {
+    if (council && COUNCIL_SELF_RESOLVING) {
+      const paidUsdc = atomicToUsdc(council.totalPaidAtomic);
+      console.log(`[settle] 🏛️  Self-resolving jury: q=[${(council.qHistory ?? []).map((q) => q.toFixed(2)).join(", ")}] · paid ${paidUsdc.toFixed(6)} USDC in vote fees`);
+      // Terminal (reference) report: full juror history + independent evidence.
+      const reference  = await evaluateClaim(claim, evidence.text, council.reports ?? []);
+      const referenceQ = verdictToProbability(reference.verdict, reference.confidence, Q_PRIOR);
+      council.votes = scoreCouncilVotes(council.votes, referenceQ);
+      const scores = council.votes.map((v) => Number((v.score ?? 0).toFixed(4)));
+      console.log(`[settle] 🏛️  Reference q_T=${referenceQ.toFixed(2)} · CE scores: ${council.votes.map((v) => `${v.slug}=${(v.score ?? 0).toFixed(3)}`).join(" ")}`);
+      rawVerdict = reference;
+      commit = `${evidence.text}\n[council]${JSON.stringify({ tally: council.tally, q: council.qHistory, refQ: Number(referenceQ.toFixed(4)), scores })}`;
+      bonusVotes = council.votes;
+    } else if (council) {
       const paidUsdc = atomicToUsdc(council.totalPaidAtomic);
       console.log(`[settle] 🏛️  Council ${council.tally.creator}–${council.tally.challengers} (${council.tally.draw + council.tally.unresolvable} abstain) · paid ${paidUsdc.toFixed(6)} USDC to jurors`);
       rawVerdict = { verdict: council.verdict, confidence: council.confidence, explanation: council.explanation };
@@ -444,6 +488,19 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
   });
 
   console.log(`[settle] ✓ Resolved — ${getExplorerTxUrl(txHash)}`);
+
+  // Cross-entropy bonuses AFTER the on-chain settle: informative jurors split
+  // the pool, parrots and dissenters-from-evidence get nothing. Best-effort —
+  // a failed transfer never affects the already-final settlement.
+  if (bonusVotes && COUNCIL_BONUS_USDC > 0) {
+    const receipts = await payCouncilBonuses(bonusVotes, COUNCIL_BONUS_USDC, ORACLE_WALLET);
+    for (const r of receipts) {
+      console.log(`[settle] 🏆 Bonus ${r.bonusUsdc.toFixed(6)} USDC → ${r.slug}${r.txHash ? ` — ${getExplorerTxUrl(r.txHash)}` : " (transfer failed)"}`);
+    }
+    if (receipts.length === 0) {
+      console.log(`[settle] No positive-score jurors this round — bonus pool untouched.`);
+    }
+  }
   return true;
 }
 

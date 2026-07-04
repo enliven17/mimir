@@ -28,10 +28,30 @@ function personaAddress(slug: string): string | undefined {
   return process.env[`CIRCLE_COUNCIL_${slug.toUpperCase().replace(/-/g, "_")}_ADDRESS`];
 }
 
+/**
+ * Optional `history` param: prior jurors' reports for sequential
+ * (self-resolving) voting. URL-encoded JSON array of strings; anything
+ * malformed degrades to an empty history rather than failing the vote.
+ */
+function parseHistory(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry): entry is string => typeof entry === "string")
+      .slice(0, 8)
+      .map((entry) => entry.slice(0, 300));
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const claimId = Number(searchParams.get("claimId"));
   const slug = (searchParams.get("persona") ?? "").toLowerCase().trim();
+  const history = parseHistory(searchParams.get("history"));
 
   // Validate BEFORE charging — never take payment for a request we can't serve.
   const persona = COUNCIL_PERSONAS.find((p) => p.slug === slug);
@@ -86,7 +106,7 @@ export async function GET(req: Request): Promise<Response> {
     }
   }
 
-  const verdict = await evaluateClaimAsPersona(persona, claim, evidenceText);
+  const verdict = await evaluateClaimAsPersona(persona, claim, evidenceText, history);
 
   return json(
     {
