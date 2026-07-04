@@ -3,6 +3,7 @@
 import { Link } from "@/i18n/navigation";
 import { getVSChallengerCount, isVSJoinable, didUserChallengeVS, type VSData } from "@/lib/contract";
 import { computeClaimQuality } from "@/lib/claimQuality";
+import { openPeepsAvatar } from "@/lib/avatars";
 import { useTranslations } from "next-intl";
 
 type ArenaVS = Pick<
@@ -60,10 +61,6 @@ type ArenaStatusKey = "arenaStatusLive" | "arenaStatusPending" | "arenaStatusArc
 
 const ARENA_STAT_CELL =
   "rounded border border-white/[0.1] bg-white/[0.03] px-3 py-2.5 sm:px-3.5 sm:py-3";
-
-function getOpenPeepsAvatar(seed: string): string {
-  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}&backgroundColor=0b1020`;
-}
 
 function getArenaPresentation(vs: ArenaVS): {
   statusKey: ArenaStatusKey;
@@ -250,7 +247,7 @@ export default function ArenaCard({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={getOpenPeepsAvatar(`market-${vs.id}-participant-${i}`)}
+                      src={openPeepsAvatar(`market-${vs.id}-participant-${i}`)}
                       alt=""
                       aria-hidden
                       className="h-full w-full object-cover object-top"

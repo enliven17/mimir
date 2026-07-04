@@ -7,6 +7,7 @@ import { PlusCircle } from "lucide-react";
 import { getVSChallengerCount, getVSTotalPot, type VSData } from "@/lib/contract";
 import { Button } from "@/components/ui";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
+import { formatUsdcBare } from "@/lib/money";
 
 type FeedRow =
   | {
@@ -36,13 +37,6 @@ function stateLabel(vs: VSData, t: (key: string) => string): string {
     return t("archiveStateLive");
   }
   return t("archiveStateOpen");
-}
-
-function formatUsdcAmount(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 0,
-  }).format(amount);
 }
 
 export default function SettlementArchiveSection({
@@ -163,7 +157,7 @@ export default function SettlementArchiveSection({
                         {t("archiveColPool")}
                       </span>
                       <span className="font-display text-lg font-medium tabular-nums text-pv-text sm:text-xl">
-                        {formatUsdcAmount(getVSTotalPot(row.vs))}
+                        {formatUsdcBare(getVSTotalPot(row.vs))}
                         <span className="ml-0.5 text-sm font-normal text-pv-muted">USDC</span>
                       </span>
                     </div>

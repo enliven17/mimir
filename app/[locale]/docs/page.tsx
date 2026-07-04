@@ -2,6 +2,7 @@
 
 import { Link } from "@/i18n/navigation";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
+import { openPeepsAvatar } from "@/lib/avatars";
 
 /* ───────────────────────────────────────────────────────────────────────────
  * Inline SVG diagrams - hand-drawn in the project's blueprint palette so they
@@ -459,9 +460,8 @@ function JuryDiagram() {
 }
 
 /* ── Section primitives ──────────────────────────────────────────────────── */
-function openPeepsAvatar(seed: string): string {
-  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}`;
-}
+// Transparent background: these render inside hand-drawn SVG diagrams.
+const diagramAvatar = (seed: string) => openPeepsAvatar(seed, null);
 
 function CouncilNanopaymentMeshDiagram() {
   // x,y = card top-left center column; rows arranged 3-over-2 inside the council container
@@ -497,7 +497,7 @@ function CouncilNanopaymentMeshDiagram() {
         <g key={persona.seed}>
           <rect x={persona.x - 52} y={persona.y} width="104" height="116" rx="12" fill={C.surface} stroke={C.border} strokeWidth="1.4" />
           <circle cx={persona.x} cy={persona.y + 36} r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
-          <image href={openPeepsAvatar(persona.seed)} x={persona.x - 26} y={persona.y + 6} width="52" height="58" />
+          <image href={diagramAvatar(persona.seed)} x={persona.x - 26} y={persona.y + 6} width="52" height="58" />
           <text x={persona.x} y={persona.y + 92} textAnchor="middle" fontSize="11" fontWeight="700" fill={C.text}>{persona.label}</text>
           <text x={persona.x} y={persona.y + 108} textAnchor="middle" fontSize="9" fontWeight="700" fill={C.muted}>seller wallet</text>
         </g>
@@ -507,7 +507,7 @@ function CouncilNanopaymentMeshDiagram() {
       <g>
         <rect x="34" y="118" width="210" height="88" rx="14" fill={C.surf2} stroke={C.accent} strokeWidth="1.7" />
         <circle cx="80" cy="162" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
-        <image href={openPeepsAvatar("market-creator")} x="54" y="133" width="52" height="58" />
+        <image href={diagramAvatar("market-creator")} x="54" y="133" width="52" height="58" />
         <text x="170" y="148" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.accent} letterSpacing="2">CREATOR</text>
         <text x="170" y="172" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>buys preflight</text>
         <text x="170" y="190" textAnchor="middle" fontSize="10" fill={C.muted}>candidate quality</text>
@@ -516,7 +516,7 @@ function CouncilNanopaymentMeshDiagram() {
       <g>
         <rect x="34" y="296" width="210" height="88" rx="14" fill={C.surface} stroke={C.border} strokeWidth="1.5" />
         <circle cx="80" cy="340" r="28" fill={C.bg} stroke={C.border} strokeWidth="1" />
-        <image href={openPeepsAvatar("oracle-agent")} x="54" y="311" width="52" height="58" />
+        <image href={diagramAvatar("oracle-agent")} x="54" y="311" width="52" height="58" />
         <text x="170" y="326" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.muted} letterSpacing="2">ORACLE</text>
         <text x="170" y="350" textAnchor="middle" fontSize="12" fontWeight="700" fill={C.text}>buys verdicts</text>
         <text x="170" y="368" textAnchor="middle" fontSize="10" fill={C.muted}>votes + reasoning</text>

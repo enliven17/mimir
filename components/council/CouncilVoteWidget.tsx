@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { getExplorerTxUrl } from "@/lib/arc";
+import { openPeepsAvatar } from "@/lib/avatars";
 
 interface PersonaVote {
   slug:        string;
@@ -37,10 +38,6 @@ interface CouncilResponse {
   stakedCount: number;
   totalUsdc:   number;
   votes:       PersonaVote[];
-}
-
-function openPeepsAvatar(seed: string): string {
-  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}&backgroundColor=0b1020`;
 }
 
 export default function CouncilVoteWidget({ claimId }: { claimId: number }) {

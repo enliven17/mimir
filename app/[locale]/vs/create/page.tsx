@@ -12,7 +12,7 @@ import {
 } from "react";
 import { motion } from "framer-motion";
 import { useLocale, useMessages, useTranslations } from "next-intl";
-import { Link, usePathname, useRouter } from "@/i18n/navigation";
+import { usePathname, useRouter } from "@/i18n/navigation";
 import { useWallet } from "@/lib/wallet";
 import {
   createClaim,
@@ -21,8 +21,6 @@ import {
   type CreateClaimParams,
   type VSData,
 } from "@/lib/contract";
-import { getExplorerTxUrl } from "@/lib/arc";
-const getExplorerUrl = () => "https://testnet.arcscan.app";
 import { removePendingVS, savePendingVS, type PendingVS } from "@/lib/pending-vs";
 import { acquireTxLock } from "@/lib/tx-lock";
 import {
@@ -32,7 +30,7 @@ import {
   DEADLINE_PRESET_SECONDS,
   MIN_STAKE,
   PREFILLS,
-  getShareUrl,
+  ZERO_ADDRESS,
   normalizeCategoryId,
   normalizeResolutionSource,
 } from "@/lib/constants";
@@ -62,14 +60,14 @@ import { BlueprintHeading } from "@/components/BlueprintGrid";
 import CreateMockFundingOverlay, {
   type CreateMockOverlayPhase,
 } from "@/components/vs/CreateMockFundingOverlay";
+import CreateSuccessScreen from "@/components/vs/CreateSuccessScreen";
 import Confetti from "@/components/Confetti";
 import { sealStamp } from "@/lib/animations/rituals";
+import { draftOutcomeSidesFromQuestion } from "@/lib/outcomeDraft";
 import {
-  Check,
   ChevronDown,
   Clock,
   Coins,
-  Copy,
   Eye,
   FileEdit,
   FlaskConical,
@@ -150,302 +148,10 @@ function formatLocalTimeInputValue(date: Date) {
   return local.toISOString().slice(11, 16);
 }
 
-function normalizeQuestionForOutcomeDraft(value: string): string {
-  return value
-    .replace(/[¿¡]/g, "")
-    .replace(/\s+/g, " ")
-    .replace(/[?!]+$/g, "")
-    .trim();
-}
-
-function capitalizeDraftText(value: string): string {
-  if (!value) {
-    return "";
-  }
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function inferDoSupport(subject: string): "do" | "does" {
-  const normalized = subject.trim().toLowerCase();
-  if (!normalized) {
-    return "does";
-  }
-  if (/^(i|you|we|they)$/i.test(normalized)) {
-    return "do";
-  }
-  if (/\band\b/.test(normalized)) {
-    return "do";
-  }
-  return "does";
-}
-
-function toThirdPersonSingular(verb: string): string {
-  if (!verb) {
-    return verb;
-  }
-  const lower = verb.toLowerCase();
-  if (/(s|sh|ch|x|z|o)$/.test(lower)) {
-    return `${verb}es`;
-  }
-  if (/[bcdfghjklmnpqrstvwxyz]y$/.test(lower)) {
-    return `${verb.slice(0, -1)}ies`;
-  }
-  return `${verb}s`;
-}
-
-function splitSubjectAndPredicate(clause: string): { subject: string; predicate: string } | null {
-  const tokens = clause.split(/\s+/).filter(Boolean);
-  if (tokens.length < 2) {
-    return null;
-  }
-
-  if (/^(it|there|he|she|they|we|you|i)$/i.test(tokens[0] ?? "")) {
-    return {
-      subject: tokens[0]!,
-      predicate: tokens.slice(1).join(" "),
-    };
-  }
-
-  let subjectEnd = 1;
-  if (/^(the|a|an|el|la|los|las|un|una)$/i.test(tokens[0] ?? "") && tokens.length >= 3) {
-    subjectEnd = 2;
-  }
-
-  while (subjectEnd < tokens.length - 1) {
-    const token = tokens[subjectEnd] ?? "";
-    if (/^[A-Z0-9]/.test(token) || /^(of|the|de|del|la|el|los|las|and|y)$/i.test(token)) {
-      subjectEnd += 1;
-      continue;
-    }
-    break;
-  }
-
-  return {
-    subject: tokens.slice(0, subjectEnd).join(" "),
-    predicate: tokens.slice(subjectEnd).join(" "),
-  };
-}
-
-function buildAuxiliaryOutcomePair(
-  clause: string,
-  auxiliary: string
-): { creator: string; opponent: string } | null {
-  const split = splitSubjectAndPredicate(clause);
-  if (!split) {
-    return null;
-  }
-
-  const subject = capitalizeDraftText(split.subject);
-  const predicate = split.predicate.trim();
-  if (!predicate) {
-    return null;
-  }
-
-  return {
-    creator: `${subject} ${auxiliary} ${predicate}`,
-    opponent: `${subject} ${auxiliary} not ${predicate}`,
-  };
-}
-
-function buildWeatherOutcomePair(clause: string): { creator: string; opponent: string } | null {
-  const normalized = clause
-    .trim()
-    .replace(/^it\s+/i, "")
-    .replace(/^there\s+(?:will\s+be\s+)?/i, "");
-  const weatherMatch = normalized.match(
-    /^(rain|snow|hail|drizzle|showers?|thunderstorms?|storm|fog|wind)\b(.*)$/i
-  );
-  if (!weatherMatch) {
-    return null;
-  }
-
-  const phenomenon = weatherMatch[1]!.toLowerCase();
-  const tail = weatherMatch[2]!.trim();
-  const suffix = tail ? ` ${tail}` : "";
-  return {
-    creator: `${capitalizeDraftText(phenomenon)}${suffix}`,
-    opponent: `No ${phenomenon}${suffix}`,
-  };
-}
-
-const EVENT_VERB_NOUNS: Record<string, string> = {
-  announce: "announcement",
-  publish: "publication",
-  release: "release",
-  launch: "launch",
-  list: "listing",
-  approve: "approval",
-  confirm: "confirmation",
-  unveil: "announcement",
-  file: "filing",
-  report: "report",
-};
-
-const EVENT_NOUN_HINTS = [
-  "announcement",
-  "release",
-  "launch",
-  "listing",
-  "approval",
-  "report",
-  "filing",
-  "publication",
-  "post",
-  "update",
-] as const;
-
-function splitTemporalTail(value: string): { core: string; tail: string } {
-  const match = value.match(
-    /\s+(before|by|on|at|during|this|next|after|ahead of)\b[\s\S]*$/i
-  );
-  if (!match || typeof match.index !== "number") {
-    return { core: value.trim(), tail: "" };
-  }
-
-  return {
-    core: value.slice(0, match.index).trim(),
-    tail: value.slice(match.index).trim(),
-  };
-}
-
-function trimLeadingArticle(value: string): string {
-  return value.replace(/^(a|an|the)\s+/i, "").trim();
-}
-
-function buildEventOutcomePair(clause: string): { creator: string; opponent: string } | null {
-  const split = splitSubjectAndPredicate(clause);
-  if (!split) {
-    return null;
-  }
-
-  const subject = capitalizeDraftText(split.subject);
-  const predicate = split.predicate.trim();
-  if (!predicate) {
-    return null;
-  }
-
-  const [verb = "", ...restWords] = predicate.split(/\s+/);
-  const eventNoun = EVENT_VERB_NOUNS[verb.toLowerCase()];
-  if (!eventNoun) {
-    return null;
-  }
-
-  const rest = restWords.join(" ").trim();
-  if (!rest) {
-    return null;
-  }
-
-  const { core, tail } = splitTemporalTail(rest);
-  const cleanCore = trimLeadingArticle(core);
-  const creator = `${subject} ${toThirdPersonSingular(verb)} ${rest}`;
-
-  const alreadyHasEventNoun = EVENT_NOUN_HINTS.some((hint) =>
-    cleanCore.toLowerCase().includes(hint)
-  );
-  const opponentCore = alreadyHasEventNoun
-    ? cleanCore
-    : `${cleanCore} ${eventNoun}`.trim();
-  const opponent = `No ${opponentCore}${tail ? ` ${tail}` : ""}`;
-
-  return {
-    creator,
-    opponent,
-  };
-}
-
-function buildBareVerbOutcomePair(clause: string): { creator: string; opponent: string } | null {
-  const split = splitSubjectAndPredicate(clause);
-  if (!split) {
-    return null;
-  }
-
-  const subject = capitalizeDraftText(split.subject);
-  const predicate = split.predicate.trim();
-  if (!predicate) {
-    return null;
-  }
-
-  const [verb = "", ...restWords] = predicate.split(/\s+/);
-  if (!verb) {
-    return null;
-  }
-
-  const rest = restWords.join(" ").trim();
-  const doSupport = inferDoSupport(split.subject);
-  const positiveVerb = doSupport === "does" ? toThirdPersonSingular(verb) : verb;
-  const suffix = rest ? ` ${rest}` : "";
-  return {
-    creator: `${subject} ${positiveVerb}${suffix}`,
-    opponent: `${subject} ${doSupport} not ${verb}${suffix}`,
-  };
-}
-
-function draftOutcomeSidesFromQuestion(
-  question: string,
-  locale: string
-): { creator: string; opponent: string } | null {
-  const normalized = normalizeQuestionForOutcomeDraft(question);
-  if (!normalized) {
-    return null;
-  }
-
-  const statementMatch = normalized.match(
-    /^(.+?)\s+(will|is|are|can|has|have)\s+(.+)$/i
-  );
-  if (statementMatch) {
-    const [, subject = "", auxiliary = "", predicate = ""] = statementMatch;
-    const clause = `${subject.trim()} ${predicate.trim()}`.trim();
-    const weatherDraft = buildWeatherOutcomePair(clause);
-    if (weatherDraft) {
-      return weatherDraft;
-    }
-    if (auxiliary.toLowerCase() === "will") {
-      const eventDraft = buildEventOutcomePair(clause);
-      if (eventDraft) {
-        return eventDraft;
-      }
-      const bareVerbDraft = buildBareVerbOutcomePair(clause);
-      if (bareVerbDraft) {
-        return bareVerbDraft;
-      }
-    }
-    return {
-      creator: `${capitalizeDraftText(subject.trim())} ${auxiliary.toLowerCase()} ${predicate.trim()}`,
-      opponent: `${capitalizeDraftText(subject.trim())} ${auxiliary.toLowerCase()} not ${predicate.trim()}`,
-    };
-  }
-
-  const leadingAuxiliaryMatch = normalized.match(/^(will|is|are|can|has|have)\s+(.+)$/i);
-  if (leadingAuxiliaryMatch) {
-    const [, auxiliary = "", clause = ""] = leadingAuxiliaryMatch;
-    const weatherDraft = buildWeatherOutcomePair(clause.trim());
-    if (weatherDraft) {
-      return weatherDraft;
-    }
-    if (auxiliary.toLowerCase() === "will") {
-      const eventDraft = buildEventOutcomePair(clause.trim());
-      if (eventDraft) {
-        return eventDraft;
-      }
-      const bareVerbDraft = buildBareVerbOutcomePair(clause.trim());
-      if (bareVerbDraft) {
-        return bareVerbDraft;
-      }
-    }
-    const drafted = buildAuxiliaryOutcomePair(clause.trim(), auxiliary.toLowerCase());
-    if (drafted) {
-      return drafted;
-    }
-  }
-
-  const yesPrefix = locale.startsWith("es") ? "Si - " : "Yes - ";
-  const noPrefix = "No - ";
-  const normalizedStatement = capitalizeDraftText(normalized);
-  return {
-    creator: `${yesPrefix}${normalizedStatement}`,
-    opponent: `${noPrefix}${normalizedStatement}`,
-  };
-}
+// How long the wax-seal success stamp stays on screen.
+const SEAL_STAMP_MS = 4000;
+// Poll cadence while waiting for the created claim to appear on-chain.
+const CREATED_SYNC_INTERVAL_MS = 8000;
 
 export default function CreatePage() {
   const router = useRouter();
@@ -505,7 +211,6 @@ export default function CreatePage() {
   const [createdTxHash, setCreatedTxHash] = useState("");
   const [createdExplorerTxHash, setCreatedExplorerTxHash] = useState("");
   const [createdInviteKey, setCreatedInviteKey] = useState("");
-  const [copied, setCopied] = useState(false);
   const [showSealStamp, setShowSealStamp] = useState(false);
   const [draftResult, setDraftResult] = useState<SourceClaimDraftResponse | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
@@ -909,17 +614,12 @@ export default function CreatePage() {
       removePendingVS(createdId);
       setCreatedPending(false);
       setShowSealStamp(true);
-      toast.success(
-        rematchId ? t("createSuccessHeadlineRematch") : t("createSuccessHeadline"),
-      );
-      setTimeout(() => setShowSealStamp(false), 4000);
-      setShowSealStamp(true);
       toast.success(rematchId ? t("rematchCreatedAndFunded") : t("vsCreatedAndFunded"));
-      setTimeout(() => setShowSealStamp(false), 4000);
+      setTimeout(() => setShowSealStamp(false), SEAL_STAMP_MS);
     }
 
     void syncCreatedClaim();
-    const intervalId = setInterval(syncCreatedClaim, 8000);
+    const intervalId = setInterval(syncCreatedClaim, CREATED_SYNC_INTERVAL_MS);
 
     return () => {
       cancelled = true;
@@ -1308,7 +1008,7 @@ export default function CreatePage() {
         mockFlowTimersRef.current = [];
         toast.success(t("createSuccessHeadline"));
         setShowSealStamp(true);
-        window.setTimeout(() => setShowSealStamp(false), 4000);
+        window.setTimeout(() => setShowSealStamp(false), SEAL_STAMP_MS);
         router.replace(pathname, { scroll: false });
       }, 2300);
       mockFlowTimersRef.current.push(tDone);
@@ -1344,7 +1044,7 @@ export default function CreatePage() {
         savePendingVS({
           id: result.claimId,
           creator: address!,
-          opponent: "0x0000000000000000000000000000000000000000",
+          opponent: ZERO_ADDRESS,
           question,
           creator_position: creatorPos,
           opponent_position: opponentPos,
@@ -1352,7 +1052,7 @@ export default function CreatePage() {
           stake_amount: stake,
           deadline: deadlineTimestamp,
           state: "open",
-          winner: "0x0000000000000000000000000000000000000000",
+          winner: ZERO_ADDRESS,
           resolution_summary: "",
           created_at: Math.floor(Date.now() / 1000),
           category,
@@ -1365,7 +1065,7 @@ export default function CreatePage() {
       }
       if (!result.pending) {
         setShowSealStamp(true);
-        setTimeout(() => setShowSealStamp(false), 4000);
+        setTimeout(() => setShowSealStamp(false), SEAL_STAMP_MS);
       }
     } catch (err: any) {
       toast.error(err.message || t("errorCreating"));
@@ -1375,231 +1075,32 @@ export default function CreatePage() {
     }
   }
 
-  async function copyLink() {
-    if (!created) {
-      return;
-    }
-    await navigator.clipboard.writeText(getShareUrl(created, createdInviteKey));
-    setCopied(true);
-    toast.success(t("linkCopied"));
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   if (created) {
-    const shareUrl = getShareUrl(created, createdInviteKey);
-    const isMockSuccess = created < 0;
-
     return (
-      <>
-        <PageTransition>
-          <div className="mx-auto w-full max-w-lg px-4 pb-6 pt-4 sm:px-6 sm:pb-12 sm:pt-8 md:max-w-xl">
-            <AnimatedItem>
-              <div className="space-y-6 sm:space-y-10">
-                <header className="text-center">
-                  {/* Seal stamp — "ISSUED" lock-in animation */}
-                  <motion.div
-                    variants={sealStamp}
-                    initial="hidden"
-                    animate="visible"
-                    className="mx-auto mb-5 inline-flex items-center justify-center rounded-xl border-[3px] border-pv-emerald bg-pv-emerald/[0.05] px-8 py-2 font-display text-lg font-bold uppercase tracking-widest text-pv-emerald shadow-glow-emerald sm:text-xl"
-                  >
-                    ISSUED
-                  </motion.div>
-                  <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-emerald/90">
-                    {isMockSuccess
-                      ? t("mockSuccessBadge")
-                      : createdPending
-                        ? t("createSuccessBadgePending")
-                        : t("createSuccessBadgeLive")}
-                  </p>
-                  <h1 className="font-display text-2xl font-bold tracking-tight text-pv-text sm:text-3xl">
-                    {createdPending
-                      ? t("pendingTitle")
-                      : rematchId
-                        ? t("createSuccessHeadlineRematch")
-                        : t("createSuccessHeadline")}
-                  </h1>
-                  <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-pv-muted sm:text-[15px]">
-                    {createdPending
-                      ? t("pendingHint")
-                      : createdInviteKey
-                        ? t("sendThisPrivateLink")
-                        : t("sendThisLink")}
-                  </p>
-                </header>
-
-                <GlassCard
-                  glass
-                  noPad
-                  glow="none"
-                  className="!rounded-2xl border border-white/[0.12]"
-                >
-                  <div className="space-y-3 p-5 sm:p-6">
-                    <label
-                      className="block text-left text-[10px] font-bold uppercase tracking-[0.16em] text-pv-muted"
-                      htmlFor="create-success-share-url"
-                    >
-                      {t("inviteLinkLabel")}
-                    </label>
-                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-stretch sm:gap-3">
-                      <input
-                        id="create-success-share-url"
-                        readOnly
-                        value={shareUrl}
-                        className="form-field-pv min-h-[3rem] flex-1 break-all font-mono text-[11px] leading-snug sm:min-h-0 sm:text-xs"
-                      />
-                      <Button
-                        type="button"
-                        variant="primary"
-                        fullWidth={false}
-                        onClick={copyLink}
-                        className="w-full shrink-0 rounded-xl py-3.5 font-display text-xs font-bold uppercase tracking-widest sm:w-auto sm:min-w-[8.5rem]"
-                      >
-                        {copied ? (
-                          <Check className="size-4 shrink-0" aria-hidden />
-                        ) : (
-                          <Copy className="size-4 shrink-0" aria-hidden />
-                        )}
-                        {copied ? tc("copied") : tc("copy")}
-                      </Button>
-                    </div>
-                  </div>
-                </GlassCard>
-
-                <div>
-                  <p className="mb-3 text-center font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-pv-muted/75">
-                    {t("shareVia")}
-                  </p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <a
-                      href={`https://wa.me/?text=${encodeURIComponent(`Challenge me on Mimir: ${shareUrl}`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="chip inline-flex min-h-[44px] items-center justify-center px-4 text-xs font-semibold uppercase tracking-wide text-pv-muted transition-colors hover:border-pv-emerald/35 hover:text-pv-emerald"
-                    >
-                      WhatsApp
-                    </a>
-                    <a
-                      href={`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="chip inline-flex min-h-[44px] items-center justify-center px-4 text-xs font-semibold uppercase tracking-wide text-pv-muted transition-colors hover:border-pv-emerald/35 hover:text-pv-emerald"
-                    >
-                      Telegram
-                    </a>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-white/[0.08] bg-pv-bg/35 px-4 py-3.5 sm:px-5">
-                  <div className="space-y-2 text-left text-xs text-pv-muted">
-                    {isMockSuccess && (
-                      <p className="text-[11px] leading-relaxed text-pv-muted/90">
-                        {t("mockTxDisclaimer")}
-                      </p>
-                    )}
-                    {(createdPending || isMockSuccess) && createdTxHash && (
-                      <p className="font-mono leading-relaxed">
-                        {t("walletTx")}:{" "}
-                        {isMockSuccess ? (
-                          <span className="text-pv-text/90">
-                            {createdTxHash.slice(0, 10)}…
-                            {createdTxHash.slice(-8)}
-                          </span>
-                        ) : (
-                          <a
-                            href={getExplorerTxUrl(createdTxHash)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-pv-emerald underline-offset-2 transition-colors hover:underline"
-                          >
-                            {createdTxHash.slice(0, 10)}…
-                            {createdTxHash.slice(-8)}
-                          </a>
-                        )}
-                      </p>
-                    )}
-                    {createdExplorerTxHash &&
-                      (!createdPending ||
-                        createdExplorerTxHash !== createdTxHash) && (
-                        <p className="font-mono leading-relaxed">
-                          {createdPending ? t("consensusTx") : "Tx"}:{" "}
-                          {isMockSuccess ? (
-                            <span className="text-pv-text/90">
-                              {createdExplorerTxHash.slice(0, 10)}…
-                              {createdExplorerTxHash.slice(-8)}
-                            </span>
-                          ) : (
-                            <a
-                              href={getExplorerTxUrl(createdExplorerTxHash)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-pv-emerald underline-offset-2 transition-colors hover:underline"
-                            >
-                              {createdExplorerTxHash.slice(0, 10)}…
-                              {createdExplorerTxHash.slice(-8)}
-                            </a>
-                          )}
-                        </p>
-                      )}
-                    {isMockSuccess ? (
-                      <p className="text-[11px] leading-relaxed text-pv-muted/85">
-                        {t("mockExplorerNote")}
-                      </p>
-                    ) : (
-                      <p>
-                        <a
-                          href={getExplorerUrl()}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-pv-emerald underline-offset-2 transition-colors hover:underline"
-                        >
-                          {t("openExplorer")}
-                        </a>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-center sm:gap-4">
-                  <Button
-                    variant="ghost"
-                    fullWidth
-                    className="rounded-xl py-3.5 font-display text-xs font-bold uppercase tracking-widest sm:w-auto sm:min-w-[10rem] sm:px-8"
-                    onClick={() => {
-                      clearCreateMockSnapshot();
-                      setCreated(null);
-                      setCreatedPending(false);
-                      setCreatedTxHash("");
-                      setQuestion("");
-                      setCreatorPos("");
-                      setOpponentPos("");
-                      setUrl("");
-                      setSettlementRule("");
-                      setVisibility("public");
-                      setCreatedExplorerTxHash("");
-                      setCreatedInviteKey("");
-                    }}
-                  >
-                    {t("createAnother")}
-                  </Button>
-                  <Link href={`/vs/${created}`} className="block sm:inline-block">
-                    <Button
-                      variant="primary"
-                      fullWidth
-                      className="rounded-xl py-3.5 font-display text-xs font-bold uppercase tracking-widest sm:w-auto sm:min-w-[10rem] sm:px-8"
-                    >
-                      {t("viewVS")}
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            </AnimatedItem>
-          </div>
-        </PageTransition>
-      </>
+      <CreateSuccessScreen
+        createdId={created}
+        inviteKey={createdInviteKey}
+        pending={createdPending}
+        txHash={createdTxHash}
+        explorerTxHash={createdExplorerTxHash}
+        isRematch={Boolean(rematchId)}
+        onReset={() => {
+          clearCreateMockSnapshot();
+          setCreated(null);
+          setCreatedPending(false);
+          setCreatedTxHash("");
+          setQuestion("");
+          setCreatorPos("");
+          setOpponentPos("");
+          setUrl("");
+          setSettlementRule("");
+          setVisibility("public");
+          setCreatedExplorerTxHash("");
+          setCreatedInviteKey("");
+        }}
+      />
     );
   }
-
   const isFormMockBusy = mockOverlayPhase !== "closed";
 
   return (

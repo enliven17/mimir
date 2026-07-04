@@ -30,6 +30,8 @@ import {
 } from "@/lib/contract";
 import { getExplorerTxUrl, createArcPublicClient } from "@/lib/arc";
 import { getPendingVS } from "@/lib/pending-vs";
+import { openPeepsAvatar } from "@/lib/avatars";
+import { formatUsdc } from "@/lib/money";
 import { acquireTxLock } from "@/lib/tx-lock";
 import {
   MIN_STAKE,
@@ -241,26 +243,6 @@ function buildDesignPreviewVs(
     opponent: DESIGN_PREVIEW_OPPONENT,
     state: "cancelled",
   });
-
-  if (oneV1) {
-    return {
-      ...base,
-      state: "cancelled",
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      winner: ZERO_ADDRESS,
-      winner_side: undefined,
-      resolution_summary: "",
-      challenger_count: 1,
-      challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-      challengers: [
-        {
-          address: DESIGN_PREVIEW_OPPONENT,
-          stake: base.stake_amount,
-          potential_payout: cancelledPot,
-        },
-      ],
-    };
-  }
 
   if (oneV1) {
     return {
@@ -538,25 +520,27 @@ function formatChallengers(vs: VSData): ClaimChallenger[] {
 
 const CHALLENGERS_PAGE_SIZE = 4;
 
-function getOpenPeepsSrc(seed: string): string {
-  const safeSeed = seed.trim() || "mimir";
-  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(safeSeed)}&backgroundColor=0b1020`;
+/** Toast options linking to the tx hash, when the write returned one. */
+function txToastOptions(result: {
+  explorerTxHash?: string | null;
+  txHash?: string | null;
+}): { description: string } | undefined {
+  const hash = result.explorerTxHash || result.txHash;
+  return hash
+    ? { description: `Tx: ${hash.slice(0, 10)}...${hash.slice(-8)}` }
+    : undefined;
 }
 
-function trimFixed(value: number, decimals: number): string {
-  return value.toFixed(decimals).replace(/\.?0+$/, "");
-}
-
-function formatUsdcAmount(value: number): string {
-  if (!Number.isFinite(value) || value === 0) return "0 USDC";
-  const abs = Math.abs(value);
-  if (abs < 0.000001) return "<0.000001 USDC";
-  if (abs < 1) return `${trimFixed(value, 6)} USDC`;
-  return `${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} USDC`;
-}
+// On-chain refresh cadence; the loading spinner gives up after
+// MAX_FETCH_ATTEMPTS * VS_POLL_INTERVAL_MS (~2 min).
+const VS_POLL_INTERVAL_MS = 10_000;
+const MAX_FETCH_ATTEMPTS = 12;
+// How long the verdict overlay / seal stamp stays on screen.
+const VERDICT_OVERLAY_MS = 4000;
+// Resolution terminal types line by line; phases advance on this cadence and
+// the overlay stays up for the full animation even if the tx confirms sooner.
+const RESOLVE_PHASE_MS = [2600, 4600, 6500, 8400] as const;
+const RESOLVE_ANIM_TOTAL_MS = 9600;
 
 function VsChallengersCard({
   challengers,
@@ -641,7 +625,7 @@ function VsChallengersCard({
                         <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full border border-pv-fuch/[0.32] bg-pv-surface2 shadow-[inset_0_0_18px_rgba(255,255,255,0.03)]">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={getOpenPeepsSrc(`challenger-${challenger.address}`)}
+                            src={openPeepsAvatar(`challenger-${challenger.address}`)}
                             alt=""
                             className="h-full w-full object-cover object-top opacity-95"
                           />
@@ -674,13 +658,13 @@ function VsChallengersCard({
                           className="flex min-h-7 min-w-[4.5rem] items-center justify-center rounded-md border border-white/[0.1] bg-pv-bg/55 px-2 py-1 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-fuch sm:min-h-8 sm:min-w-[5rem] sm:text-[10px]"
                           title={t("challengerStake")}
                         >
-                          {formatUsdcAmount(challenger.stake)}
+                          {formatUsdc(challenger.stake)}
                         </div>
                         <div
                           className="flex min-h-7 min-w-[4.5rem] items-center justify-center rounded-md border border-pv-emerald/[0.18] bg-pv-emerald/[0.08] px-2 py-1 font-mono text-[9px] font-bold tabular-nums leading-none text-pv-emerald sm:min-h-8 sm:min-w-[5rem] sm:text-[10px]"
                           title={t("potentialPayout")}
                         >
-                          {formatUsdcAmount(challenger.potential_payout)}
+                          {formatUsdc(challenger.potential_payout)}
                         </div>
                       </div>
                     </div>
@@ -832,7 +816,7 @@ export default function VSDetailPage() {
       // Give up on the loading spinner after ~2 min.
       setFetchAttempts((prev) => {
         const next = prev + 1;
-        if (next >= 12) setLoading(false);
+        if (next >= MAX_FETCH_ATTEMPTS) setLoading(false);
         return next;
       });
     }
@@ -844,7 +828,7 @@ export default function VSDetailPage() {
       return;
     }
 
-    const intervalId = setInterval(fetchVS, 10000);
+    const intervalId = setInterval(fetchVS, VS_POLL_INTERVAL_MS);
     return () => clearInterval(intervalId);
   }, [fetchVS, isSampleVS]);
 
@@ -859,7 +843,7 @@ export default function VSDetailPage() {
     setHasAttemptedResolve(false);
     setShowVerdict(true);
 
-    const timer = setTimeout(() => setShowVerdict(false), 4000);
+    const timer = setTimeout(() => setShowVerdict(false), VERDICT_OVERLAY_MS);
     return () => clearTimeout(timer);
   }, [vs]);
 
@@ -1102,8 +1086,8 @@ export default function VSDetailPage() {
     !hasWinner
       ? null
       : resolvedPayout === null
-        ? formatUsdcAmount(pool)
-        : `${provenResultTone === "lost" ? "-" : "+"}${formatUsdcAmount(resolvedPayout)}`;
+        ? formatUsdc(pool)
+        : `${provenResultTone === "lost" ? "-" : "+"}${formatUsdc(resolvedPayout)}`;
   const marketType = display.market_type ?? "binary";
   const oddsMode = display.odds_mode ?? "pool";
   const challengeStakeValue = Number(challengeStake);
@@ -1145,16 +1129,14 @@ export default function VSDetailPage() {
     rivalryChain.length > 1 || display.state === "resolved";
   const shareUrl = getShareUrl(vsId, inviteKey);
 
-  async function handleAccept() {
-    const walletReady = isConnected && !!address;
-    if (!walletReady) {
+  /**
+   * Shared guard for every on-chain action: wallet connected, one tx at a
+   * time (tab-wide lock), and actionLoading reset when the action finishes.
+   */
+  async function withTxLock(run: () => Promise<void>): Promise<void> {
+    if (!isConnected || !address) {
       return;
     }
-    if (!hasValidChallengeStake) {
-      toast.error(t("invalidChallengeStakeMin", { amount: MIN_STAKE }));
-      return;
-    }
-
     let releaseLock: (() => void) | undefined;
     try {
       releaseLock = acquireTxLock(address);
@@ -1162,7 +1144,24 @@ export default function VSDetailPage() {
       toast.error(lockErr.message);
       return;
     }
+    try {
+      await run();
+    } finally {
+      releaseLock?.();
+      setActionLoading(null);
+    }
+  }
 
+  async function handleAccept() {
+    if (!isConnected || !address) {
+      return;
+    }
+    if (!hasValidChallengeStake) {
+      toast.error(t("invalidChallengeStakeMin", { amount: MIN_STAKE }));
+      return;
+    }
+
+    await withTxLock(async () => {
     flushSync(() => {
       setActionLoading("accept");
     });
@@ -1195,31 +1194,17 @@ export default function VSDetailPage() {
               amount: challengeStakeValue,
               total: getVSTotalPot(liveVS) + challengeStakeValue,
             }),
-        (result.explorerTxHash || result.txHash) ? { description: `Tx: ${(result.explorerTxHash || result.txHash).slice(0, 10)}...${(result.explorerTxHash || result.txHash).slice(-8)}` } : undefined
+        txToastOptions(result)
       );
       fetchVS();
     } catch (err: any) {
       toast.error(err.message || t("errorAccepting"));
-    } finally {
-      releaseLock?.();
-      setActionLoading(null);
     }
+    });
   }
 
   async function handleResolve() {
-    const walletReady = isConnected && !!address;
-    if (!walletReady) {
-      return;
-    }
-
-    let releaseLock: (() => void) | undefined;
-    try {
-      releaseLock = acquireTxLock(address);
-    } catch (lockErr: any) {
-      toast.error(lockErr.message);
-      return;
-    }
-
+    await withTxLock(async () => {
     setActionLoading("resolve");
     if (willTriggerResolution) {
       setResolvePhase(0);
@@ -1228,11 +1213,9 @@ export default function VSDetailPage() {
     // La terminal escribe letra por letra (muy lento). Sincronizamos el avance de fase
     // para que se puedan ver TODAS las líneas (incl. "Fetching results..." y "Issuing verdict").
     // Si el tx on-chain tarda menos, mantenemos la terminal visible hasta terminar la animación.
-    const t1 = willTriggerResolution ? setTimeout(() => setResolvePhase(1), 2600) : null;
-    const t2 = willTriggerResolution ? setTimeout(() => setResolvePhase(2), 4600) : null;
-    const t3 = willTriggerResolution ? setTimeout(() => setResolvePhase(3), 6500) : null;
-    const t4 = willTriggerResolution ? setTimeout(() => setResolvePhase(4), 8400) : null;
-    const ANIM_TOTAL_MS = 9600;
+    const phaseTimers = willTriggerResolution
+      ? RESOLVE_PHASE_MS.map((ms, i) => setTimeout(() => setResolvePhase(i + 1), ms))
+      : [];
     const startedAt = Date.now();
 
     try {
@@ -1245,7 +1228,7 @@ export default function VSDetailPage() {
             ? t("submittedPending")
             : t("requestResolveTriggered")
           : t("requestResolveStored"),
-        (result.explorerTxHash || result.txHash) ? { description: `Tx: ${(result.explorerTxHash || result.txHash).slice(0, 10)}...${(result.explorerTxHash || result.txHash).slice(-8)}` } : undefined
+        txToastOptions(result)
       );
 
       if (willTriggerResolution && isPending) {
@@ -1257,7 +1240,7 @@ export default function VSDetailPage() {
       } else if (willTriggerResolution) {
         setPendingResolveTxHash(null);
         setShowVerdict(true);
-        setTimeout(() => setShowVerdict(false), 4000);
+        setTimeout(() => setShowVerdict(false), VERDICT_OVERLAY_MS);
       } else {
         setPendingResolveTxHash(null);
       }
@@ -1266,87 +1249,48 @@ export default function VSDetailPage() {
       // Asegura que la terminal tenga tiempo de mostrar la última línea aunque la tx
       // se confirme rápido.
       const elapsed = Date.now() - startedAt;
-      if (willTriggerResolution && elapsed < ANIM_TOTAL_MS) {
-        await new Promise((r) => setTimeout(r, ANIM_TOTAL_MS - elapsed));
+      if (willTriggerResolution && elapsed < RESOLVE_ANIM_TOTAL_MS) {
+        await new Promise((r) => setTimeout(r, RESOLVE_ANIM_TOTAL_MS - elapsed));
       }
     } catch (err: any) {
       toast.error(err.message || t("errorResolving"));
     } finally {
-      if (t1) clearTimeout(t1);
-      if (t2) clearTimeout(t2);
-      if (t3) clearTimeout(t3);
-      if (t4) clearTimeout(t4);
+      phaseTimers.forEach(clearTimeout);
       if (willTriggerResolution) {
         setResolvePhase(-1);
       }
-      releaseLock?.();
-      setActionLoading(null);
     }
+    });
   }
 
   async function handleResetResolveRequest() {
-    const walletReady = isConnected && !!address;
-    if (!walletReady) {
-      return;
-    }
-
-    let releaseLock: (() => void) | undefined;
-    try {
-      releaseLock = acquireTxLock(address);
-    } catch (lockErr: any) {
-      toast.error(lockErr.message);
-      return;
-    }
-
+    await withTxLock(async () => {
     setActionLoading("resetResolve");
     try {
       const result = await resetVSResolveRequest(address!, vsId, inviteKey);
-      toast.success(
-        t("resetResolveRequestSuccess"),
-        (result.explorerTxHash || result.txHash)
-          ? {
-              description: `Tx: ${(result.explorerTxHash || result.txHash).slice(0, 10)}...${(result.explorerTxHash || result.txHash).slice(-8)}`,
-            }
-          : undefined
-      );
+      toast.success(t("resetResolveRequestSuccess"), txToastOptions(result));
       void fetchVS();
     } catch (err: any) {
       toast.error(err.message || t("resetResolveRequestError"));
-    } finally {
-      releaseLock?.();
-      setActionLoading(null);
     }
+    });
   }
 
   async function handleCancel() {
-    const walletReady = isConnected && !!address;
-    if (!walletReady) {
-      return;
-    }
-
-    let releaseLock: (() => void) | undefined;
-    try {
-      releaseLock = acquireTxLock(address);
-    } catch (lockErr: any) {
-      toast.error(lockErr.message);
-      return;
-    }
-
+    await withTxLock(async () => {
     setActionLoading("cancel");
     try {
       const result = await cancelVS(address!, vsId, inviteKey);
       const isPending = "pending" in result && Boolean(result.pending);
       toast.success(
         isPending ? t("submittedPending") : t("cancelledToast"),
-        (result.explorerTxHash || result.txHash) ? { description: `Tx: ${(result.explorerTxHash || result.txHash).slice(0, 10)}...${(result.explorerTxHash || result.txHash).slice(-8)}` } : undefined
+        txToastOptions(result)
       );
       fetchVS();
     } catch (err: any) {
       toast.error(err.message || t("errorCancelling"));
-    } finally {
-      releaseLock?.();
-      setActionLoading(null);
     }
+    });
   }
 
   return (
@@ -1505,7 +1449,7 @@ export default function VSDetailPage() {
                       <div className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-pv-cyan/35 bg-pv-surface2">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={getOpenPeepsSrc(`creator-${display.creator}`)}
+                          src={openPeepsAvatar(`creator-${display.creator}`)}
                           alt=""
                           className="h-full w-full object-cover object-top opacity-95"
                         />
@@ -1542,7 +1486,7 @@ export default function VSDetailPage() {
                           <div className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-pv-fuch/35 bg-pv-surface2">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={getOpenPeepsSrc(`challenger-${display.opponent}`)}
+                              src={openPeepsAvatar(`challenger-${display.opponent}`)}
                               alt=""
                               className="h-full w-full object-cover object-top opacity-95"
                             />
@@ -1587,7 +1531,7 @@ export default function VSDetailPage() {
                       {t("pool")}
                     </p>
                     <div className="mt-auto min-w-0 pt-2 font-mono text-base font-bold tabular-nums leading-tight text-pv-gold sm:text-lg lg:text-xl">
-                      {formatUsdcAmount(pool)}
+                      {formatUsdc(pool)}
                     </div>
                   </div>
                   <div className="flex min-h-[5.75rem] min-w-0 flex-col bg-pv-bg/55 px-4 py-3.5 sm:min-h-[6rem] sm:px-4 sm:py-4">
@@ -1595,7 +1539,7 @@ export default function VSDetailPage() {
                       {t("creatorStake")}
                     </p>
                     <div className="mt-auto min-w-0 pt-2 font-mono text-base font-bold tabular-nums leading-tight text-pv-cyan sm:text-lg lg:text-xl">
-                      {formatUsdcAmount(display.creator_stake ?? display.stake_amount)}
+                      {formatUsdc(display.creator_stake ?? display.stake_amount)}
                     </div>
                   </div>
                   <div className="flex min-h-[5.75rem] min-w-0 flex-col bg-pv-bg/55 px-4 py-3.5 sm:min-h-[6rem] sm:px-4 sm:py-4">
@@ -1848,7 +1792,7 @@ export default function VSDetailPage() {
                               {t("ifChallengersWin")}
                             </div>
                             <div className="mt-1.5 font-mono text-sm font-bold tabular-nums text-pv-emerald sm:text-base">
-                              {formatUsdcAmount(challengePayoutPreview)}
+                              {formatUsdc(challengePayoutPreview)}
                             </div>
                           </div>
                           <div className="min-w-0 bg-pv-bg/70 px-3.5 py-3">
@@ -1856,7 +1800,7 @@ export default function VSDetailPage() {
                               {t("netProfit")}
                             </div>
                             <div className="mt-1.5 font-mono text-sm font-bold tabular-nums text-pv-fuch sm:text-base">
-                              +{formatUsdcAmount(challengeProfitPreview)}
+                              +{formatUsdc(challengeProfitPreview)}
                             </div>
                           </div>
                           <div className="min-w-0 bg-pv-bg/70 px-3.5 py-3">
@@ -1864,16 +1808,16 @@ export default function VSDetailPage() {
                               {t("ifCreatorWins")}
                             </div>
                             <div className="mt-1.5 font-mono text-sm font-bold tabular-nums text-pv-cyan sm:text-base">
-                              {formatUsdcAmount(poolPreview?.creatorPayout ?? creatorPayoutPreview)}
+                              {formatUsdc(poolPreview?.creatorPayout ?? creatorPayoutPreview)}
                             </div>
                           </div>
                         </div>
                         {poolPreview ? (
                           <p className="px-3.5 py-3 text-xs leading-relaxed text-pv-muted">
                             {t("poolPayoutFormula", {
-                              stake: formatUsdcAmount(challengeStakeValue),
-                              creatorStake: formatUsdcAmount(creatorStake),
-                              challengerStake: formatUsdcAmount(poolPreview.totalChallengerStake),
+                              stake: formatUsdc(challengeStakeValue),
+                              creatorStake: formatUsdc(creatorStake),
+                              challengerStake: formatUsdc(poolPreview.totalChallengerStake),
                             })}
                           </p>
                         ) : null}
@@ -2268,7 +2212,7 @@ export default function VSDetailPage() {
                                       {entry.question}
                                     </div>
                                     <div className="text-xs text-pv-muted mt-1">
-                                      {t("pool")}: {formatUsdcAmount(getVSTotalPot(entry))}
+                                      {t("pool")}: {formatUsdc(getVSTotalPot(entry))}
                                     </div>
                                   </div>
                                 );

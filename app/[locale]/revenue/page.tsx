@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
+import { shortenAddress } from "@/lib/constants";
 
 interface PaymentEvent {
   resource: string;
@@ -33,8 +34,7 @@ interface RevenueSummary {
 }
 
 function short(addr: string | null): string {
-  if (!addr) return "—";
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+  return addr ? shortenAddress(addr) : "—";
 }
 
 const ARCSCAN = "https://testnet.arcscan.app";

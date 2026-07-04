@@ -44,6 +44,8 @@ import ChallengeOpportunityCard from "@/components/explorer/ChallengeOpportunity
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import type { VSCacheFreshness } from "@/lib/vs-freshness";
 
+const SECONDS_PER_DAY = 86_400;
+
 const filterPillBase =
   "shrink-0 rounded border px-4 py-2 font-display text-xs font-bold uppercase tracking-tight transition-[color,border-color,background-color] focus-ring";
 const filterPillActive = "border-pv-emerald/50 bg-pv-emerald text-pv-bg";
@@ -345,7 +347,7 @@ export default function ExploreClient() {
         ).getTime();
         if (!Number.isFinite(deadlineMs)) return false;
         const d = Math.floor(deadlineMs / 1000);
-        return d > nowTs && d - nowTs <= 24 * 60 * 60;
+        return d > nowTs && d - nowTs <= SECONDS_PER_DAY;
       });
     }
 
