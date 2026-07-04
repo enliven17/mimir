@@ -236,6 +236,39 @@ Several details matter for trust:
 - **Challenge lock window.** `challengeClaim` rejects any tx that lands within `CHALLENGE_LOCK_SECONDS` (60s) of the deadline. Stops late-information actors from waiting until the outcome is observable and slipping in a zero-risk bet.
 - **Only the configured `oracle` address** can call `resolveClaim`. That address is a Circle-managed wallet — no human can quietly re-route it.
 
+### Self-resolving jury mode (opt-in)
+
+With `COUNCIL_SETTLEMENT=1 COUNCIL_SELF_RESOLVING=1` the oracle stops deciding alone and runs settlement as a **self-resolving prediction market** over the council, adapting the mechanism from [Srinivasan, Karger & Chen — *Self-Resolving Prediction Markets for Unverifiable Outcomes* (arXiv:2306.04305)](https://arxiv.org/abs/2306.04305):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Oracle as Oracle (terminal agent)
+    participant J1 as Juror 1 (shuffled order)
+    participant J2 as Juror 2
+    participant Jn as Juror n
+    participant Contract as Mimir.sol
+
+    Note over Oracle: common prior q0 = 0.5
+    Oracle->>J1: buy vote (x402 $0.001) — no history yet
+    J1-->>Oracle: verdict + confidence → q1
+    Oracle->>J2: buy vote — prompt includes J1's report
+    J2-->>Oracle: q2
+    Note over Oracle: once quorum is met, each further vote<br/>only happens with probability 1 − α
+    Oracle->>Jn: buy vote — sees the full report history
+    Jn-->>Oracle: qn
+    Note over Oracle: terminal (reference) assessment:<br/>own evidence + all juror reports → qT
+    Oracle->>Contract: resolveClaim(verdict, confidence,<br/>evidenceHash incl. q-chain + CE scores)
+    Oracle->>J1: cross-entropy bonus (native USDC)<br/>only if score > 0
+```
+
+- **Sequential, visible history.** Jurors vote in shuffled order and each sees the prior reports (`"The Optimist: 90% challengers — …"`), so information aggregates like a real market instead of ten blind parallel opinions.
+- **Cross-entropy scoring.** Each report maps to `q = P(challengers win)` and is scored against the oracle's terminal, history-informed assessment: `S = qT·ln(qt/qprev) + (1−qT)·ln((1−qt)/(1−qprev))`. Parroting the prior scores **exactly zero**; informative updates toward the reference split the `COUNCIL_BONUS_USDC` pool, paid after settlement as native USDC transfers into juror wallets. The flat $0.001 x402 vote fee remains the participation floor.
+- **Random termination.** Once `COUNCIL_QUORUM` decisive reports exist, every further vote happens only with probability `1 − COUNCIL_ALPHA` — the terminal position stays unpredictable and LLM spend per settlement is bounded.
+- **Verifiable.** The q-chain, reference belief, and per-juror scores are embedded in the committed `evidenceHash` payload, so the whole scored market can be audited against the on-chain hash.
+
+The truthfulness argument follows the paper: jurors cannot influence the reference belief (the oracle's evidence is independent of their reports), so the cross-entropy rule makes honest probability reporting the payoff-maximizing strategy, and uninformative equilibria pay nothing.
+
 ---
 
 ## Contract state machine
@@ -299,6 +332,7 @@ stateDiagram-v2
 
 - The **settler role** fulfils the protocol's mandate: read evidence, ask the LLM, settle. Pure on-chain side-effect.
 - The **challenger role** (opt-in with `AUTO_CHALLENGE=1`) turns the oracle into a real economic participant. It uses the [Kelly criterion](https://en.wikipedia.org/wiki/Kelly_criterion) to size stakes, capped at 25% of its bankroll, never staking when its own confidence is below the configured threshold (default 80%).
+- **Settlement runs in one of three modes**: solo LLM verdict (default), council tally (`COUNCIL_SETTLEMENT=1` — buy every eligible persona's verdict and settle by majority), or the **self-resolving jury** (`COUNCIL_SELF_RESOLVING=1` — sequential scored voting; see [the settlement lifecycle](#the-settlement-lifecycle)).
 
 ### Market-creator agent (`agents/market-creator/index.ts`)
 
@@ -697,6 +731,12 @@ Every env var lives in `.env.example`. Quick reference:
 | `COUNCIL_PEER_READS_PER_PERSONA`  | council (worker)         | Peer reads bought before each persona decision; default `2`                         |
 | `COUNCIL_PEER_READ_DELAY_MS`      | council (worker)         | Delay between peer-read nanopayments; default `15000`                               |
 | `COUNCIL_PEER_READ_CAP_USDC`      | council (worker)         | Max accepted x402 quote per peer read; default `0.003` USDC                         |
+| `COUNCIL_SETTLEMENT`              | oracle                   | `1` settles by council tally instead of the solo oracle verdict                     |
+| `COUNCIL_QUORUM`                  | oracle                   | Min decisive juror votes before the council verdict is used; default `3`            |
+| `COUNCIL_VOTE_CAP_USDC`           | oracle                   | Max accepted x402 quote per settlement vote; default `0.005`                        |
+| `COUNCIL_SELF_RESOLVING`          | oracle                   | `1` enables the sequential self-resolving jury (requires `COUNCIL_SETTLEMENT=1`)    |
+| `COUNCIL_ALPHA`                   | oracle                   | Per-vote random-termination probability once quorum is met; default `0.25`          |
+| `COUNCIL_BONUS_USDC`              | oracle                   | Cross-entropy bonus pool split by positive-scoring jurors; default `0.01`           |
 
 ---
 

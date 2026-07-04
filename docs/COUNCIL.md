@@ -14,6 +14,7 @@ The point isn't to find a single "best" trader. It's the opposite: by giving ten
 - [The ten personas](#the-ten-personas)
 - [Architecture](#architecture)
 - [Decision pipeline](#decision-pipeline)
+- [Self-resolving settlement](#self-resolving-settlement)
 - [Rate-limit strategy](#rate-limit-strategy)
 - [Local setup](#local-setup)
 - [Production deploy](#production-deploy)
@@ -112,6 +113,39 @@ For every (persona, claim) pair, the runner walks this sequence:
 ```
 
 The verdict from the LLM is the same schema the oracle uses (`CREATOR_WINS` / `CHALLENGERS_WIN` / `DRAW` / `UNRESOLVABLE`). A persona that decides `CREATOR_WINS` simply abstains — `challengeClaim` is the only on-chain action available to a non-creator, so personas can only ever join the challenger side.
+
+---
+
+## Self-resolving settlement
+
+Beyond trading, the eligible personas also act as a paid **settlement jury**. The baseline mode (`COUNCIL_SETTLEMENT=1`) buys every eligible persona's verdict in parallel-blind fashion and settles by majority tally. The upgraded mode (`COUNCIL_SELF_RESOLVING=1`) turns that jury into a **self-resolving prediction market**, adapting [Srinivasan, Karger & Chen (arXiv:2306.04305)](https://arxiv.org/abs/2306.04305):
+
+```mermaid
+flowchart LR
+    P0["prior<br/>q0 = 0.5"] --> J1
+    subgraph jury[Sequential jury — shuffled order]
+        J1["Juror 1<br/>reports q1"] -->|"history:<br/>'Optimist: 90% challengers — …'"| J2["Juror 2<br/>reports q2"]
+        J2 -->|"α-coin: stop?"| JN["Juror n<br/>reports qn"]
+    end
+    JN --> REF["Oracle terminal report qT<br/>independent evidence + full history"]
+    REF -->|"settles claim"| CHAIN["resolveClaim()<br/>evidenceHash ⊃ {q-chain, qT, scores}"]
+    REF -->|"CE score vs qT"| BONUS["bonus pool split<br/>transferNative → positive scorers"]
+```
+
+1. **Sequential reports with visible history.** Jurors are shuffled, then vote one at a time through the same paid `GET /api/council/vote` endpoint, now carrying a `history` param — each juror's prompt includes the prior reports, so beliefs aggregate instead of ten personas guessing blind.
+2. **Probability, not just a verdict.** Each `verdict + confidence` maps to `q = P(challengers win)` (DRAW/UNRESOLVABLE keep the previous q — zero information, zero score).
+3. **Random termination.** Once `COUNCIL_QUORUM` decisive reports exist, each further vote happens only with probability `1 − COUNCIL_ALPHA`. Nobody can predict who reports last.
+4. **Terminal reference.** The oracle makes the final assessment from its own independently fetched evidence *plus* the full juror history — this is the reference belief `qT` that both settles the claim and grades the jurors. Because jurors cannot touch the oracle's evidence, they cannot steer the report they are paid against.
+5. **Cross-entropy payouts.** Each juror earns `S = qT·ln(qt/qprev) + (1−qT)·ln((1−qt)/(1−qprev))` — the market-scoring-rule measure of marginal information. Positive scorers split the `COUNCIL_BONUS_USDC` pool via native USDC transfers into their own wallets after settlement; parroting the prior earns exactly zero. The $0.001 vote fee stays as the flat participation floor.
+6. **Auditability.** The q-chain, `qT`, and per-juror scores are serialized into the payload committed as the on-chain `evidenceHash`.
+
+The mechanism lives in `agents/oracle/council-vote.ts` (pure scoring math is exported and unit-tested in `tests/node/self-resolving.test.ts`); the oracle wiring is in `agents/oracle/index.ts` (`settle()`).
+
+| Variable | Default | Effect |
+|---|---|---|
+| `COUNCIL_SELF_RESOLVING` | off | `1` enables the mechanism (requires `COUNCIL_SETTLEMENT=1`) |
+| `COUNCIL_ALPHA` | `0.25` | Per-vote stop probability after quorum |
+| `COUNCIL_BONUS_USDC` | `0.01` | Total cross-entropy bonus pool per settlement |
 
 ---
 
