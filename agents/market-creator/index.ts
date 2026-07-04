@@ -641,7 +641,9 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
 // ── Create claim on-chain ─────────────────────────────────────────────────────
 
 async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + candidate.deadlineHours * 3600);
+  // Floor the WHOLE expression: sports candidates get kickoff-pinned
+  // fractional deadlineHours, and BigInt() throws on non-integers.
+  const deadline = BigInt(Math.floor(Date.now() / 1000 + candidate.deadlineHours * 3600));
   const stake    = usdcToWei(CREATOR_STAKE_USDC);
 
   // Check balance
