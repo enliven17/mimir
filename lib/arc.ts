@@ -19,6 +19,9 @@ import { privateKeyToAccount } from "viem/accounts";
 // Pulled out so the rest of the file can read the URL without optional-chain noise.
 export const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
 
+/** Circle's Gateway Wallet on Arc — where batched x402 nanopayments settle on-chain. */
+export const GATEWAY_WALLET_ADDRESS = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
+
 // ── Chain definition ──────────────────────────────────────────────────────────
 export const arcTestnet: Chain = {
   id: 5042002,

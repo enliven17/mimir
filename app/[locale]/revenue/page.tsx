@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { shortenAddress } from "@/lib/constants";
+import { GATEWAY_WALLET_ADDRESS } from "@/lib/arc";
 
 interface PaymentEvent {
   resource: string;
@@ -38,14 +39,58 @@ function short(addr: string | null): string {
 }
 
 const ARCSCAN = "https://testnet.arcscan.app";
-// Circle's Gateway Wallet on Arc — where batched x402 nanopayments settle on-chain.
-const GATEWAY_WALLET = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
+const GATEWAY_WALLET = GATEWAY_WALLET_ADDRESS;
 function isTxHash(id: string | null): id is string {
   return !!id && /^0x[0-9a-fA-F]{64}$/.test(id);
 }
 
+interface SettlementTx {
+  hash: string;
+  method: string | null;
+  status: string;
+  timestamp: string;
+  from: string;
+  valueUsdc: number;
+}
+
+/**
+ * Per-payment receipt. Nanopayments settle through Circle's Gateway in
+ * BATCHES, so most payments have a facilitator settlement id instead of an
+ * on-chain tx hash — label those honestly rather than dressing them up.
+ */
+function ReceiptLink({ txId, payer }: { txId: string | null; payer: string | null }) {
+  if (isTxHash(txId)) {
+    return (
+      <a
+        href={`${ARCSCAN}/tx/${txId}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-pv-emerald underline-offset-2 hover:underline"
+        title={txId}
+      >
+        {short(txId)} ↗
+      </a>
+    );
+  }
+  if (txId || payer) {
+    return (
+      <a
+        href={`${ARCSCAN}/address/${GATEWAY_WALLET}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded border border-white/[0.12] bg-pv-surface2/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-pv-muted transition-colors hover:border-pv-emerald/40 hover:text-pv-emerald"
+        title={`Verified off-chain by Circle's facilitator; settles on-chain in a Gateway batch.${txId ? ` Settlement id: ${txId}` : ""}`}
+      >
+        batched ↗
+      </a>
+    );
+  }
+  return <span className="text-pv-muted/60">—</span>;
+}
+
 export default function RevenuePage() {
   const [data, setData] = useState<RevenueSummary | null>(null);
+  const [settlements, setSettlements] = useState<SettlementTx[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,11 +105,25 @@ export default function RevenuePage() {
         if (alive) setErr(e instanceof Error ? e.message : "failed");
       }
     };
+    // Gateway batches land on-chain slowly — server caches for 30s anyway.
+    const loadSettlements = async () => {
+      try {
+        const res = await fetch("/api/x402/settlements");
+        if (!res.ok) return;
+        const json = (await res.json()) as { items?: SettlementTx[] };
+        if (alive && Array.isArray(json.items)) setSettlements(json.items);
+      } catch {
+        // explorer hiccup — keep the last list
+      }
+    };
     load();
+    loadSettlements();
     const t = setInterval(load, 5000); // live refresh
+    const ts = setInterval(loadSettlements, 60000);
     return () => {
       alive = false;
       clearInterval(t);
+      clearInterval(ts);
     };
   }, []);
 
@@ -182,29 +241,7 @@ export default function RevenuePage() {
                         ${e.priceUsd.toFixed(6)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono">
-                        {isTxHash(e.txId) ? (
-                          <a
-                            href={`${ARCSCAN}/tx/${e.txId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-pv-emerald underline-offset-2 hover:underline"
-                            title={e.txId}
-                          >
-                            {short(e.txId)} ↗
-                          </a>
-                        ) : e.payer ? (
-                          <a
-                            href={`${ARCSCAN}/address/${e.payer}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-pv-emerald underline-offset-2 hover:underline"
-                            title={`Payer on Arc — settlement ${e.txId ?? ""}`}
-                          >
-                            payer ↗
-                          </a>
-                        ) : (
-                          <span className="text-pv-muted/60">—</span>
-                        )}
+                        <ReceiptLink txId={e.txId} payer={e.payer} />
                       </td>
                     </tr>
                   ))}
@@ -213,7 +250,8 @@ export default function RevenuePage() {
             </div>
             <p className="mt-3 font-mono text-[11px] leading-relaxed text-pv-muted">
               Payments are W3S-signed and settled in USDC on Arc through Circle&apos;s Gateway —
-              batched on-chain at the{" "}
+              individual nanopayments are verified off-chain by the facilitator and land
+              on-chain in batches at the{" "}
               <a
                 href={`${ARCSCAN}/address/${GATEWAY_WALLET}`}
                 target="_blank"
@@ -225,6 +263,61 @@ export default function RevenuePage() {
               . Seller wallets show which persona or platform wallet earned each read.
             </p>
           </section>
+
+          <section className="mt-10">
+            <h2 className="label">On-chain batch settlements</h2>
+            <div className="card mt-3">
+              <table className="w-full table-fixed text-sm">
+                <thead className="border-b border-white/[0.08] text-left">
+                  <tr className="font-mono text-[11px] uppercase tracking-[0.12em] text-pv-muted">
+                    <th className="w-[22%] px-4 py-2.5 font-bold">When</th>
+                    <th className="w-[22%] px-4 py-2.5 font-bold">Method</th>
+                    <th className="w-[22%] px-4 py-2.5 font-bold">From</th>
+                    <th className="w-[16%] px-4 py-2.5 text-right font-bold">USDC</th>
+                    <th className="w-[18%] px-4 py-2.5 text-right font-bold">Tx</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06]">
+                  {settlements.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center font-mono text-pv-muted">
+                        No Gateway transactions loaded yet…
+                      </td>
+                    </tr>
+                  )}
+                  {settlements.map((s) => (
+                    <tr key={s.hash} className="transition-colors hover:bg-pv-surface2/40">
+                      <td className="px-4 py-2.5 font-mono text-pv-muted">
+                        {s.timestamp ? new Date(s.timestamp).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <code className="font-mono text-pv-text">{s.method ?? "transfer"}</code>
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-pv-muted">{short(s.from)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-semibold text-pv-text">
+                        {s.valueUsdc > 0 ? s.valueUsdc.toFixed(4) : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono">
+                        <a
+                          href={`${ARCSCAN}/tx/${s.hash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-pv-emerald underline-offset-2 hover:underline"
+                          title={s.hash}
+                        >
+                          {short(s.hash)} ↗
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 font-mono text-[11px] leading-relaxed text-pv-muted">
+              Real transactions on the Gateway Wallet contract, straight from ArcScan —
+              the on-chain counterpart of the batched receipts above.
+            </p>
+          </section>
         </>
       )}
       </div>
@@ -233,29 +326,7 @@ export default function RevenuePage() {
 }
 
 function PaymentCard({ event }: { event: PaymentEvent }) {
-  const receipt = isTxHash(event.txId) ? (
-    <a
-      href={`${ARCSCAN}/tx/${event.txId}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-pv-emerald underline-offset-2 hover:underline"
-      title={event.txId}
-    >
-      {short(event.txId)} ↗
-    </a>
-  ) : event.payer ? (
-    <a
-      href={`${ARCSCAN}/address/${event.payer}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-pv-emerald underline-offset-2 hover:underline"
-      title={`Payer on Arc — settlement ${event.txId ?? ""}`}
-    >
-      payer ↗
-    </a>
-  ) : (
-    <span className="text-pv-muted/60">—</span>
-  );
+  const receipt = <ReceiptLink txId={event.txId} payer={event.payer} />;
 
   return (
     <div className="px-4 py-4">
