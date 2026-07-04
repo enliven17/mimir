@@ -17,7 +17,7 @@ import {
   createArcPublicClient,
   getContractAddress,
   getDeployBlock,
-  microToUsdc,
+  weiToUsdc,
   paginatedGetLogs,
 } from "@/lib/arc";
 import {
@@ -110,7 +110,7 @@ export async function GET(
       archetype:   p.archetype,
       accent:      p.accent,
       staked:      !!hit,
-      stakeUsdc:   hit ? microToUsdc(hit.stake) : 0,
+      stakeUsdc:   hit ? weiToUsdc(hit.stake) : 0,
       txHash:      hit?.txHash ?? null,
       blockNumber: hit?.blockNumber ?? null,
     };

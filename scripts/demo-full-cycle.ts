@@ -11,7 +11,7 @@
 
 import { keccak256, toBytes, formatEther } from "viem";
 import {
-  createArcPublicClient, getContractAddress, getExplorerTxUrl, microToUsdc, usdcToMicro,
+  createArcPublicClient, getContractAddress, getExplorerTxUrl, weiToUsdc, usdcToWei,
 } from "../lib/arc";
 import {
   executeContract, buildAbiFunctionSignature, toCircleAbiParameters,
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   console.log(`Creator : ${creatorAddr}`);
   console.log(`Oracle  : ${oracleAddr}`);
 
-  const stakeWei = usdcToMicro(STAKE_USDC);
+  const stakeWei = usdcToWei(STAKE_USDC);
   const deadline = BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS);
 
   // 1. CREATE
@@ -166,8 +166,8 @@ Return JSON only:
   console.log("\n─── Final state ───");
   console.log(`Claim #${claimId} state: ${finalState === STATE.RESOLVED ? "RESOLVED" : finalState}`);
   console.log(`Winner side          : ${winnerSide} (1=creator, 2=challengers, 3=draw, 4=unresolvable)`);
-  console.log(`Oracle  balance      : ${microToUsdc(oracleBal).toFixed(4)} USDC`);
-  console.log(`Creator balance      : ${microToUsdc(creatorBal).toFixed(4)} USDC`);
+  console.log(`Oracle  balance      : ${weiToUsdc(oracleBal).toFixed(4)} USDC`);
+  console.log(`Creator balance      : ${weiToUsdc(creatorBal).toFixed(4)} USDC`);
   console.log("\n✓ Full Mimir cycle on Arc executed end-to-end (W3S + Gemini + native USDC).");
 }
 

@@ -215,8 +215,8 @@ export const arcTestnet = {
 };
 
 // USDC is native — msg.value is USDC (6 decimals = 1 USDC)
-export function usdcToMicro(usdc: number): bigint  // 1 USDC → 1_000_000n
-export function microToUsdc(micro: bigint): number  // 1_000_000n → 1
+export function usdcToWei(usdc: number): bigint  // 1 USDC → 10^18 wei
+export function weiToUsdc(wei: bigint): number   // 10^18 wei → 1
 export function ensureArcChain(ethereum)           // MetaMask chain switch
 ```
 

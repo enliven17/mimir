@@ -33,18 +33,17 @@
 // Worker-scoped Gemini key. Falls back to the shared GEMINI_API_KEY when
 // COUNCIL_GEMINI_API_KEY is not set. See agents/oracle/index.ts for the
 // rationale: each worker gets its own 20 RPM free-tier bucket.
-{
-  const k = process.env.COUNCIL_GEMINI_API_KEY?.trim();
-  if (k) process.env.GEMINI_API_KEY = k;
-}
+applyWorkerGeminiKey("COUNCIL_GEMINI_API_KEY");
 
+import { requireEnv, requireAnyLLMKey, applyWorkerGeminiKey } from "../../lib/agent-bootstrap";
 import {
   createArcPublicClient,
   arcTestnet,
   getContractAddress,
-  microToUsdc,
+  weiToUsdc,
 } from "../../lib/arc";
 import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
+import { fetchDecodedClaim } from "../../lib/claim-codec";
 import { activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint } from "../../lib/llm";
 import {
   COUNCIL_PERSONAS,
@@ -53,6 +52,7 @@ import {
 } from "./personas";
 import { runPersonaForClaim } from "./shared/persona-runner";
 import { buyPeerReasoning } from "./shared/peer-reasoning";
+import { atomicToUsdc } from "../../lib/x402";
 import type {
   ClaimOnChain,
   PersonaRunnerContext,
@@ -76,22 +76,8 @@ const CONTRACT_ADDRESS     = getContractAddress();
 const publicClient         = createArcPublicClient();
 
 // ── Env guard ─────────────────────────────────────────────────────────────────
-for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET"]) {
-  if (!process.env[v]) {
-    console.error(`${v} env var is required`);
-    process.exit(1);
-  }
-}
-if (
-  !process.env.GEMINI_API_KEY?.trim() &&
-  !process.env.ANTHROPIC_API_KEY?.trim() &&
-  !process.env.GROQ_API_KEY?.trim() &&
-  !process.env.GROQ_API_KEYS?.trim() &&
-  !process.env.OPENROUTER_API_KEY?.trim()
-) {
-  console.error("Set at least one LLM key: GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY/GROQ_API_KEYS, or OPENROUTER_API_KEY");
-  process.exit(1);
-}
+requireEnv(["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET"]);
+requireAnyLLMKey();
 
 // Optional CSV allowlist of persona slugs to keep active. When set, personas
 // not in the list are skipped even if their wallets exist — used to scale LLM
@@ -128,36 +114,25 @@ if (ACTIVE_PERSONAS.length === 0) {
 // ── Fetch claim ───────────────────────────────────────────────────────────────
 async function fetchClaim(claimId: number): Promise<ClaimOnChain | null> {
   try {
-    const [base, market] = await Promise.all([
-      publicClient.readContract({
-        address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
-        functionName: "getClaim", args: [BigInt(claimId)],
-      }) as Promise<readonly any[]>,
-      publicClient.readContract({
-        address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
-        functionName: "getClaimMarketConfig", args: [BigInt(claimId)],
-      }) as Promise<readonly any[]>,
-    ]);
-    if (!base[0] || base[0] === "0x0000000000000000000000000000000000000000") {
-      return null;
-    }
+    const decoded = await fetchDecodedClaim(publicClient, CONTRACT_ADDRESS, claimId);
+    if (!decoded) return null;
     return {
-      id: claimId,
-      creator:              base[0] as string,
-      question:             base[1] as string,
-      creatorPosition:      base[2] as string,
-      counterPosition:      base[3] as string,
-      resolutionUrl:        base[4] as string,
-      creatorStake:         BigInt(base[5]),
-      totalChallengerStake: BigInt(base[6]),
-      deadline:             BigInt(base[8]),
-      state:                Number(base[9]),
-      category:             base[13] as string,
-      challengerCount:      BigInt(base[15]),
-      marketType:           market[0] as string,
-      settlementRule:       market[4] as string,
-      maxChallengers:       BigInt(market[5]),
-      isPrivate:            Boolean(market[6]),
+      id:                   decoded.id,
+      creator:              decoded.creator,
+      question:             decoded.question,
+      creatorPosition:      decoded.creatorPosition,
+      counterPosition:      decoded.counterPosition,
+      resolutionUrl:        decoded.resolutionUrl,
+      creatorStake:         decoded.creatorStake,
+      totalChallengerStake: decoded.totalChallengerStake,
+      deadline:             decoded.deadline,
+      state:                decoded.state,
+      category:             decoded.category,
+      challengerCount:      decoded.challengerCount,
+      marketType:           decoded.marketType,
+      settlementRule:       decoded.settlementRule,
+      maxChallengers:       decoded.maxChallengers,
+      isPrivate:            decoded.isPrivate,
     };
   } catch {
     return null;
@@ -239,7 +214,7 @@ async function poll(): Promise<void> {
             );
             peerReasoning.set(`${claim.id}:${persona.slug}`, formattedReads);
             const paidUsdc = reads.reduce(
-              (sum, read) => sum + Number(read.pricePaidAtomic ?? "0") / 1_000_000,
+              (sum, read) => sum + atomicToUsdc(read.pricePaidAtomic ?? "0"),
               0,
             );
             console.log(
@@ -288,7 +263,7 @@ async function main(): Promise<void> {
     const addr = process.env[personaAddressEnv(p)] as `0x${string}`;
     const bal  = await publicClient.getBalance({ address: addr }).catch(() => 0n);
     console.log(
-      `  ${p.emoji} ${p.displayName.padEnd(22)} ${addr.slice(0, 6)}…${addr.slice(-4)} · ${microToUsdc(bal).toFixed(2)} USDC`,
+      `  ${p.emoji} ${p.displayName.padEnd(22)} ${addr.slice(0, 6)}…${addr.slice(-4)} · ${weiToUsdc(bal).toFixed(2)} USDC`,
     );
   }
   console.log("═══════════════════════════════════════════════\n");

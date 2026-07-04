@@ -14,8 +14,9 @@
 
 import { COUNCIL_PERSONAS, type PersonaSpec } from "../council/personas";
 import { fetchWithBudget, usdcToAtomic, type PayingAgent } from "../../lib/x402";
+import { isVerdict, type Verdict } from "../../lib/verdict";
 
-export type Verdict = "CREATOR_WINS" | "CHALLENGERS_WIN" | "DRAW" | "UNRESOLVABLE";
+export type { Verdict };
 
 export interface CouncilVote {
   slug: string;
@@ -75,7 +76,7 @@ export async function gatherCouncilVerdict(args: {
       if (!r.response.ok) continue;
       const body = (await r.response.json()) as VoteResponse;
       const verdict = body.verdict;
-      if (!verdict || !["CREATOR_WINS", "CHALLENGERS_WIN", "DRAW", "UNRESOLVABLE"].includes(verdict)) {
+      if (!isVerdict(verdict)) {
         continue;
       }
       const priceAtomic = r.payment?.priceAtomic ?? null;

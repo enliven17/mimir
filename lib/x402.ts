@@ -203,3 +203,8 @@ export async function fetchWithBudget(
 export function usdcToAtomic(usdc: number): bigint {
   return BigInt(Math.round(usdc * 1_000_000));
 }
+
+/** Inverse of usdcToAtomic. */
+export function atomicToUsdc(atomic: bigint | number | string): number {
+  return Number(atomic) / 1_000_000;
+}

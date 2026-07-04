@@ -4,7 +4,7 @@ import {
   getContractAddress,
   getDeployBlock,
   paginatedGetLogs,
-  microToUsdc,
+  weiToUsdc,
   getExplorerAddressUrl,
   getExplorerTxUrl,
 } from "@/lib/arc";
@@ -15,6 +15,8 @@ import {
   getPersonaForAddress,
 } from "@/lib/council-resolver";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
+import { openPeepsAvatar } from "@/lib/avatars";
+import { shortenAddress } from "@/lib/constants";
 
 export const revalidate = 20;
 
@@ -154,15 +156,6 @@ async function fetchAgentAddresses() {
 
 /* ── UI bits ─────────────────────────────────────────────────────────────── */
 
-function shortAddr(a: string): string {
-  if (!a || a.length < 10) return a;
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
-}
-
-function agentPeepSrc(seed: string): string {
-  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}&backgroundColor=0b1020`;
-}
-
 function AgentPeep({
   seed,
   label,
@@ -181,7 +174,7 @@ function AgentPeep({
     <div className={`flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border ${toneClass}`}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={agentPeepSrc(seed)}
+        src={openPeepsAvatar(seed)}
         alt={`${label} avatar`}
         className="h-full w-full object-cover object-top opacity-95"
       />
@@ -220,7 +213,7 @@ function ActorTag({
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className="inline-flex items-center rounded-md border border-pv-fuch/40 bg-pv-fuch/[0.08] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-pv-fuch">human</span>
-      <span className="font-mono text-[11px] text-pv-muted">{shortAddr(addr)}</span>
+      <span className="font-mono text-[11px] text-pv-muted">{shortenAddress(addr)}</span>
     </span>
   );
 }
@@ -344,7 +337,7 @@ export default async function AgentsPage({
             <div className="mb-1 flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-pv-emerald">Oracle agent</span>
               <a href={getExplorerAddressUrl(agentInfo.oracle)} target="_blank" rel="noreferrer" className="ml-auto font-mono text-[11px] text-pv-muted hover:text-pv-emerald">
-                {shortAddr(agentInfo.oracle)} ↗
+                {shortenAddress(agentInfo.oracle)} ↗
               </a>
             </div>
             <p className="mt-1 text-sm text-pv-text/85">
@@ -353,7 +346,7 @@ export default async function AgentsPage({
             <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald/80">Balance</div>
-                <div className="mt-0.5 font-display text-base font-bold tabular-nums text-pv-text">{microToUsdc(agentInfo.oracleBal).toFixed(2)} <span className="text-xs text-pv-muted">USDC</span></div>
+                <div className="mt-0.5 font-display text-base font-bold tabular-nums text-pv-text">{weiToUsdc(agentInfo.oracleBal).toFixed(2)} <span className="text-xs text-pv-muted">USDC</span></div>
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald/80">Settled</div>
@@ -376,7 +369,7 @@ export default async function AgentsPage({
             <div className="mb-1 flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-pv-text/80">Market-creator agent</span>
               <a href={getExplorerAddressUrl(agentInfo.owner)} target="_blank" rel="noreferrer" className="ml-auto font-mono text-[11px] text-pv-muted hover:text-pv-emerald">
-                {shortAddr(agentInfo.owner)} ↗
+                {shortenAddress(agentInfo.owner)} ↗
               </a>
             </div>
             <p className="mt-1 text-sm text-pv-text/85">
@@ -385,7 +378,7 @@ export default async function AgentsPage({
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-text/60">Balance</div>
-                <div className="mt-0.5 font-display text-base font-bold tabular-nums text-pv-text">{microToUsdc(agentInfo.ownerBal).toFixed(2)} <span className="text-xs text-pv-muted">USDC</span></div>
+                <div className="mt-0.5 font-display text-base font-bold tabular-nums text-pv-text">{weiToUsdc(agentInfo.ownerBal).toFixed(2)} <span className="text-xs text-pv-muted">USDC</span></div>
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-text/60">Markets opened</div>
@@ -478,7 +471,7 @@ export default async function AgentsPage({
                     <>
                       <ActorTag addr={e.actor} oracle={agentInfo?.oracle} creator={agentInfo?.owner} />
                       <span className="text-[13px] font-bold text-pv-text">staked the contrarian side</span>
-                      <span className="text-[11px] font-mono text-pv-text/85">{microToUsdc(e.stakeWei).toFixed(2)} USDC</span>
+                      <span className="text-[11px] font-mono text-pv-text/85">{weiToUsdc(e.stakeWei).toFixed(2)} USDC</span>
                     </>
                   )}
                   {e.kind === "resolved" && (() => {

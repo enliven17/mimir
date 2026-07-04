@@ -13,6 +13,7 @@ import { verifyPass } from "@/lib/x402-pass";
 import { COUNCIL_PERSONAS } from "@/agents/council/personas";
 import { createArcPublicClient, getContractAddress } from "@/lib/arc";
 import { MIMIR_ABI } from "@/lib/mimir-abi";
+import { ZERO_ADDRESS } from "@/lib/constants";
 import { callLLM } from "@/lib/llm";
 
 const PRICE = "$0.001";
@@ -62,7 +63,7 @@ export async function GET(req: Request): Promise<Response> {
       functionName: "getClaim",
       args: [BigInt(claimId)],
     })) as readonly unknown[];
-    if (!base[0] || base[0] === "0x0000000000000000000000000000000000000000") {
+    if (!base[0] || base[0] === ZERO_ADDRESS) {
       return json({ error: `claim ${claimId} not found` }, { status: 404, headers: responseHeaders });
     }
     question = String(base[1]);

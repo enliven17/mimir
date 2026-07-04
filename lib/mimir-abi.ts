@@ -1,6 +1,10 @@
 /**
  * Mimir.sol ABI — generated from contracts/Mimir.sol
  */
+
+/** Basis-point divisor used by Mimir.sol fixed-odds math: 10_000 bps = 100%. */
+export const BPS_DIVISOR = 10_000;
+
 export const MIMIR_ABI = [
   // ── Events ────────────────────────────────────────────────────────────────
   {

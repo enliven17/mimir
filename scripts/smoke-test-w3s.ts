@@ -15,8 +15,8 @@ import {
   createArcPublicClient,
   getContractAddress,
   getExplorerTxUrl,
-  microToUsdc,
-  usdcToMicro,
+  weiToUsdc,
+  usdcToWei,
 } from "../lib/arc";
 import {
   executeContract,
@@ -51,10 +51,10 @@ async function main(): Promise<void> {
   console.log(`  oracle()     ${oracle}`);
   console.log(`  owner()      ${owner}`);
   console.log(`  claimCount() ${claimCountBefore}`);
-  console.log(`  funder bal   ${microToUsdc(balance).toFixed(4)} USDC\n`);
+  console.log(`  funder bal   ${weiToUsdc(balance).toFixed(4)} USDC\n`);
 
   // ── Phase 2: create a test claim via W3S ────────────────────────────────────
-  const stake = usdcToMicro(2);
+  const stake = usdcToWei(2);
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 60); // 1h
 
   console.log("Submitting createClaim() via W3S…");

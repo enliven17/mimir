@@ -16,7 +16,7 @@
 import { requirePayment, json } from "@/lib/x402-server";
 import { COUNCIL_PERSONAS } from "@/agents/council/personas";
 import { createArcPublicClient, getContractAddress } from "@/lib/arc";
-import { MIMIR_ABI } from "@/lib/mimir-abi";
+import { fetchDecodedClaim } from "@/lib/claim-codec";
 import { evaluateClaimAsPersona } from "@/agents/council/shared/persona-llm";
 import { fetchEvidence } from "@/lib/server/evidence-fetcher";
 import type { ClaimOnChain } from "@/agents/council/shared/types";
@@ -54,33 +54,11 @@ export async function GET(req: Request): Promise<Response> {
   // Read the claim from chain.
   let claim: ClaimOnChain;
   try {
-    const pub = createArcPublicClient();
-    const addr = getContractAddress();
-    const [base, market] = await Promise.all([
-      pub.readContract({ address: addr, abi: MIMIR_ABI, functionName: "getClaim", args: [BigInt(claimId)] }) as Promise<readonly unknown[]>,
-      pub.readContract({ address: addr, abi: MIMIR_ABI, functionName: "getClaimMarketConfig", args: [BigInt(claimId)] }) as Promise<readonly unknown[]>,
-    ]);
-    if (!base[0] || base[0] === "0x0000000000000000000000000000000000000000") {
+    const decoded = await fetchDecodedClaim(createArcPublicClient(), getContractAddress(), claimId);
+    if (!decoded) {
       return json({ error: `claim ${claimId} not found` }, { status: 404, headers: gate.responseHeaders });
     }
-    claim = {
-      id: claimId,
-      creator: String(base[0]),
-      question: String(base[1]),
-      creatorPosition: String(base[2]),
-      counterPosition: String(base[3]),
-      resolutionUrl: String(base[4]),
-      creatorStake: BigInt(base[5] as bigint),
-      totalChallengerStake: BigInt(base[6] as bigint),
-      deadline: BigInt(base[8] as bigint),
-      state: Number(base[9]),
-      category: String(base[13]),
-      challengerCount: BigInt(base[15] as bigint),
-      marketType: String(market[0]),
-      maxChallengers: BigInt(market[5] as bigint),
-      isPrivate: Boolean(market[6]),
-      settlementRule: String(market[4]),
-    };
+    claim = decoded;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "read failed";
     return json({ error: msg }, { status: 502, headers: gate.responseHeaders });

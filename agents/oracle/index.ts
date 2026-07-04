@@ -29,18 +29,18 @@
 // and council each consume from their own 20 RPM free-tier bucket. Trimmed on
 // assignment so trailing whitespace pasted into the Railway UI can't slip into
 // the Authorization header and trigger API_KEY_INVALID.
-{
-  const k = process.env.ORACLE_GEMINI_API_KEY?.trim();
-  if (k) process.env.GEMINI_API_KEY = k;
-}
+applyWorkerGeminiKey("ORACLE_GEMINI_API_KEY");
 
 import { keccak256, toBytes, formatEther } from "viem";
+import { requireEnv, requireAnyLLMKey, applyWorkerGeminiKey, createThrottle } from "../../lib/agent-bootstrap";
+import { kellyFraction } from "../../lib/kelly";
+import type { Verdict } from "../../lib/verdict";
 import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
-  microToUsdc,
-  usdcToMicro,
+  weiToUsdc,
+  usdcToWei,
   getContractAddress,
   getExplorerTxUrl,
 } from "../../lib/arc";
@@ -51,14 +51,15 @@ import {
   getOracleWalletId,
   getOracleAddress,
 } from "../../lib/circle-w3s";
-import { MIMIR_ABI, WINNER_SIDE, STATE } from "../../lib/mimir-abi";
+import { MIMIR_ABI, WINNER_SIDE, STATE, BPS_DIVISOR } from "../../lib/mimir-abi";
+import { fetchDecodedClaim, type DecodedClaim } from "../../lib/claim-codec";
 import {
   fetchEvidence as fetchEvidenceShared,
   EvidenceFetchError,
   type EvidenceFetcherKind,
   type EvidencePayment,
 } from "../../lib/server/evidence-fetcher";
-import { fetchWithBudget, usdcToAtomic } from "../../lib/x402";
+import { fetchWithBudget, usdcToAtomic, atomicToUsdc } from "../../lib/x402";
 import { gatherCouncilVerdict } from "./council-vote";
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -88,19 +89,15 @@ const COUNCIL_QUORUM      = Number(process.env.COUNCIL_QUORUM ?? "3");
 const COUNCIL_VOTE_CAP    = Number(process.env.COUNCIL_VOTE_CAP_USDC ?? "0.005");
 const SETTLEMENT_DELAY_MS = Number(process.env.ORACLE_SETTLEMENT_DELAY_MS ?? "900000");
 
-// Module-scoped throttle gate. Free-tier Gemini is 5 RPM on new accounts and
-// the oracle has no other rate limiter — every claim in a poll fires an LLM
-// call back-to-back. ORACLE_LLM_THROTTLE_MS spreads them so RPM stays under
-// the quota (e.g. 5000ms ≈ 12 RPM, fits a 15 RPM bucket with headroom).
-let lastLlmCallAt = 0;
+// Free-tier Gemini is 5 RPM on new accounts and the oracle has no other rate
+// limiter — every claim in a poll fires an LLM call back-to-back.
+// ORACLE_LLM_THROTTLE_MS spreads them so RPM stays under the quota
+// (e.g. 5000ms ≈ 12 RPM, fits a 15 RPM bucket with headroom).
+const llmGate = createThrottle(LLM_THROTTLE_MS);
 async function throttledLLM(
   ...args: Parameters<typeof callLLM>
 ): Promise<string> {
-  if (LLM_THROTTLE_MS > 0) {
-    const wait = LLM_THROTTLE_MS - (Date.now() - lastLlmCallAt);
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  }
-  lastLlmCallAt = Date.now();
+  await llmGate();
   return callLLM(...args);
 }
 
@@ -109,22 +106,8 @@ const challengedClaimIds = new Set<number>();
 // Track evaluated-but-not-challenged (to avoid repeated LLM calls)
 const evaluatedClaimIds = new Set<number>();
 
-for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_WALLET_ID", "CIRCLE_ORACLE_ADDRESS"]) {
-  if (!process.env[v]) {
-    console.error(`${v} env var is required`);
-    process.exit(1);
-  }
-}
-if (
-  !process.env.GEMINI_API_KEY?.trim() &&
-  !process.env.ANTHROPIC_API_KEY?.trim() &&
-  !process.env.GROQ_API_KEY?.trim() &&
-  !process.env.GROQ_API_KEYS?.trim() &&
-  !process.env.OPENROUTER_API_KEY?.trim()
-) {
-  console.error("Set at least one LLM key: GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY/GROQ_API_KEYS, or OPENROUTER_API_KEY");
-  process.exit(1);
-}
+requireEnv(["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_WALLET_ID", "CIRCLE_ORACLE_ADDRESS"]);
+requireAnyLLMKey();
 
 // Pre-compute Circle ABI signatures (call once, reuse per claim)
 const SIG_RESOLVE_CLAIM    = buildAbiFunctionSignature("resolveClaim", MIMIR_ABI);
@@ -136,36 +119,10 @@ const ORACLE_WALLET = getOracleWalletId();
 const ORACLE_ADDR   = getOracleAddress();
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface ClaimOnChain {
-  id:                       number;
-  creator:                  string;
-  question:                 string;
-  creatorPosition:          string;
-  counterPosition:          string;
-  resolutionUrl:            string;
-  creatorStake:             bigint;
-  totalChallengerStake:     bigint;
-  reservedCreatorLiability: bigint;
-  deadline:                 bigint;
-  state:                    number;
-  winnerSide:               number;
-  resolutionSummary:        string;
-  confidence:               number;
-  category:                 string;
-  parentId:                 bigint;
-  challengerCount:          bigint;
-  createdAt:                bigint;
-  marketType:               string;
-  oddsMode:                 string;
-  challengerPayoutBps:      bigint;
-  handicapLine:             string;
-  settlementRule:           string;
-  maxChallengers:           bigint;
-  isPrivate:                boolean;
-}
+type ClaimOnChain = DecodedClaim;
 
 interface OracleVerdict {
-  verdict:     "CREATOR_WINS" | "CHALLENGERS_WIN" | "DRAW" | "UNRESOLVABLE";
+  verdict:     Verdict;
   confidence:  number;
   explanation: string;
 }
@@ -173,37 +130,7 @@ interface OracleVerdict {
 // ── Fetch claim from contract ─────────────────────────────────────────────────
 async function fetchClaim(claimId: number): Promise<ClaimOnChain | null> {
   try {
-    const [base, market] = await Promise.all([
-      publicClient.readContract({
-        address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
-        functionName: "getClaim", args: [BigInt(claimId)],
-      }) as Promise<readonly any[]>,
-      publicClient.readContract({
-        address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
-        functionName: "getClaimMarketConfig", args: [BigInt(claimId)],
-      }) as Promise<readonly any[]>,
-    ]);
-
-    if (!base[0] || base[0] === "0x0000000000000000000000000000000000000000") {
-      return null;
-    }
-
-    return {
-      id: claimId, creator: base[0],
-      question: base[1], creatorPosition: base[2], counterPosition: base[3],
-      resolutionUrl: base[4],
-      creatorStake: BigInt(base[5]), totalChallengerStake: BigInt(base[6]),
-      reservedCreatorLiability: BigInt(base[7]),
-      deadline: BigInt(base[8]), state: Number(base[9]),
-      winnerSide: Number(base[10]), resolutionSummary: base[11],
-      confidence: Number(base[12]), category: base[13],
-      parentId: BigInt(base[14]), challengerCount: BigInt(base[15]),
-      createdAt: BigInt(base[16]),
-      marketType: market[0], oddsMode: market[1],
-      challengerPayoutBps: BigInt(market[2]),
-      handicapLine: market[3], settlementRule: market[4],
-      maxChallengers: BigInt(market[5]), isPrivate: market[6],
-    };
+    return await fetchDecodedClaim(publicClient, CONTRACT_ADDRESS, claimId);
   } catch {
     return null;
   }
@@ -223,8 +150,8 @@ interface EvidenceResult {
  * This is the agent's spending judgement, in code.
  */
 function evidenceBudgetUsdc(claim: ClaimOnChain): number {
-  const potUsdc = microToUsdc(claim.creatorStake + claim.totalChallengerStake);
-  const fraction = (potUsdc * EVIDENCE_POOL_BPS) / 10_000;
+  const potUsdc = weiToUsdc(claim.creatorStake + claim.totalChallengerStake);
+  const fraction = (potUsdc * EVIDENCE_POOL_BPS) / BPS_DIVISOR;
   return Math.min(EVIDENCE_MAX_USDC, Math.max(EVIDENCE_MIN_USDC, fraction));
 }
 
@@ -278,7 +205,7 @@ async function fetchEvidence(claim: ClaimOnChain): Promise<EvidenceResult> {
 async function evaluateClaim(claim: ClaimOnChain, evidence: string): Promise<OracleVerdict> {
   const deadlineDate = new Date(Number(claim.deadline) * 1000).toISOString();
   const nowDate      = new Date().toISOString();
-  const potUsdc = microToUsdc(claim.creatorStake + claim.totalChallengerStake);
+  const potUsdc = weiToUsdc(claim.creatorStake + claim.totalChallengerStake);
 
   const prompt = `You are Mimir, an impartial AI oracle for a USDC prediction market on Arc blockchain.
 
@@ -348,19 +275,8 @@ function verdictToSide(verdict: OracleVerdict["verdict"]): number {
   }
 }
 
-/**
- * Kelly Criterion: f* = (p * b - q) / b
- *   p = probability of winning (confidence/100)
- *   q = 1 - p
- *   b = net odds (payout ratio - 1, e.g. pool odds ≈ 1.0 for even)
- * Returns fraction of bankroll to bet (0–1), capped at 0.25 for safety.
- */
-function kellyFraction(confidencePct: number, netOdds = 1.0): number {
-  const p = confidencePct / 100;
-  const q = 1 - p;
-  const f = (p * netOdds - q) / netOdds;
-  return Math.max(0, Math.min(0.25, f)); // cap at 25% bankroll
-}
+// Oracle plays few, high-conviction markets — cap Kelly at 25% of bankroll.
+const KELLY_CAP = 0.25;
 
 /** Hash evidence content for on-chain verification. */
 function hashEvidence(evidence: string): `0x${string}` {
@@ -466,7 +382,7 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
     }
   }
   if (evidence.payment) {
-    const usdc = Number(evidence.payment.priceAtomic) / 1_000_000;
+    const usdc = atomicToUsdc(evidence.payment.priceAtomic);
     console.log(`[settle] 💸 Paid ${usdc} ${evidence.payment.asset} for evidence (x402 nanopayment)`);
   }
 
@@ -488,7 +404,7 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
       return null;
     });
     if (council) {
-      const paidUsdc = Number(council.totalPaidAtomic) / 1_000_000;
+      const paidUsdc = atomicToUsdc(council.totalPaidAtomic);
       console.log(`[settle] 🏛️  Council ${council.tally.creator}–${council.tally.challengers} (${council.tally.draw + council.tally.unresolvable} abstain) · paid ${paidUsdc.toFixed(6)} USDC to jurors`);
       rawVerdict = { verdict: council.verdict, confidence: council.confidence, explanation: council.explanation };
       commit = `${evidence.text}\n[council]${JSON.stringify(council.tally)}`;
@@ -559,10 +475,10 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
 
   // Check oracle USDC balance (native on Arc)
   const balance = await publicClient.getBalance({ address: ORACLE_ADDR });
-  const stakeNeeded = usdcToMicro(CHALLENGE_STAKE_USDC);
-  const buffer      = usdcToMicro(CHALLENGE_STAKE_USDC * 3); // keep 3x buffer for gas
+  const stakeNeeded = usdcToWei(CHALLENGE_STAKE_USDC);
+  const buffer      = usdcToWei(CHALLENGE_STAKE_USDC * 3); // keep 3x buffer for gas
   if (balance < stakeNeeded + buffer) {
-    console.log(`[challenge] Insufficient balance (${microToUsdc(balance).toFixed(2)} USDC), skipping`);
+    console.log(`[challenge] Insufficient balance (${weiToUsdc(balance).toFixed(2)} USDC), skipping`);
     return;
   }
 
@@ -593,8 +509,8 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
 
   // Kelly Criterion: size position based on confidence edge
   // Assume pool odds ≈ 1.0 (even) for conservative sizing
-  const kelly = kellyFraction(verdict.confidence);
-  const bankroll = Number(balance) / 1e18; // USDC
+  const kelly = kellyFraction(verdict.confidence, KELLY_CAP);
+  const bankroll = weiToUsdc(balance);
   const kellyStake = Math.max(CHALLENGE_STAKE_USDC, Math.min(bankroll * kelly, bankroll * 0.1));
   const stakeUsdc = Math.round(kellyStake * 100) / 100; // round to 2dp
 
@@ -602,7 +518,7 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
 
   // Auto-challenge — Arc uses native USDC, so we pass `amount` to attach value
   console.log(`[challenge] Staking ${stakeUsdc} USDC on challenger side...`);
-  const stakeWei = usdcToMicro(stakeUsdc);
+  const stakeWei = usdcToWei(stakeUsdc);
 
   const txHash = await executeContract({
     walletId:             ORACLE_WALLET,
@@ -648,13 +564,7 @@ async function poll(): Promise<void> {
     }
 
     try {
-      // Role 1: Settle expired active claims
-      if (claim.state === STATE.ACTIVE && claim.deadline <= now) {
-        await settle(claim);
-        settled.push(id);
-      }
-
-      // Role 2: Challenge mispriced claims while the challenge window is open.
+      // Challenge mispriced claims while the challenge window is open.
       // Mimir.sol allows up to MAX_CHALLENGERS per claim, so ACTIVE claims are
       // still joinable — duplicate-stake check happens inside the helper.
       if (
@@ -703,7 +613,7 @@ async function main(): Promise<void> {
   console.log(`  Contract   : ${CONTRACT_ADDRESS}`);
   console.log(`  Oracle     : ${ORACLE_ADDR}`);
   console.log(`  Wallet ID  : ${ORACLE_WALLET}`);
-  console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
+  console.log(`  Balance    : ${weiToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
   console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Throttle   : ${LLM_THROTTLE_MS > 0 ? `${LLM_THROTTLE_MS}ms (${(60_000 / LLM_THROTTLE_MS).toFixed(1)} RPM cap)` : "OFF"}`);

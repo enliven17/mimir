@@ -18,15 +18,15 @@ import {
   getContractAddress,
   getExplorerTxUrl,
   ensureArcChain,
-  usdcToMicro,
-  microToUsdc,
+  usdcToWei,
+  weiToUsdc,
 } from "./arc";
-import { MIMIR_ABI, STATE, WINNER_SIDE } from "./mimir-abi";
-import { normalizeCategoryId } from "./constants";
+import { MIMIR_ABI, STATE, WINNER_SIDE, BPS_DIVISOR } from "./mimir-abi";
+import { normalizeCategoryId, ZERO_ADDRESS } from "./constants";
+import { decodeClaimTuple } from "./claim-codec";
 import type { VSCacheFreshness } from "./vs-freshness";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 // MIN_STAKE in display USDC (matches Mimir.sol: 2 * 10^18 wei = 2 USDC)
 
 export const CONTRACT_ADDRESS = getContractAddress();
@@ -299,67 +299,62 @@ export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
   }
 
   try {
+    const decoded = decodeClaimTuple(claimId, base, market);
+    if (!decoded) return null;
 
-    const creator: string = base[0];
-    if (!creator || creator === ZERO_ADDRESS) return null;
-
-    const creatorStakeMicro = BigInt(base[5]);
-    const totalChStakeMicro = BigInt(base[6]);
-    const reservedLiab      = BigInt(base[7]);
-
-    const creatorStakeUsdc = microToUsdc(creatorStakeMicro);
-    const totalChStakeUsdc = microToUsdc(totalChStakeMicro);
-    const reservedUsdc     = microToUsdc(reservedLiab);
+    const creatorStakeUsdc = weiToUsdc(decoded.creatorStake);
+    const totalChStakeUsdc = weiToUsdc(decoded.totalChallengerStake);
+    const reservedUsdc     = weiToUsdc(decoded.reservedCreatorLiability);
 
     const [chAddrs, chStakes] = challengerData;
+    const payBps  = Number(decoded.challengerPayoutBps);
+    const isFixed = decoded.oddsMode === "fixed";
     const challengers: ClaimChallenger[] = chAddrs.map((addr, i) => {
-      const stake   = microToUsdc(chStakes[i]);
-      const payBps  = Number(market[2]);
-      const isFixed = market[1] === "fixed";
-      const payout  = isFixed
-        ? (stake * payBps) / 10_000
+      const stake  = weiToUsdc(chStakes[i]);
+      const payout = isFixed
+        ? (stake * payBps) / BPS_DIVISOR
         : stake + (totalChStakeUsdc > 0 ? (stake / totalChStakeUsdc) * creatorStakeUsdc : 0);
       return { address: addr, stake, potential_payout: payout };
     });
 
-    const isPrivate: boolean = market[6];
     const availLiab = Math.max(0, creatorStakeUsdc - reservedUsdc);
 
     return {
       id:                         claimId,
-      creator,
-      question:                   base[1],
-      creator_position:           base[2],
-      counter_position:           base[3],
-      resolution_url:             base[4],
+      creator:                    decoded.creator,
+      question:                   decoded.question,
+      creator_position:           decoded.creatorPosition,
+      counter_position:           decoded.counterPosition,
+      resolution_url:             decoded.resolutionUrl,
       creator_stake:              creatorStakeUsdc,
       total_challenger_stake:     totalChStakeUsdc,
       reserved_creator_liability: reservedUsdc,
       available_creator_liability: availLiab,
-      deadline:                   Number(base[8]),
-      state:                      mapState(Number(base[9])),
-      winner_side:                mapWinnerSide(Number(base[10])),
-      resolution_summary:         base[11],
-      confidence:                 Number(base[12]),
-      category:                   normalizeCategoryId(base[13]),
-      parent_id:                  Number(base[14]),
-      challenger_count:           Number(base[15]),
-      created_at:                 Number(base[16]),
-      evidence_hash:              (base[17] && base[17] !== "0x0000000000000000000000000000000000000000000000000000000000000000") ? base[17] as string : undefined,
-      market_type:                market[0],
-      odds_mode:                  market[1],
-      challenger_payout_bps:      Number(market[2]),
-      handicap_line:              market[3],
-      settlement_rule:            market[4],
-      max_challengers:            Number(market[5]),
-      visibility:                 isPrivate ? "private" : "public",
-      is_private:                 isPrivate,
+      deadline:                   Number(decoded.deadline),
+      state:                      mapState(decoded.state),
+      winner_side:                mapWinnerSide(decoded.winnerSide),
+      resolution_summary:         decoded.resolutionSummary,
+      confidence:                 decoded.confidence,
+      category:                   normalizeCategoryId(decoded.category),
+      parent_id:                  Number(decoded.parentId),
+      challenger_count:           Number(decoded.challengerCount),
+      created_at:                 Number(decoded.createdAt),
+      evidence_hash:              decoded.evidenceHash,
+      market_type:                decoded.marketType,
+      odds_mode:                  decoded.oddsMode,
+      challenger_payout_bps:      payBps,
+      handicap_line:              decoded.handicapLine,
+      settlement_rule:            decoded.settlementRule,
+      max_challengers:            Number(decoded.maxChallengers),
+      visibility:                 decoded.isPrivate ? "private" : "public",
+      is_private:                 decoded.isPrivate,
       challengers,
       first_challenger:           chAddrs[0] ?? ZERO_ADDRESS,
       challenger_addresses:       chAddrs,
       total_pot:                  creatorStakeUsdc + totalChStakeUsdc,
     };
-  } catch {
+  } catch (err) {
+    console.warn(`[readClaimRaw] decode failed for claim ${claimId}`, err);
     return null;
   }
 }
@@ -428,7 +423,7 @@ export async function getPlatformStats(): Promise<{
   return {
     total_claims:   Number(totalClaims),
     total_resolved: Number(resolved),
-    total_pool:     microToUsdc(balance),
+    total_pool:     weiToUsdc(balance),
   };
 }
 
@@ -527,7 +522,7 @@ async function sendBrowserTx(
     account:   accounts[0] as `0x${string}`,
   });
 
-  const valueMicro = usdcToMicro(valueUsdc);
+  const valueMicro = usdcToWei(valueUsdc);
 
   const txHash = await wc.writeContract({
     address:      CONTRACT_ADDRESS,
@@ -572,7 +567,7 @@ async function sendServerTx(
     account,
   });
 
-  const valueMicro = usdcToMicro(valueUsdc);
+  const valueMicro = usdcToWei(valueUsdc);
 
   const txHash = await walletClient.writeContract({
     address:      CONTRACT_ADDRESS,
@@ -637,7 +632,7 @@ export async function challengeClaim(
   }
   const result = await sendBrowserTx(
     "challengeClaim",
-    [BigInt(claimId), usdcToMicro(stakeAmount), inviteKey],
+    [BigInt(claimId), usdcToWei(stakeAmount), inviteKey],
     stakeAmount
   );
   return { ...result, claimId };
@@ -678,7 +673,7 @@ export async function createRematch(
   }
   const result = await sendBrowserTx(
     "createRematch",
-    [BigInt(parentId), BigInt(params.deadline), usdcToMicro(params.stake_amount), params.invite_key ?? ""],
+    [BigInt(parentId), BigInt(params.deadline), usdcToWei(params.stake_amount), params.invite_key ?? ""],
     params.stake_amount
   );
   const count = await getClaimCount().catch(() => null);
@@ -705,7 +700,7 @@ export async function executeDemoWrite(
     const { claimId, stakeAmount, inviteKey = "" } = params as any;
     const result = await sendServerTx(
       privateKey, "challengeClaim",
-      [BigInt(claimId), usdcToMicro(stakeAmount), inviteKey],
+      [BigInt(claimId), usdcToWei(stakeAmount), inviteKey],
       stakeAmount
     );
     return { ...result, claimId: Number(claimId) };
@@ -727,7 +722,7 @@ export async function executeDemoWrite(
     const { parentId, deadline, stake_amount, invite_key = "" } = params as any;
     const result = await sendServerTx(
       privateKey, "createRematch",
-      [BigInt(parentId), BigInt(deadline), usdcToMicro(stake_amount), invite_key],
+      [BigInt(parentId), BigInt(deadline), usdcToWei(stake_amount), invite_key],
       stake_amount
     );
     const count = await getClaimCount().catch(() => null);
@@ -745,7 +740,7 @@ function buildCreateArgs(p: CreateClaimParams): unknown[] {
     p.counter_position,
     p.resolution_url,
     BigInt(p.deadline),
-    usdcToMicro(p.stake_amount),
+    usdcToWei(p.stake_amount),
     p.category ?? "custom",
     BigInt(p.parent_id ?? 0),
     p.market_type ?? "binary",
@@ -854,7 +849,7 @@ export function getVSSingleWinnerPayout(vs: VSData): number | null {
     if (getVSChallengerCount(vs) !== 1) return null;
     const stake = vs.total_challenger_stake ?? vs.stake_amount;
     if (vs.odds_mode === "fixed" && (vs.challenger_payout_bps ?? 0) > 0) {
-      return Math.floor((stake * vs.challenger_payout_bps!) / 10_000);
+      return Math.floor((stake * vs.challenger_payout_bps!) / BPS_DIVISOR);
     }
     return getVSTotalPot(vs);
   }
@@ -942,7 +937,7 @@ export function getVSUserWinAmount(vs: VSData, address?: string | null) {
 
     const stake = getVSUserChallengerStake(vs, address);
     if (vs.odds_mode === "fixed" && (vs.challenger_payout_bps ?? 0) > 0) {
-      return (stake * vs.challenger_payout_bps!) / 10_000;
+      return (stake * vs.challenger_payout_bps!) / BPS_DIVISOR;
     }
 
     const totalChallengerStake = vs.total_challenger_stake ?? stake;

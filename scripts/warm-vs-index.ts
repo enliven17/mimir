@@ -1,7 +1,6 @@
 import { CONTRACT_ADDRESS } from "../lib/contract";
 import { refreshVSIndex } from "../lib/server/vs-cache";
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+import { ZERO_ADDRESS } from "../lib/constants";
 
 async function main() {
   if (CONTRACT_ADDRESS === ZERO_ADDRESS) {

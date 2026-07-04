@@ -9,7 +9,7 @@
  * the creator side because personas can't join the creator pool.
  */
 
-import { microToUsdc } from "../../../lib/arc";
+import { weiToUsdc } from "../../../lib/arc";
 import { MIMIR_ABI } from "../../../lib/mimir-abi";
 import type { PublicClient } from "viem";
 import type { PersonaSpec } from "../personas";
@@ -123,14 +123,14 @@ export async function evaluateWhaleWatcher(
     return {
       shouldStake: true,
       stakeUsdc,
-      rationale: `Whale-Watcher: largest individual stake is on the challenger side (${microToUsdc(biggestChallenger).toFixed(2)} USDC vs creator's ${microToUsdc(claim.creatorStake).toFixed(2)}). I follow the whale.`,
+      rationale: `Whale-Watcher: largest individual stake is on the challenger side (${weiToUsdc(biggestChallenger).toFixed(2)} USDC vs creator's ${weiToUsdc(claim.creatorStake).toFixed(2)}). I follow the whale.`,
     };
   }
 
   return {
     shouldStake: false,
     stakeUsdc:   0,
-    rationale: `Whale-Watcher abstains: the biggest single staker is the creator (${microToUsdc(claim.creatorStake).toFixed(2)} USDC). I can't join the creator side, so I sit out.`,
+    rationale: `Whale-Watcher abstains: the biggest single staker is the creator (${weiToUsdc(claim.creatorStake).toFixed(2)} USDC). I can't join the creator side, so I sit out.`,
     skipReason:  "abstain-agrees-with-creator",
   };
 }

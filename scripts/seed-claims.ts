@@ -17,8 +17,8 @@ import {
   arcTestnet,
   getContractAddress,
   getExplorerTxUrl,
-  usdcToMicro,
-  microToUsdc,
+  usdcToWei,
+  weiToUsdc,
 } from "../lib/arc";
 import { MIMIR_ABI } from "../lib/mimir-abi";
 
@@ -214,7 +214,7 @@ const SEED_CLAIMS: SeedClaim[] = [
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const stake = usdcToMicro(STAKE_USDC);
+  const stake = usdcToWei(STAKE_USDC);
 
   if (DRY_RUN) {
     console.log("═══════════════════════════════════════════════");
@@ -241,14 +241,14 @@ async function main(): Promise<void> {
   console.log("  Mimir Seed Claims");
   console.log(`  Contract : ${CONTRACT_ADDRESS}`);
   console.log(`  Creator  : ${account.address}`);
-  console.log(`  Balance  : ${microToUsdc(balance).toFixed(4)} USDC`);
+  console.log(`  Balance  : ${weiToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Claims   : ${SEED_CLAIMS.length}`);
   console.log(`  Stake/ea : ${STAKE_USDC} USDC`);
   console.log(`  Total    : ~${SEED_CLAIMS.length * STAKE_USDC} USDC`);
   console.log("═══════════════════════════════════════════════\n");
 
   if (balance < stake * BigInt(SEED_CLAIMS.length)) {
-    console.error(`Insufficient balance! Need ~${SEED_CLAIMS.length * STAKE_USDC} USDC, have ${microToUsdc(balance).toFixed(2)} USDC`);
+    console.error(`Insufficient balance! Need ~${SEED_CLAIMS.length * STAKE_USDC} USDC, have ${weiToUsdc(balance).toFixed(2)} USDC`);
     console.error("Get testnet USDC: https://faucet.circle.com");
     process.exit(1);
   }

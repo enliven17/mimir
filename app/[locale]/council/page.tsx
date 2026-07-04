@@ -5,7 +5,7 @@ import {
   getDeployBlock,
   getExplorerAddressUrl,
   getExplorerTxUrl,
-  microToUsdc,
+  weiToUsdc,
   paginatedGetLogs,
 } from "@/lib/arc";
 import {
@@ -13,6 +13,8 @@ import {
 } from "@/lib/council-resolver";
 import type { PersonaSpec } from "@/agents/council/personas";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
+import { openPeepsAvatar } from "@/lib/avatars";
+import { shortenAddress } from "@/lib/constants";
 
 export const revalidate = 30;
 
@@ -90,12 +92,12 @@ async function fetchCouncilStats(): Promise<PersonaStats[]> {
       return {
         persona,
         address: addr,
-        balanceUsdc:     microToUsdc(balance),
+        balanceUsdc:     weiToUsdc(balance),
         stakesPlaced:    logs.length,
-        totalStakedUsdc: microToUsdc(totalStakedWei),
+        totalStakedUsdc: weiToUsdc(totalStakedWei),
         recentBets:      sortedLogs.slice(0, 3).map((log: any) => ({
           claimId:     Number(log.args.id ?? 0),
-          stakeUsdc:   microToUsdc(BigInt(log.args.stake ?? 0)),
+          stakeUsdc:   weiToUsdc(BigInt(log.args.stake ?? 0)),
           txHash:      log.transactionHash,
           blockNumber: Number(log.blockNumber ?? 0),
         })),
@@ -105,14 +107,6 @@ async function fetchCouncilStats(): Promise<PersonaStats[]> {
 }
 
 // ── UI ───────────────────────────────────────────────────────────────────────
-
-function shortAddr(a: string) {
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
-}
-
-function openPeepsAvatar(seed: string): string {
-  return `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(seed)}&backgroundColor=0b1020`;
-}
 
 const ARCHETYPE_LABEL: Record<PersonaSpec["archetype"], string> = {
   "llm-biased":  "LLM · biased",
@@ -216,7 +210,7 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
         rel="noreferrer"
         className="text-center font-mono text-[10px] text-pv-muted hover:text-pv-emerald"
       >
-        {shortAddr(address)} ↗
+        {shortenAddress(address)} ↗
       </a>
     </article>
   );

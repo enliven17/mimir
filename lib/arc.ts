@@ -17,7 +17,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 
 // Pulled out so the rest of the file can read the URL without optional-chain noise.
-const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
+export const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
 
 // ── Chain definition ──────────────────────────────────────────────────────────
 export const arcTestnet: Chain = {
@@ -177,16 +177,16 @@ export async function ensureArcChain(ethereum: {
 export const USDC_DECIMALS = 18;
 export const USDC_UNIT = BigInt(10 ** USDC_DECIMALS); // 1_000_000_000_000_000_000n
 
-export function usdcToMicro(usdc: number): bigint {
+export function usdcToWei(usdc: number): bigint {
   if (!Number.isFinite(usdc) || usdc < 0) throw new Error("Invalid USDC amount");
   // Support up to 6 significant decimal places (standard USDC precision)
   return BigInt(Math.round(usdc * 1_000_000)) * BigInt(10 ** 12);
 }
 
-export function microToUsdc(micro: bigint | number): number {
+export function weiToUsdc(micro: bigint | number): number {
   return Number(BigInt(micro) / BigInt(10 ** 12)) / 1_000_000;
 }
 
 export function formatUsdc(micro: bigint | number, decimals = 2): string {
-  return microToUsdc(micro).toFixed(decimals) + " USDC";
+  return weiToUsdc(micro).toFixed(decimals) + " USDC";
 }

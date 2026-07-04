@@ -12,8 +12,8 @@
 
 import { formatEther } from "viem";
 import {
-  microToUsdc,
-  usdcToMicro,
+  weiToUsdc,
+  usdcToWei,
   getExplorerTxUrl,
 } from "../../../lib/arc";
 import {
@@ -22,6 +22,8 @@ import {
   toCircleAbiParameters,
 } from "../../../lib/circle-w3s";
 import { MIMIR_ABI } from "../../../lib/mimir-abi";
+import { kellyFraction } from "../../../lib/kelly";
+import { createThrottle } from "../../../lib/agent-bootstrap";
 import {
   type PersonaSpec,
   personaWalletIdEnv,
@@ -51,31 +53,13 @@ const DEFAULT_STAKE_USDC     = 2;
  * 8+ personas doesn't trip 429s. Overridable via COUNCIL_LLM_THROTTLE_MS.
  */
 const LLM_THROTTLE_MS = Number(process.env.COUNCIL_LLM_THROTTLE_MS ?? 8000);
-let lastLlmCallAt = 0;
+const throttleLlm = createThrottle(LLM_THROTTLE_MS);
+
+// Conservative Kelly cap: personas play across many markets (oracle uses 0.25).
+const KELLY_CAP = 0.15;
 
 function peerReasoningKey(claimId: number, personaSlug: string): string {
   return `${claimId}:${personaSlug}`;
-}
-
-async function throttleLlm(): Promise<void> {
-  const now = Date.now();
-  const since = now - lastLlmCallAt;
-  if (since < LLM_THROTTLE_MS) {
-    await new Promise((r) => setTimeout(r, LLM_THROTTLE_MS - since));
-  }
-  lastLlmCallAt = Date.now();
-}
-
-/**
- * Kelly Criterion fraction of bankroll for a given confidence,
- * conservative cap at 15% of bankroll per bet (lower than oracle's
- * 25% because personas play across many markets).
- */
-function kellyFraction(confidencePct: number, netOdds = 1.0): number {
-  const p = confidencePct / 100;
-  const q = 1 - p;
-  const f = (p * netOdds - q) / netOdds;
-  return Math.max(0, Math.min(0.15, f));
 }
 
 function categoryMatches(persona: PersonaSpec, claim: ClaimOnChain): boolean {
@@ -228,10 +212,10 @@ export async function runPersonaForClaim(
   // Wallet balance — keep a 2x stake buffer so we never drain.
   const balance = await ctx.publicClient.getBalance({ address: address as `0x${string}` });
   const baseStakeUsdc = persona.stakeUsdc ?? DEFAULT_STAKE_USDC;
-  const minRequired = usdcToMicro(baseStakeUsdc * 2);
+  const minRequired = usdcToWei(baseStakeUsdc * 2);
   if (balance < minRequired) {
     console.log(
-      `[council:${persona.slug}] insufficient balance (${microToUsdc(balance).toFixed(2)} USDC), skipping`,
+      `[council:${persona.slug}] insufficient balance (${weiToUsdc(balance).toFixed(2)} USDC), skipping`,
     );
     return null;
   }
@@ -246,8 +230,8 @@ export async function runPersonaForClaim(
   // Rule personas don't have a confidence score — they use the base stake as-is.
   let stakeUsdc = decision.stakeUsdc;
   if (decision.confidence && decision.confidence >= (persona.minConfidence ?? DEFAULT_MIN_CONFIDENCE)) {
-    const kelly = kellyFraction(decision.confidence);
-    const bankrollUsdc = Number(balance) / 1e18;
+    const kelly = kellyFraction(decision.confidence, KELLY_CAP);
+    const bankrollUsdc = weiToUsdc(balance);
     const kellyStake = Math.max(
       baseStakeUsdc,
       Math.min(bankrollUsdc * kelly, bankrollUsdc * 0.10),
@@ -256,7 +240,7 @@ export async function runPersonaForClaim(
   }
 
   // Submit.
-  const stakeWei = usdcToMicro(stakeUsdc);
+  const stakeWei = usdcToWei(stakeUsdc);
   const txHash = await executeContract({
     walletId,
     contractAddress:      ctx.contractAddress,

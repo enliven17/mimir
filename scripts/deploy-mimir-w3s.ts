@@ -37,7 +37,7 @@ import {
   arcTestnet,
   createArcPublicClient,
   getArcRpcUrl,
-  microToUsdc,
+  weiToUsdc,
   getExplorerTxUrl,
   getExplorerAddressUrl,
 } from "../lib/arc";
@@ -125,7 +125,7 @@ async function main(): Promise<void> {
   const ownerBalance = await arcPublic.getBalance({ address: ownerAddr });
   console.log("\nDeploy plan:");
   console.log(`  Funder (market-creator W3S) ${ownerAddr}`);
-  console.log(`     balance: ${microToUsdc(ownerBalance).toFixed(4)} USDC`);
+  console.log(`     balance: ${weiToUsdc(ownerBalance).toFixed(4)} USDC`);
   console.log(`  Final owner (same address)  ${ownerAddr}`);
   console.log(`  Oracle                      ${oracleAddr}\n`);
   if (ownerBalance < parseEther("3")) {
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
     if (funded >= parseEther("1")) break;
     await new Promise((r) => setTimeout(r, 2_000));
   }
-  console.log(`  deploy key balance: ${microToUsdc(funded).toFixed(4)} USDC`);
+  console.log(`  deploy key balance: ${weiToUsdc(funded).toFixed(4)} USDC`);
   if (funded < parseEther("1")) throw new Error("Deploy key never received the funds");
 
   // 4. Deploy with vanilla viem

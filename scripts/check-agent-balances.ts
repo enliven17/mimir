@@ -2,7 +2,7 @@
  * Quick read of both Mimir agent wallets on Arc Testnet.
  * Run: npx tsx scripts/check-agent-balances.ts
  */
-import { createArcPublicClient, microToUsdc, getExplorerAddressUrl } from "../lib/arc";
+import { createArcPublicClient, weiToUsdc, getExplorerAddressUrl } from "../lib/arc";
 
 async function main(): Promise<void> {
   const oracle  = process.env.CIRCLE_ORACLE_ADDRESS;
@@ -20,10 +20,10 @@ async function main(): Promise<void> {
 
   console.log("Arc Testnet balances:\n");
   console.log(`  oracle          ${oracle}`);
-  console.log(`                  ${microToUsdc(ob).toFixed(4)} USDC`);
+  console.log(`                  ${weiToUsdc(ob).toFixed(4)} USDC`);
   console.log(`                  ${getExplorerAddressUrl(oracle)}\n`);
   console.log(`  market-creator  ${creator}`);
-  console.log(`                  ${microToUsdc(cb).toFixed(4)} USDC`);
+  console.log(`                  ${weiToUsdc(cb).toFixed(4)} USDC`);
   console.log(`                  ${getExplorerAddressUrl(creator)}`);
 }
 

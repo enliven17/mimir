@@ -8,7 +8,8 @@
  */
 
 import { callLLM, pickGeminiModel, extractJson } from "../../../lib/llm";
-import { microToUsdc } from "../../../lib/arc";
+import { weiToUsdc } from "../../../lib/arc";
+import { isVerdict, type Verdict } from "../../../lib/verdict";
 import type { PersonaSpec } from "../personas";
 import type { ClaimOnChain } from "./types";
 
@@ -19,7 +20,7 @@ export interface PersonaVerdict {
    * CHALLENGERS_WIN means the persona disagrees with the creator → stake.
    * DRAW / UNRESOLVABLE → abstain.
    */
-  verdict:     "CREATOR_WINS" | "CHALLENGERS_WIN" | "DRAW" | "UNRESOLVABLE";
+  verdict:     Verdict;
   confidence:  number;
   explanation: string;
 }
@@ -32,7 +33,7 @@ export async function evaluateClaimAsPersona(
 ): Promise<PersonaVerdict> {
   const deadlineDate = new Date(Number(claim.deadline) * 1000).toISOString();
   const nowDate      = new Date().toISOString();
-  const potUsdc      = microToUsdc(claim.creatorStake + claim.totalChallengerStake);
+  const potUsdc      = weiToUsdc(claim.creatorStake + claim.totalChallengerStake);
 
   const biasSection = persona.promptBias
     ? `\n## Your character\n${persona.promptBias}\n`
@@ -86,7 +87,7 @@ Return JSON only:
     const jsonStr = extractJson(text);
     if (!jsonStr) throw new Error("No JSON");
     const parsed = JSON.parse(jsonStr) as PersonaVerdict;
-    if (!["CREATOR_WINS", "CHALLENGERS_WIN", "DRAW", "UNRESOLVABLE"].includes(parsed.verdict)) {
+    if (!isVerdict(parsed.verdict)) {
       throw new Error("Invalid verdict");
     }
     return {

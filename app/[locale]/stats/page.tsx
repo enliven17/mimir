@@ -4,11 +4,12 @@ import {
   getContractAddress,
   getDeployBlock,
   paginatedGetLogs,
-  microToUsdc,
+  weiToUsdc,
   getExplorerAddressUrl,
   getExplorerTxUrl,
 } from "@/lib/arc";
 import { MIMIR_ABI, STATE } from "@/lib/mimir-abi";
+import { ZERO_ADDRESS } from "@/lib/constants";
 import { getPersonaForAddress } from "@/lib/council-resolver";
 import type { PersonaSpec } from "@/agents/council/personas";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
@@ -146,7 +147,7 @@ async function fetchStakers(oracleAddr?: string, creatorAddr?: string): Promise<
       bump: "created" | "challenged",
     ) => {
       const addr = rawAddr.toLowerCase();
-      if (!addr || addr === "0x0000000000000000000000000000000000000000") return;
+      if (!addr || addr === ZERO_ADDRESS) return;
       const existing = byAddr.get(addr);
       if (existing) {
         if (blockNumber < existing.firstBlock) {
@@ -333,7 +334,7 @@ export default async function StatsPage() {
     (acc, c) => acc + c.creatorStake + c.totalChallengerStake,
     0n,
   );
-  const totalWageredUsdc = microToUsdc(totalWageredWei);
+  const totalWageredUsdc = weiToUsdc(totalWageredWei);
 
   // Confidence tiers from resolved on-chain claim state. The settlement
   // timeline below is intentionally capped; aggregate stats must not be.
@@ -394,7 +395,7 @@ export default async function StatsPage() {
               <div>
                 <div className="mb-1 flex items-baseline justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-pv-emerald">Oracle</span>
-                  <span className="font-mono tabular-nums text-pv-text">{microToUsdc(agentInfo.oracleBalance).toFixed(4)} USDC</span>
+                  <span className="font-mono tabular-nums text-pv-text">{weiToUsdc(agentInfo.oracleBalance).toFixed(4)} USDC</span>
                 </div>
                 <a className="block break-all font-mono text-[10px] text-pv-muted hover:text-pv-emerald" href={getExplorerAddressUrl(agentInfo.oracle)} target="_blank" rel="noreferrer">
                   {agentInfo.oracle}
@@ -403,7 +404,7 @@ export default async function StatsPage() {
               <div>
                 <div className="mb-1 flex items-baseline justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-pv-emerald">Market-creator (owner)</span>
-                  <span className="font-mono tabular-nums text-pv-text">{microToUsdc(agentInfo.ownerBalance).toFixed(4)} USDC</span>
+                  <span className="font-mono tabular-nums text-pv-text">{weiToUsdc(agentInfo.ownerBalance).toFixed(4)} USDC</span>
                 </div>
                 <a className="block break-all font-mono text-[10px] text-pv-muted hover:text-pv-emerald" href={getExplorerAddressUrl(agentInfo.owner)} target="_blank" rel="noreferrer">
                   {agentInfo.owner}

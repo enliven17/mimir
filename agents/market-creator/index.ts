@@ -25,20 +25,18 @@
 // Worker-scoped Gemini key. Falls back to the shared GEMINI_API_KEY when
 // CREATOR_GEMINI_API_KEY is not set. See agents/oracle/index.ts for the
 // rationale.
-{
-  const k = process.env.CREATOR_GEMINI_API_KEY?.trim();
-  if (k) process.env.GEMINI_API_KEY = k;
-}
+applyWorkerGeminiKey("CREATOR_GEMINI_API_KEY");
 
 import { formatEther } from "viem";
+import { requireEnv, requireAnyLLMKey, applyWorkerGeminiKey } from "../../lib/agent-bootstrap";
 import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson } from "../../lib/llm";
 import {
   createArcPublicClient,
   arcTestnet,
   getContractAddress,
   getExplorerTxUrl,
-  usdcToMicro,
-  microToUsdc,
+  usdcToWei,
+  weiToUsdc,
 } from "../../lib/arc";
 import {
   executeContract,
@@ -49,6 +47,7 @@ import {
 } from "../../lib/circle-w3s";
 import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
 import { gatherCouncilPreflight } from "./council-preflight";
+import { atomicToUsdc } from "../../lib/x402";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const CONTRACT_ADDRESS    = getContractAddress();
@@ -69,22 +68,8 @@ const PREFLIGHT_CAP_USDC = Number(process.env.MARKET_CREATOR_PREFLIGHT_CAP_USDC 
 const PREFLIGHT_PERSONAS = process.env.MARKET_CREATOR_PREFLIGHT_PERSONAS;
 const PREFLIGHT_DELAY_MS = Number(process.env.MARKET_CREATOR_PREFLIGHT_DELAY_MS ?? "30000");
 
-for (const v of ["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLET_ID", "CIRCLE_CREATOR_ADDRESS"]) {
-  if (!process.env[v]) {
-    console.error(`${v} env var is required`);
-    process.exit(1);
-  }
-}
-if (
-  !process.env.GEMINI_API_KEY?.trim() &&
-  !process.env.ANTHROPIC_API_KEY?.trim() &&
-  !process.env.GROQ_API_KEY?.trim() &&
-  !process.env.GROQ_API_KEYS?.trim() &&
-  !process.env.OPENROUTER_API_KEY?.trim()
-) {
-  console.error("Set at least one LLM key: GEMINI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY/GROQ_API_KEYS, or OPENROUTER_API_KEY");
-  process.exit(1);
-}
+requireEnv(["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLET_ID", "CIRCLE_CREATOR_ADDRESS"]);
+requireAnyLLMKey();
 
 const SIG_CREATE_CLAIM = buildAbiFunctionSignature("createClaim", MIMIR_ABI);
 const SIG_CANCEL_CLAIM = buildAbiFunctionSignature("cancelClaim", MIMIR_ABI);
@@ -315,7 +300,7 @@ async function applyCouncilPreflight(candidates: ClaimCandidate[]): Promise<Clai
       continue;
     }
 
-    const paidUsdc = Number(result.totalPaidAtomic) / 1_000_000;
+    const paidUsdc = atomicToUsdc(result.totalPaidAtomic);
     const avg = Math.round(result.averageScore);
     console.log(
       `[market-creator] Council preflight ${avg}/100 ` +
@@ -657,7 +642,7 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
 
 async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
   const deadline = BigInt(Math.floor(Date.now() / 1000) + candidate.deadlineHours * 3600);
-  const stake    = usdcToMicro(CREATOR_STAKE_USDC);
+  const stake    = usdcToWei(CREATOR_STAKE_USDC);
 
   // Check balance
   const balance = await publicClient.getBalance({ address: CREATOR_ADDR });
@@ -786,7 +771,7 @@ async function run(): Promise<void> {
 
   console.log(`\n[market-creator] ── Run at ${new Date().toISOString()}`);
   console.log(`[market-creator] Creator : ${CREATOR_ADDR}`);
-  console.log(`[market-creator] Balance : ${microToUsdc(balance).toFixed(4)} USDC`);
+  console.log(`[market-creator] Balance : ${weiToUsdc(balance).toFixed(4)} USDC`);
 
   // Single-pass sweep: cancels creator's stale expired-OPEN claims AND counts
   // joinable inventory (state ∈ {OPEN,ACTIVE} && deadline > now) on the same
@@ -876,7 +861,7 @@ async function main(): Promise<void> {
   console.log("  Mimir Market Creator Agent (Circle W3S signer)");
   console.log(`  Creator    : ${CREATOR_ADDR}`);
   console.log(`  Wallet ID  : ${CREATOR_WALLET}`);
-  console.log(`  Balance    : ${microToUsdc(balance).toFixed(4)} USDC`);
+  console.log(`  Balance    : ${weiToUsdc(balance).toFixed(4)} USDC`);
   console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
   console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Stake/mkt  : ${CREATOR_STAKE_USDC} USDC`);

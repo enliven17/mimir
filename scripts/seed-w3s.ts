@@ -11,8 +11,8 @@ import {
   createArcPublicClient,
   getContractAddress,
   getExplorerTxUrl,
-  usdcToMicro,
-  microToUsdc,
+  usdcToWei,
+  weiToUsdc,
 } from "../lib/arc";
 import { MIMIR_ABI } from "../lib/mimir-abi";
 import {
@@ -56,12 +56,12 @@ async function main() {
   const wallet = getMarketCreatorWalletId();
   const addr = getMarketCreatorAddress();
   const pub = createArcPublicClient();
-  const stake = usdcToMicro(STAKE_USDC);
+  const stake = usdcToWei(STAKE_USDC);
 
   console.log(`Seeding ${SEEDS.length} claims on ${CONTRACT}`);
   console.log(`Creator (W3S): ${addr}`);
   const bal = await pub.getBalance({ address: addr });
-  console.log(`Balance: ${microToUsdc(bal).toFixed(2)} USDC · need ~${(SEEDS.length * STAKE_USDC).toFixed(0)} + gas\n`);
+  console.log(`Balance: ${weiToUsdc(bal).toFixed(2)} USDC · need ~${(SEEDS.length * STAKE_USDC).toFixed(0)} + gas\n`);
   if (!DRY_RUN && bal < stake * BigInt(SEEDS.length + 2)) {
     throw new Error("Insufficient creator balance — top up via faucet.circle.com");
   }
