@@ -139,7 +139,7 @@ function hydrateUserClaimsInBackground(address: string) {
   nextEntry.promise = hydrateUserClaimsFromContract(address)
     .then(() => {})
     .catch(() => {
-      // Keep serving indexed rows if Bradbury reads are currently unreliable.
+      // Keep serving indexed rows if chain reads are currently unreliable.
     })
     .finally(() => {
       const currentState = getBackgroundState();
@@ -174,7 +174,7 @@ function refreshIndexedClaimInBackground(options: {
   })
     .then(() => {})
     .catch(() => {
-      // Keep serving indexed rows if Bradbury reads are currently unreliable.
+      // Keep serving indexed rows if chain reads are currently unreliable.
     })
     .finally(() => {
       const currentState = getBackgroundState();
