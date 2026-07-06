@@ -622,6 +622,18 @@ export async function getVsFeed(options: { forceRefresh?: boolean } = {}) {
   return (await getVsFeedSnapshot(options)).items;
 }
 
+// When a stored row exists we'd rather serve slightly stale data than let a
+// slow RPC 504 the page: the live refresh gets this budget, then we fall back
+// to the row. The refresh keeps running and persists for the next request.
+const DETAIL_REFRESH_BUDGET_MS = 6_000;
+
+function withDeadline<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 export async function getVsDetailSnapshot(vsId: number): Promise<VSDetailSnapshot> {
   try {
     const { row, challengerRows } = await loadStoredVsById(vsId);
@@ -649,7 +661,9 @@ export async function getVsDetailSnapshot(vsId: number): Promise<VSDetailSnapsho
       };
     }
 
-    const freshClaim = await refreshIndexedClaim({ claimId: vsId });
+    const freshClaim = row
+      ? await withDeadline(refreshIndexedClaim({ claimId: vsId }), DETAIL_REFRESH_BUDGET_MS, null)
+      : await refreshIndexedClaim({ claimId: vsId });
     if (freshClaim) {
       return {
         item: mapClaimToVS(freshClaim),

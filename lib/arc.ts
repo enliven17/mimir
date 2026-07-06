@@ -110,9 +110,12 @@ export function getExplorerAddressUrl(address: string): string {
 // over the rare 429 that still slips through.
 const ARC_HTTP_OPTS = {
   batch: { batchSize: 200, wait: 16 } as const,
-  retryCount: 3,
+  // Keep per-request budgets tight: callers (readClaimRaw, agent poll loops)
+  // have their own outer retries, and a hanging RPC must fail fast enough for
+  // serverless routes to fall back to cached data instead of 504ing.
+  retryCount: 2,
   retryDelay: 300,
-  timeout: 20_000,
+  timeout: 10_000,
 };
 
 export function createArcPublicClient(): PublicClient {
