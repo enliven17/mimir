@@ -17,7 +17,12 @@ import {
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { openPeepsAvatar } from "@/lib/avatars";
 import { shortenAddress } from "@/lib/constants";
+import { cachedFor } from "@/lib/server/ttl-cache";
 
+// `searchParams` makes this route dynamic, so the `revalidate` export alone
+// doesn't cache it (Next skips the Full Route Cache for dynamic renders) —
+// the persona filter would otherwise re-scan the full chain history on every
+// click. cachedFor covers the actual expensive work regardless.
 export const revalidate = 20;
 
 /* ── Data ────────────────────────────────────────────────────────────────── */
@@ -49,7 +54,9 @@ type EventRow =
       blockNumber: number;
     };
 
-async function fetchEvents() {
+const fetchEvents = cachedFor(fetchEventsUncached, 20_000);
+
+async function fetchEventsUncached() {
   const client  = createArcPublicClient();
   const address = getContractAddress();
   const fromBlock = getDeployBlock();
@@ -131,13 +138,13 @@ async function fetchEvents() {
   }
 }
 
-async function fetchAgentAddresses() {
+const fetchAgentAddresses = cachedFor(fetchAgentAddressesUncached, 20_000);
+
+async function fetchAgentAddressesUncached() {
   const client  = createArcPublicClient();
   const address = getContractAddress();
   try {
     const [oracle, owner, oracleBal, ownerBal] = await Promise.all([
-      client.readContract({ address, abi: MIMIR_ABI, functionName: "oracle" }) as Promise<`0x${string}`>,
-      client.readContract({ address, abi: MIMIR_ABI, functionName: "owner"  }) as Promise<`0x${string}`>,
       client.readContract({ address, abi: MIMIR_ABI, functionName: "oracle" }) as Promise<`0x${string}`>,
       client.readContract({ address, abi: MIMIR_ABI, functionName: "owner"  }) as Promise<`0x${string}`>,
     ]).then(async ([oracleAddr, ownerAddr]) => {

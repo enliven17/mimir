@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mimir - Project Blurb</title>
+<style>
+  @page {
+    size: A4;
+    margin: 22mm 18mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #1a1a1a;
+    line-height: 1.55;
+    font-size: 11pt;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 22pt;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.02em;
+  }
+  .tagline {
+    font-size: 12.5pt;
+    color: #444;
+    margin: 0 0 22px 0;
+  }
+  h2 {
+    font-size: 14pt;
+    margin: 28px 0 10px 0;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 6px;
+  }
+  h3 {
+    font-size: 11.5pt;
+    margin: 18px 0 8px 0;
+    color: #333;
+  }
+  p { margin: 0 0 12px 0; }
+  code {
+    background: #f2f2f2;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 9.5pt;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px 0;
+    font-size: 9.7pt;
+  }
+  th, td {
+    border: 1px solid #ddd;
+    padding: 7px 9px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #f7f7f7;
+    font-weight: 600;
+  }
+  td:first-child, th:first-child { width: 22%; }
+  td:last-child, th:last-child { width: 20%; }
+  ul { margin: 0 0 14px 0; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  .proof {
+    background: #f7f7f7;
+    border-left: 3px solid #333;
+    padding: 12px 16px;
+    margin-top: 6px;
+  }
+  strong { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>Mimir</h1>
+<p class="tagline">An AI-settled claim market on Arc, Circle's stablecoin-native L1.</p>
+
+<p>Mimir is a peer-to-peer market for public claims about future outcomes. Two parties stake USDC on opposite sides of a question ("Will BTC close above $100,000 on 2026-05-25 according to CoinGecko?"); when the deadline passes, an off-chain AI oracle reads the agreed-upon evidence source, evaluates the verdict against the stated rule, and settles the payout on-chain. There are no judges and no manual disputes: every step (staking, challenging, resolution, payout) happens in native USDC with sub-second finality and sub-cent fees.</p>
+
+<p>What makes it distinct: the agents that run Mimir, an oracle, an autonomous market-creator, and a 10-persona AI council that acts as paid jurors and challengers, are first-class on-chain economic actors. They hold no private keys, they pay each other in real USDC nanopayments for evidence and opinions, and every settlement commits a verifiable evidence hash on-chain. It's not a chatbot wrapper around a database. It's twelve autonomous agents that stake, challenge, and settle real money against each other and against humans.</p>
+
+<h2>Circle stack: what's actually wired in</h2>
+
+<table>
+  <thead>
+    <tr><th>Circle product</th><th>Role in Mimir</th><th>Where</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>USDC as native gas token (Arc)</strong></td>
+      <td>Every stake, payout, and refund moves as <code>msg.value</code>, no ERC-20 approve/allowance flow, ~$0.01 per transaction.</td>
+      <td><code>contracts/Mimir.sol</code>, <code>lib/arc.ts</code></td>
+    </tr>
+    <tr>
+      <td><strong>Programmable Wallets (W3S, developer-controlled)</strong></td>
+      <td>All three agent types (oracle, market-creator, 10 council personas) sign every transaction through Circle's wallet infra. No agent ever holds a raw private key; a fresh RSA-encrypted entity-secret ciphertext is generated per call.</td>
+      <td><code>lib/circle-w3s.ts</code></td>
+    </tr>
+    <tr>
+      <td><strong>CCTP V2 (Fast Transfer)</strong></td>
+      <td>Browser-driven burn-and-mint bridge that pulls USDC into Arc from Ethereum/Base/Avalanche Sepolia in ~15s, using Circle's Iris attestation API for cross-chain message proof. Contract addresses are identical across V2 chains, only the domain ID differs.</td>
+      <td><code>lib/cctp.ts</code>, <code>app/[locale]/bridge/page.tsx</code></td>
+    </tr>
+    <tr>
+      <td><strong>Gateway (unified balance)</strong></td>
+      <td>Server-side proxy exposes a wallet's aggregate USDC balance across every CCTP V2 domain in a single call, so the UI never has to poll each chain separately.</td>
+      <td><code>app/api/gateway/balances/route.ts</code>, <code>components/GatewayBalanceWidget.tsx</code></td>
+    </tr>
+    <tr>
+      <td><strong>Gateway Nanopayments (x402)</strong></td>
+      <td>Agents pay each other sub-cent amounts for evidence, opinions, and API access. The buyer signs an EIP-3009 authorization via W3S <code>signTypedData</code> (still no local key); the seller side runs Circle's Gateway middleware, which settles through Circle's hosted facilitator on Arc testnet.</td>
+      <td><code>lib/x402.ts</code>, <code>lib/x402-server.ts</code></td>
+    </tr>
+    <tr>
+      <td><strong>App Kit key (reserved)</strong></td>
+      <td><code>CIRCLE_KIT_KEY</code> is provisioned for future server-side bridge orchestration and sponsored transactions, not yet load-bearing in the live flow.</td>
+      <td><code>.env.example</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Where the stack shows up economically, not just technically</h3>
+<ul>
+  <li>The <strong>oracle</strong> settles claims and, in "self-resolving jury" mode, buys sequential scored votes from council personas (cross-entropy-scored, paid in native USDC) instead of deciding alone.</li>
+  <li>The <strong>market-creator</strong> stakes its own USDC balance to open a claim. Creating a market is an economic commitment, not a free post.</li>
+  <li>The <strong>council</strong> (10 distinct LLM/rule-based personas) each hold their own W3S wallet, sell their reasoning per-read via x402, and get paid to challenge or vote. Every persona is a paid participant, not UI flavor.</li>
+  <li>All of the above settle on <strong>Mimir.sol</strong> on Arc Testnet, with <code>evidenceHash = keccak256(raw evidence)</code> committed on-chain so any verdict is independently re-verifiable.</li>
+</ul>
+
+<h2>Stack outside Circle</h2>
+<p>Next.js 16 (App Router) + TypeScript + Tailwind, wagmi v3 / viem v2 for wallet and chain interaction, Solidity ^0.8.20 (<code>viaIR</code>) for the contract, Neon Postgres as an optional read-index cache, XMTP for encrypted creator/challenger chat, next-intl for i18n. Frontend on Vercel, long-running agent workers on Railway.</p>
+
+<h2>Proof, not pitch</h2>
+<p class="proof">Live contract on Arc Testnet: <strong>181 claims created, 104 resolved</strong> in native USDC (v1, immutable), ahead of the pull-payment-safety v2 upgrade currently live.</p>
+
+</body>
+</html>

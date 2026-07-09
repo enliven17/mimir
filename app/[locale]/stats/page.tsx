@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cachedFor } from "@/lib/server/ttl-cache";
 import {
   createArcPublicClient,
   getContractAddress,
@@ -14,8 +15,11 @@ import { getPersonaForAddress } from "@/lib/council-resolver";
 import type { PersonaSpec } from "@/agents/council/personas";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// Every fetch* below re-scans the chain (per-claim getClaim reads, full
+// getLogs history from the deploy block). That's fine once per 30s, not
+// once per page view — cache each so concurrent/rapid visits share one
+// chain round-trip instead of each paying the full scan cost.
+export const revalidate = 30;
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
@@ -45,7 +49,9 @@ interface ClaimRow {
 // burst tiny while still finishing a 100-claim page in well under a second.
 const STATS_READ_CONCURRENCY = 5;
 
-async function fetchClaims(): Promise<ClaimRow[]> {
+const fetchClaims = cachedFor(fetchClaimsUncached, 30_000);
+
+async function fetchClaimsUncached(): Promise<ClaimRow[]> {
   const client  = createArcPublicClient();
   const address = getContractAddress();
 
@@ -104,7 +110,9 @@ interface StakerRow {
   persona?:       PersonaSpec;
 }
 
-async function fetchStakers(oracleAddr?: string, creatorAddr?: string): Promise<StakerRow[]> {
+const fetchStakers = cachedFor(fetchStakersUncached, 30_000);
+
+async function fetchStakersUncached(oracleAddr?: string, creatorAddr?: string): Promise<StakerRow[]> {
   const client  = createArcPublicClient();
   const address = getContractAddress();
   const fromBlock = getDeployBlock();
@@ -198,7 +206,9 @@ async function fetchStakers(oracleAddr?: string, creatorAddr?: string): Promise<
   }
 }
 
-async function fetchSettlements(): Promise<Settlement[]> {
+const fetchSettlements = cachedFor(fetchSettlementsUncached, 30_000);
+
+async function fetchSettlementsUncached(): Promise<Settlement[]> {
   const client  = createArcPublicClient();
   const address = getContractAddress();
   try {
@@ -231,7 +241,9 @@ async function fetchSettlements(): Promise<Settlement[]> {
   }
 }
 
-async function fetchOracleAndCreator() {
+const fetchOracleAndCreator = cachedFor(fetchOracleAndCreatorUncached, 30_000);
+
+async function fetchOracleAndCreatorUncached() {
   const client = createArcPublicClient();
   const address = getContractAddress();
   try {
