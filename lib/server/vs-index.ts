@@ -346,9 +346,15 @@ async function persistIndexedClaims(claims: ClaimData[]) {
 
   await upsertClaimsBatch(claims);
   await Promise.all(
-    claims
-      .filter((claim) => claim.challenger_count === 0)
-      .map((claim) => upsertChallengers(claim.id, []))
+    claims.map((claim) => {
+      if (Array.isArray(claim.challengers)) {
+        return upsertChallengers(claim.id, claim.challengers);
+      }
+      if (claim.challenger_count === 0) {
+        return upsertChallengers(claim.id, []);
+      }
+      return undefined;
+    })
   );
 }
 

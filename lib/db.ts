@@ -118,9 +118,9 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     creator_position TEXT,
     counter_position TEXT,
     resolution_url TEXT,
-    creator_stake BIGINT NOT NULL DEFAULT 0,
-    total_challenger_stake BIGINT NOT NULL DEFAULT 0,
-    reserved_creator_liability BIGINT NOT NULL DEFAULT 0,
+    creator_stake NUMERIC NOT NULL DEFAULT 0,
+    total_challenger_stake NUMERIC NOT NULL DEFAULT 0,
+    reserved_creator_liability NUMERIC NOT NULL DEFAULT 0,
     deadline BIGINT NOT NULL,
     state TEXT NOT NULL DEFAULT 'open',
     winner_side TEXT NOT NULL DEFAULT '',
@@ -136,7 +136,7 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     max_challengers BIGINT NOT NULL DEFAULT 0,
     visibility TEXT NOT NULL DEFAULT 'public',
     challenger_count BIGINT NOT NULL DEFAULT 0,
-    total_pot BIGINT NOT NULL DEFAULT 0,
+    total_pot NUMERIC NOT NULL DEFAULT 0,
     first_challenger TEXT NOT NULL DEFAULT '',
     first_indexed_at BIGINT NOT NULL DEFAULT 0,
     updated_at BIGINT NOT NULL DEFAULT 0,
@@ -152,11 +152,22 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
   { sql: `CREATE TABLE IF NOT EXISTS challengers (
     claim_id BIGINT NOT NULL,
     address TEXT NOT NULL,
-    stake BIGINT NOT NULL DEFAULT 0,
-    potential_payout BIGINT NOT NULL DEFAULT 0,
+    stake NUMERIC NOT NULL DEFAULT 0,
+    potential_payout NUMERIC NOT NULL DEFAULT 0,
     PRIMARY KEY (claim_id, address)
   )` },
   { sql: "CREATE INDEX IF NOT EXISTS idx_challengers_address ON challengers(address)" },
+  // Stakes/payouts are USDC floats (e.g. 5.53), not whole numbers — BIGINT
+  // columns rejected every fractional write, silently dropping challenger
+  // rows (upsertChallengers wraps delete+inserts in one transaction, so a
+  // single fractional stake rolled the whole claim's challenger list back).
+  // Migrate pre-existing deployments that still have the BIGINT columns.
+  { sql: "ALTER TABLE claims ALTER COLUMN creator_stake TYPE NUMERIC" },
+  { sql: "ALTER TABLE claims ALTER COLUMN total_challenger_stake TYPE NUMERIC" },
+  { sql: "ALTER TABLE claims ALTER COLUMN reserved_creator_liability TYPE NUMERIC" },
+  { sql: "ALTER TABLE claims ALTER COLUMN total_pot TYPE NUMERIC" },
+  { sql: "ALTER TABLE challengers ALTER COLUMN stake TYPE NUMERIC" },
+  { sql: "ALTER TABLE challengers ALTER COLUMN potential_payout TYPE NUMERIC" },
   { sql: `CREATE TABLE IF NOT EXISTS sync_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

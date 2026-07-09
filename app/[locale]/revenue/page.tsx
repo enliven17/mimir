@@ -91,6 +91,7 @@ function ReceiptLink({ txId, payer }: { txId: string | null; payer: string | nul
 export default function RevenuePage() {
   const [data, setData] = useState<RevenueSummary | null>(null);
   const [settlements, setSettlements] = useState<SettlementTx[]>([]);
+  const [settlementsError, setSettlementsError] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -110,8 +111,10 @@ export default function RevenuePage() {
       try {
         const res = await fetch("/api/x402/settlements");
         if (!res.ok) return;
-        const json = (await res.json()) as { items?: SettlementTx[] };
-        if (alive && Array.isArray(json.items)) setSettlements(json.items);
+        const json = (await res.json()) as { items?: SettlementTx[]; error?: boolean };
+        if (!alive) return;
+        if (Array.isArray(json.items)) setSettlements(json.items);
+        setSettlementsError(Boolean(json.error));
       } catch {
         // explorer hiccup — keep the last list
       }
@@ -281,7 +284,9 @@ export default function RevenuePage() {
                   {settlements.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center font-mono text-pv-muted">
-                        No Gateway transactions loaded yet…
+                        {settlementsError
+                          ? "ArcScan's explorer API is temporarily unavailable — check back shortly."
+                          : "No Gateway transactions loaded yet…"}
                       </td>
                     </tr>
                   )}

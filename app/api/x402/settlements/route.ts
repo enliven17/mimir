@@ -31,7 +31,10 @@ export async function GET(): Promise<Response> {
       { next: { revalidate: 30 } },
     );
     if (!res.ok) {
-      return Response.json({ gateway: GATEWAY_WALLET_ADDRESS, items: [] });
+      // Distinguish "explorer is down" from "no settlements yet" so the
+      // dashboard doesn't tell users there's no data when it's actually
+      // ArcScan's API 503ing.
+      return Response.json({ gateway: GATEWAY_WALLET_ADDRESS, items: [], error: true });
     }
     const body = (await res.json()) as { items?: BlockscoutTx[] };
     const items = (body.items ?? []).slice(0, MAX_ITEMS).map((t) => ({
@@ -44,7 +47,6 @@ export async function GET(): Promise<Response> {
     }));
     return Response.json({ gateway: GATEWAY_WALLET_ADDRESS, items });
   } catch {
-    // Explorer down → empty list; the dashboard renders its placeholder.
-    return Response.json({ gateway: GATEWAY_WALLET_ADDRESS, items: [] });
+    return Response.json({ gateway: GATEWAY_WALLET_ADDRESS, items: [], error: true });
   }
 }
