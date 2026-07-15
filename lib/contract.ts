@@ -1011,16 +1011,32 @@ export async function getUserClaimSummaries(address: string): Promise<ClaimData[
 
 /** @deprecated use getAllVSFast */
 export async function getAllVSSnapshot(
-  _opts?: { forceRefresh?: boolean }
+  opts?: { forceRefresh?: boolean }
 ): Promise<VSFeedSnapshot> {
+  // In the browser this MUST go through /api/vs (the indexed cache): reading
+  // every claim directly from the public Arc RPC (~3 calls per claim) trips
+  // its per-client rate limit and the whole feed comes back empty.
+  if (typeof window !== "undefined") {
+    const res = await fetch(opts?.forceRefresh ? "/api/vs?refresh=1" : "/api/vs");
+    if (!res.ok) throw new Error(`/api/vs returned ${res.status}`);
+    const data = await res.json();
+    return { items: data.items ?? [], cache: data.cache ?? null };
+  }
   return getAllVSDirect();
 }
 
 /** @deprecated use getUserVSFast */
 export async function getUserVSSnapshot(
   address: string,
-  _opts?: { forceRefresh?: boolean }
+  opts?: { forceRefresh?: boolean }
 ): Promise<VSFeedSnapshot> {
+  if (typeof window !== "undefined") {
+    const suffix = opts?.forceRefresh ? "?refresh=1" : "";
+    const res = await fetch(`/api/vs/user/${address}${suffix}`);
+    if (!res.ok) throw new Error(`/api/vs/user returned ${res.status}`);
+    const data = await res.json();
+    return { items: data.items ?? [], cache: data.cache ?? null };
+  }
   const items = await getUserVSSummaries(address);
   return { items: items.sort((a, b) => b.id - a.id), cache: makeLiveFreshness() };
 }
