@@ -20,6 +20,13 @@ export interface CallLLMOptions {
   /** Ask the model for JSON output. Gemini uses responseMimeType; Claude is prompt-hinted. */
   jsonOnly?: boolean;
   /**
+   * Gemini responseSchema (https://ai.google.dev/gemini-api/docs/structured-output).
+   * responseMimeType alone still lets Gemini "reason in prose" instead of emitting
+   * JSON for some prompts; pairing it with a schema makes the grammar constraint
+   * strict. Ignored by non-Gemini providers and by Gemma models (see callGeminiModel).
+   */
+  jsonSchema?: Record<string, unknown>;
+  /**
    * Preferred Gemini model for this call (e.g. "gemma-4-26b-it"). Used to spread
    * agent load across models so each gets its own rate-limit bucket. Ignored by
    * non-Gemini providers. Falls back to the rest of the pool if this model is
@@ -250,6 +257,7 @@ export async function callLLM(prompt: string, opts: CallLLMOptions = {}): Promis
     temperature: opts.temperature ?? 0.2,
     jsonOnly: opts.jsonOnly ?? false,
     model: opts.model,
+    jsonSchema: opts.jsonSchema,
   };
   const candidates = fallbackProviders(primary);
   let lastError: unknown = null;
@@ -395,7 +403,7 @@ async function callOpenRouter(
 
 async function callGemini(
   prompt: string,
-  opts: { maxTokens: number; temperature: number; jsonOnly: boolean; model?: string },
+  opts: { maxTokens: number; temperature: number; jsonOnly: boolean; model?: string; jsonSchema?: Record<string, unknown> },
 ): Promise<string> {
   // Try the assigned model first (then borrow other pool models), and for each
   // model try the primary key first (then backup keys). Limits are per key×model,
@@ -427,7 +435,7 @@ async function callGeminiModel(
   apiKey: string,
   model: string,
   prompt: string,
-  opts: { maxTokens: number; temperature: number; jsonOnly: boolean },
+  opts: { maxTokens: number; temperature: number; jsonOnly: boolean; jsonSchema?: Record<string, unknown> },
 ): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   // Gemma models (gemma-*) share the Gemini API but reject Gemini-only config
@@ -442,7 +450,14 @@ async function callGeminiModel(
   let effectivePrompt = prompt;
   if (opts.jsonOnly) {
     if (isGemma) effectivePrompt = `${prompt}\n\nReturn valid JSON only — no markdown, no code fences.`;
-    else generationConfig.responseMimeType = "application/json";
+    else {
+      generationConfig.responseMimeType = "application/json";
+      // responseMimeType alone still lets the model "think in prose" before ever
+      // emitting JSON — a schema constrains the token grammar itself, which is
+      // what actually stops that (seen in prod: verdict calls returning a
+      // markdown bullet list instead of JSON despite responseMimeType).
+      if (opts.jsonSchema) generationConfig.responseSchema = opts.jsonSchema;
+    }
   }
 
   const transient = new Set([408, 500, 502, 503, 504]);

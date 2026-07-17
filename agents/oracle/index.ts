@@ -142,6 +142,19 @@ interface OracleVerdict {
   explanation: string;
 }
 
+// Gemini responseSchema for evaluateClaim's verdict — see lib/llm.ts jsonSchema
+// comment. responseMimeType alone still let the model answer in prose for some
+// claims (observed in prod: markdown bullet breakdowns instead of JSON).
+const ORACLE_VERDICT_SCHEMA = {
+  type: "object",
+  properties: {
+    verdict: { type: "string", enum: ["CREATOR_WINS", "CHALLENGERS_WIN", "DRAW", "UNRESOLVABLE"] },
+    confidence: { type: "integer" },
+    explanation: { type: "string" },
+  },
+  required: ["verdict", "confidence", "explanation"],
+} as const;
+
 // ── Fetch claim from contract ─────────────────────────────────────────────────
 async function fetchClaim(claimId: number): Promise<ClaimOnChain | null> {
   try {
@@ -270,7 +283,12 @@ Return JSON only:
   // 1024 tokens: a 512 cap truncated JSON mid-string on chatty fallback models,
   // which used to settle claims as UNRESOLVABLE. Parse failure now THROWS so the
   // poll loop retries next round instead of finalizing a refund on-chain.
-  const text = await throttledLLM(prompt, { maxTokens: 1024, jsonOnly: true, model: pickGeminiModel("oracle") });
+  const text = await throttledLLM(prompt, {
+    maxTokens: 1024,
+    jsonOnly: true,
+    model: pickGeminiModel("oracle"),
+    jsonSchema: ORACLE_VERDICT_SCHEMA,
+  });
   const jsonStr = extractJson(text);
   if (!jsonStr) {
     throw new Error(`Oracle verdict unparseable (no JSON): ${text.slice(0, 200)}`);
@@ -380,7 +398,12 @@ Reply JSON only: { "final": true | false }
 - final=true ONLY if the evidence shows the event is over and a final result is available.
 - final=false if it is upcoming, scheduled, in progress, postponed, or the evidence does not confirm completion.`;
   try {
-    const text = await throttledLLM(prompt, { maxTokens: 64, jsonOnly: true, model: pickGeminiModel("oracle") });
+    const text = await throttledLLM(prompt, {
+      maxTokens: 64,
+      jsonOnly: true,
+      model: pickGeminiModel("oracle"),
+      jsonSchema: { type: "object", properties: { final: { type: "boolean" } }, required: ["final"] },
+    });
     const parsed = JSON.parse(extractJson(text) ?? "{}");
     return parsed.final === true;
   } catch {
