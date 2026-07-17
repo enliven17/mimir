@@ -3,7 +3,6 @@ import {
   getClaimCount,
   getClaimSummaries,
   getClaimWithAccess,
-  getOpenClaimSummaries,
   getUserClaimSummaries,
   mapClaimToVS,
   type ClaimChallenger,
@@ -483,82 +482,79 @@ export async function getVsWithInvite(
   return mapClaimToVS(claim);
 }
 
+// Cap per-run work so a reconcile always finishes inside a serverless window
+// (cron has maxDuration 60). Progress persists via sync_meta, so back-to-back
+// runs converge on the full chain instead of restarting from scratch.
+const RECONCILE_MAX_NEW_PAGES = 2;
+const RECONCILE_MAX_ACTIVE_REFRESHES = 25;
+
 export async function reconcileVsIndex(): Promise<ReconcileResult> {
   const now = Date.now();
-  const [lastClaimCountValue, totalClaimCount, activeRows, openClaims] =
-    await Promise.all([
-      getSyncMeta("last_claim_count"),
-      getClaimCount(),
-      getClaimsByFilter({
-        visibility: "public",
-        states: ["open", "active"],
-        orderBy: "id_desc",
-      }),
-      getOpenClaimSummaries(),
-    ]);
+  const [lastClaimCountValue, totalClaimCount, activeRows] = await Promise.all([
+    getSyncMeta("last_claim_count"),
+    getClaimCount(),
+    getClaimsByFilter({
+      states: ["open", "active"],
+      orderBy: "id_desc",
+    }),
+  ]);
 
   const lastClaimCount = Number(lastClaimCountValue ?? "0");
   let synced = 0;
   let newClaims = 0;
   let stateChanges = 0;
 
-  if (totalClaimCount > lastClaimCount) {
-    for (
-      let startId = lastClaimCount + 1;
-      startId <= totalClaimCount;
-      startId += CLAIM_SYNC_PAGE_SIZE
-    ) {
-      const pageClaims = await getClaimSummaries(startId, CLAIM_SYNC_PAGE_SIZE);
-      if (pageClaims.length === 0) {
-        continue;
-      }
-
+  // 1. Backfill new claims page by page, checkpointing after EVERY page.
+  //    The old version wrote last_claim_count only at the very end, so any
+  //    timeout or RPC failure threw away all progress and the index stalled.
+  let pagesDone = 0;
+  for (
+    let startId = lastClaimCount + 1;
+    startId <= totalClaimCount && pagesDone < RECONCILE_MAX_NEW_PAGES;
+    startId += CLAIM_SYNC_PAGE_SIZE, pagesDone += 1
+  ) {
+    const pageEnd = Math.min(startId + CLAIM_SYNC_PAGE_SIZE - 1, totalClaimCount);
+    const expected = pageEnd - startId + 1;
+    const pageClaims = await getClaimSummaries(startId, expected);
+    if (pageClaims.length > 0) {
       await persistIndexedClaims(pageClaims);
       synced += pageClaims.length;
       newClaims += pageClaims.length;
     }
+
+    if (pageClaims.length < expected) {
+      // Claim ids are dense on-chain, so a short page means RPC reads failed.
+      // Checkpoint only the contiguous prefix that DID come back, then stop:
+      // the next run retries from there instead of skipping the gap forever.
+      const got = new Set(pageClaims.map((claim) => claim.id));
+      let checkpoint = startId - 1;
+      while (got.has(checkpoint + 1)) checkpoint += 1;
+      if (checkpoint >= startId) {
+        await setSyncMeta("last_claim_count", String(checkpoint));
+      }
+      break;
+    }
+
+    await setSyncMeta("last_claim_count", String(pageEnd));
   }
 
-  if (openClaims.length > 0) {
-    const existingById = new Map(activeRows.map((row) => [row.id, row]));
-    await persistIndexedClaims(openClaims);
-    synced += openClaims.length;
-
-    for (const claim of openClaims) {
-      const existing = existingById.get(claim.id) as (typeof activeRows)[0] | undefined;
-      if (
-        !existing ||
-        existing.state !== claim.state ||
-        existing.total_challenger_stake !== claim.total_challenger_stake ||
-        existing.challenger_count !== claim.challenger_count
-      ) {
-        stateChanges += 1;
-      }
+  // 2. Refresh claims the index believes are open/active by reading only
+  //    those ids, instead of re-scanning the entire chain to find them.
+  const rowsToRefresh = activeRows.slice(0, RECONCILE_MAX_ACTIVE_REFRESHES);
+  for (const row of rowsToRefresh) {
+    const fresh = await refreshIndexedClaim({ claimId: row.id });
+    if (!fresh) continue;
+    synced += 1;
+    if (
+      fresh.state !== row.state ||
+      fresh.total_challenger_stake !== row.total_challenger_stake ||
+      fresh.challenger_count !== row.challenger_count
+    ) {
+      stateChanges += 1;
     }
   }
 
-  const liveOpenIds = new Set(openClaims.map((claim) => claim.id));
-  const recentlyClosedIds = activeRows
-    .filter((row) => !liveOpenIds.has(row.id))
-    .map((row) => row.id);
-
-  if (recentlyClosedIds.length > 0) {
-    const closedClaims = await Promise.all(
-      recentlyClosedIds.map((claimId) =>
-        refreshIndexedClaim({
-          claimId,
-        })
-      )
-    );
-
-    stateChanges += closedClaims.filter((claim) => claim !== null).length;
-    synced += closedClaims.filter((claim) => claim !== null).length;
-  }
-
-  await Promise.all([
-    setSyncMeta("last_claim_count", String(totalClaimCount)),
-    setSyncMeta("last_sync_at", String(now)),
-  ]);
+  await setSyncMeta("last_sync_at", String(now));
 
   return {
     synced,
