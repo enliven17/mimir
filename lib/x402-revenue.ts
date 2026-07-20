@@ -25,8 +25,15 @@ export interface PaymentEvent {
 const MAX = 1000;
 const events: PaymentEvent[] = [];
 
-/** Record a settled payment. Never throws — accounting must not break serving. */
-export function recordPayment(e: PaymentEvent): void {
+/**
+ * Record a settled payment. Never throws — accounting must not break serving.
+ * Returns the durable-write promise so callers can `await` it: on Vercel the
+ * serverless function is frozen right after the response returns, which drops
+ * any fire-and-forget insert still in flight (this is why the ledger silently
+ * stopped growing while on-chain settlement kept working). Await it to keep the
+ * function alive until the row lands.
+ */
+export function recordPayment(e: PaymentEvent): Promise<void> {
   // In-memory mirror (instant, and the only store when no DB is configured).
   try {
     events.push(e);
@@ -34,8 +41,8 @@ export function recordPayment(e: PaymentEvent): void {
   } catch {
     /* ignore */
   }
-  // Durable write — fire-and-forget, swallow errors (e.g. DB not configured).
-  void insertX402Payment({
+  // Durable write — swallow errors (e.g. DB not configured) but log them.
+  return insertX402Payment({
     resource: e.resource,
     price_usd: e.priceUsd,
     payer: e.payer,
@@ -43,7 +50,6 @@ export function recordPayment(e: PaymentEvent): void {
     tx_id: e.txId,
     at: e.at,
   }).catch((err) => {
-    // Was fully swallowed — a DB outage silently stopped nanopayment accounting.
     console.warn("[x402] payment durable write failed:", err instanceof Error ? err.message : err);
   });
 }

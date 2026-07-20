@@ -156,7 +156,10 @@ export async function requirePayment(
         /* ignore decode errors */
       }
     }
-    recordPayment({
+    // await: Vercel freezes the function after the response returns, so a
+    // fire-and-forget insert never lands — the ledger stops growing while
+    // on-chain settlement keeps working. Blocking on one INSERT is cheap.
+    await recordPayment({
       resource: u.pathname,
       priceUsd: parsePriceUsd(price),
       payer,
