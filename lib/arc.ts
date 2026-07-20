@@ -108,8 +108,19 @@ export function getExplorerAddressUrl(address: string): string {
 // fire within `wait` ms into one POST body, which drops the request count by
 // ~100x and keeps us under the throttle. retryCount/retryDelay also smooth
 // over the rare 429 that still slips through.
+// thecanteenapp Arc RPC rejects JSON-RPC batches over 10 calls with HTTP 413
+// ("batch exceeds MaxBatchSize") — measured: 10 OK, 12 rejected. batchSize:200
+// silently stalled the whole VS index for days. Cap at 10, env-tunable in case
+// the provider raises the limit.
+export const RPC_BATCH_SIZE = (() => {
+  const raw = Number(
+    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RPC_BATCH_SIZE) || "10"
+  );
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 10;
+})();
+
 const ARC_HTTP_OPTS = {
-  batch: { batchSize: 200, wait: 16 } as const,
+  batch: { batchSize: RPC_BATCH_SIZE, wait: 16 },
   // Keep per-request budgets tight: callers (readClaimRaw, agent poll loops)
   // have their own outer retries, and a hanging RPC must fail fast enough for
   // serverless routes to fall back to cached data instead of 504ing.

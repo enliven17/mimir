@@ -8,6 +8,8 @@ import {
   createWalletClient,
   custom,
   http,
+  keccak256,
+  stringToBytes,
   type PublicClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -20,6 +22,7 @@ import {
   ensureArcChain,
   usdcToWei,
   weiToUsdc,
+  RPC_BATCH_SIZE,
 } from "./arc";
 import { MIMIR_ABI, STATE, WINNER_SIDE, BPS_DIVISOR } from "./mimir-abi";
 import { normalizeCategoryId, ZERO_ADDRESS } from "./constants";
@@ -192,7 +195,7 @@ function getPublicClient(): PublicClient {
     _publicClient = createPublicClient({
       chain: arcTestnet,
       transport: http(getArcRpcUrl(), {
-        batch: { batchSize: 200, wait: 16 },
+        batch: { batchSize: RPC_BATCH_SIZE, wait: 16 },
         retryCount: 3,
         retryDelay: 300,
         timeout: 20_000,
@@ -978,12 +981,40 @@ export async function getClaimSummaries(startId: number, limit: number): Promise
   return results.filter(Boolean) as ClaimData[];
 }
 
-/** Returns a single claim, optionally checking invite key. */
+const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+/**
+ * Returns a single claim. For private claims the caller MUST supply the invite
+ * key: it's hashed and compared to the on-chain inviteKeyHash, and a mismatch
+ * returns null. Without this check any well-formed string would unlock the
+ * claim's private content (IDOR).
+ */
 export async function getClaimWithAccess(
   claimId: number,
-  _inviteKey?: string
+  inviteKey?: string
 ): Promise<ClaimData | null> {
-  return readClaimRaw(claimId);
+  const claim = await readClaimRaw(claimId);
+  if (!claim) return null;
+
+  if (!claim.is_private) return claim;
+
+  const expected = (await getInviteKeyHash(claimId)).toLowerCase();
+  // No commitment on-chain → treat as inaccessible rather than open.
+  if (!expected || expected === ZERO_HASH) return null;
+  if (!inviteKey) return null;
+
+  const provided = keccak256(stringToBytes(inviteKey)).toLowerCase();
+  return provided === expected ? claim : null;
+}
+
+async function getInviteKeyHash(claimId: number): Promise<string> {
+  const client = getPublicClient();
+  return (await client.readContract({
+    address:      CONTRACT_ADDRESS,
+    abi:          MIMIR_ABI,
+    functionName: "getInviteKeyHash",
+    args:         [BigInt(claimId)],
+  })) as string;
 }
 
 /** Returns open/active public claims as ClaimData. */
