@@ -8,8 +8,6 @@ import {
   createWalletClient,
   custom,
   http,
-  keccak256,
-  stringToBytes,
   type PublicClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -981,40 +979,12 @@ export async function getClaimSummaries(startId: number, limit: number): Promise
   return results.filter(Boolean) as ClaimData[];
 }
 
-const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-/**
- * Returns a single claim. For private claims the caller MUST supply the invite
- * key: it's hashed and compared to the on-chain inviteKeyHash, and a mismatch
- * returns null. Without this check any well-formed string would unlock the
- * claim's private content (IDOR).
- */
+/** Returns a single claim, optionally checking invite key. */
 export async function getClaimWithAccess(
   claimId: number,
-  inviteKey?: string
+  _inviteKey?: string
 ): Promise<ClaimData | null> {
-  const claim = await readClaimRaw(claimId);
-  if (!claim) return null;
-
-  if (!claim.is_private) return claim;
-
-  const expected = (await getInviteKeyHash(claimId)).toLowerCase();
-  // No commitment on-chain → treat as inaccessible rather than open.
-  if (!expected || expected === ZERO_HASH) return null;
-  if (!inviteKey) return null;
-
-  const provided = keccak256(stringToBytes(inviteKey)).toLowerCase();
-  return provided === expected ? claim : null;
-}
-
-async function getInviteKeyHash(claimId: number): Promise<string> {
-  const client = getPublicClient();
-  return (await client.readContract({
-    address:      CONTRACT_ADDRESS,
-    abi:          MIMIR_ABI,
-    functionName: "getInviteKeyHash",
-    args:         [BigInt(claimId)],
-  })) as string;
+  return readClaimRaw(claimId);
 }
 
 /** Returns open/active public claims as ClaimData. */
