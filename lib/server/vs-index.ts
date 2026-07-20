@@ -602,7 +602,10 @@ export async function getVsFeedSnapshot(
       items: rows.map((row) => claimRowToVSData(row)),
       cache: await buildListCacheFreshness(rows),
     };
-  } catch {
+  } catch (err) {
+    // Silent before: a DB outage (unset/expired DATABASE_URL, paused Neon) here
+    // makes markets + stats + revenue all go dark with zero log. Surface it.
+    console.error("[vs-index] getVsFeedSnapshot DB read failed:", err instanceof Error ? err.message : err);
     if (options.forceRefresh) {
       return {
         items: (await refreshVSIndex()).items,

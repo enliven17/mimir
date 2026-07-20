@@ -42,7 +42,10 @@ export function recordPayment(e: PaymentEvent): void {
     seller: e.seller,
     tx_id: e.txId,
     at: e.at,
-  }).catch(() => {});
+  }).catch((err) => {
+    // Was fully swallowed — a DB outage silently stopped nanopayment accounting.
+    console.warn("[x402] payment durable write failed:", err instanceof Error ? err.message : err);
+  });
 }
 
 export interface RevenueSummary {
