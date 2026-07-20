@@ -18,10 +18,29 @@
  * evidence came via Jina rather than a structured API).
  */
 
+import { assertPublicUrl, SsrfBlockedError } from "./ssrf-guard";
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_CHARS = 14_000;
+const MAX_REDIRECTS = 5;
 const COINGECKO_API_BASE = "https://api.coingecko.com/api/v3";
 const JINA_READER_BASE = "https://r.jina.ai/";
+
+// Hosts the agents are allowed to *pay* (x402) for evidence. Paying a 402 sends
+// USDC to whatever `payTo` the responder chooses, so an attacker who controls a
+// claim's resolutionUrl could farm agent payments. Default deny: only pay hosts
+// explicitly allowlisted via X402_EVIDENCE_ALLOWLIST (comma-separated).
+// ponytail: env allowlist, no aggregate cap yet — add one if paid evidence grows.
+function x402PayAllowed(host: string): boolean {
+  const raw = process.env.X402_EVIDENCE_ALLOWLIST?.trim();
+  if (!raw) return false;
+  const norm = host.toLowerCase().replace(/^www\./, "");
+  return raw
+    .split(",")
+    .map((h) => h.trim().toLowerCase().replace(/^www\./, ""))
+    .filter(Boolean)
+    .some((allowed) => norm === allowed || norm.endsWith(`.${allowed}`));
+}
 
 // Markers that strongly suggest we got an anti-bot interstitial instead of
 // actual content. Keep this list conservative — false positives mean we
@@ -108,6 +127,15 @@ export async function fetchEvidence(
     throw new EvidenceFetchError("Unsupported URL protocol");
   }
 
+  // SSRF guard: refuse URLs that resolve to internal/metadata addresses before
+  // any request goes out.
+  try {
+    await assertPublicUrl(parsed);
+  } catch (err) {
+    if (err instanceof SsrfBlockedError) throw new EvidenceFetchError(err.message);
+    throw err;
+  }
+
   const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
   if (host === "coingecko.com") {
@@ -131,8 +159,10 @@ async function fetchGenericSnapshot(
 
   const direct = await tryDirectFetch(url, { timeoutMs, userAgent });
 
-  // Paywalled source: the agent pays the x402 nanopayment and re-fetches.
-  if (direct.statusCode === 402 && opts.paidFetch) {
+  // Paywalled source: the agent pays the x402 nanopayment and re-fetches —
+  // but only for allowlisted hosts, so an attacker's claim URL can't farm
+  // agent payments to an arbitrary payTo.
+  if (direct.statusCode === 402 && opts.paidFetch && x402PayAllowed(url.hostname)) {
     const paid = await fetchViaX402(url, opts.paidFetch, { maxChars });
     if (paid) return paid;
     // Payment declined (over budget) or unparseable — fall through to failure.
@@ -176,34 +206,53 @@ async function tryDirectFetch(
   url: URL,
   args: { timeoutMs: number; userAgent: string },
 ): Promise<DirectFetchResult> {
-  const finalUrl = url.toString();
+  // Follow redirects manually so every hop is SSRF-checked — `redirect:"follow"`
+  // would let a public URL bounce to an internal one behind our back.
+  let current = url;
   try {
-    const response = await fetch(finalUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": args.userAgent,
-        Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.8",
-      },
-      cache: "no-store",
-      redirect: "follow",
-      signal: AbortSignal.timeout(args.timeoutMs),
-    });
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const response = await fetch(current.toString(), {
+        method: "GET",
+        headers: {
+          "User-Agent": args.userAgent,
+          Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.8",
+        },
+        cache: "no-store",
+        redirect: "manual",
+        signal: AbortSignal.timeout(args.timeoutMs),
+      });
 
-    const contentType = response.headers.get("content-type") || "";
-    const isTexty = /text\/html|application\/xhtml\+xml|text\/plain|application\/json/i.test(contentType);
+      // Redirect: validate the next hop's host before chasing it.
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) {
+          return { ok: false, body: "", finalUrl: current.toString(), statusCode: response.status };
+        }
+        const next = new URL(location, current);
+        if (next.protocol !== "https:" && next.protocol !== "http:") {
+          return { ok: false, body: "", finalUrl: current.toString() };
+        }
+        await assertPublicUrl(next); // throws SsrfBlockedError → caught below
+        current = next;
+        continue;
+      }
 
-    if (!response.ok) {
-      return { ok: false, body: "", finalUrl: response.url || finalUrl, statusCode: response.status };
+      const contentType = response.headers.get("content-type") || "";
+      const isTexty = /text\/html|application\/xhtml\+xml|text\/plain|application\/json/i.test(contentType);
+      const finalUrl = response.url || current.toString();
+
+      if (!response.ok || !isTexty) {
+        return { ok: false, body: "", finalUrl, statusCode: response.status };
+      }
+
+      const body = await response.text();
+      return { ok: true, body, finalUrl, statusCode: response.status };
     }
-    if (!isTexty) {
-      return { ok: false, body: "", finalUrl: response.url || finalUrl, statusCode: response.status };
-    }
-
-    const body = await response.text();
-    return { ok: true, body, finalUrl: response.url || finalUrl, statusCode: response.status };
+    // Too many redirects.
+    return { ok: false, body: "", finalUrl: current.toString() };
   } catch {
-    return { ok: false, body: "", finalUrl };
+    return { ok: false, body: "", finalUrl: current.toString() };
   }
 }
 

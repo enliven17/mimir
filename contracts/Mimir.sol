@@ -30,6 +30,13 @@ contract Mimir {
     uint256 public constant MAX_CHALLENGERS        = 100;
     uint256 public constant MIN_STAKE              = 2 * 10**18; // 2 USDC (18 decimals on Arc)
     uint256 public constant DEFAULT_PAYOUT_BPS     = 20_000;    // 2x
+    uint256 public constant MAX_PAYOUT_BPS         = 1_000_000; // 100x ceiling
+
+    // Gas stipend for pushed payouts during settlement. Enough for a normal
+    // receive()/EOA, but caps how much a malicious challenger contract can burn
+    // per iteration so it can't grief the whole settlement loop into OOG.
+    // ponytail: fixed stipend; failed pushes fall back to pull-withdrawal.
+    uint256 public constant PAYOUT_GAS_STIPEND     = 30_000;
 
     // Anti-sniping: no new challenges accepted in the final N seconds before
     // a claim's deadline. Stops late-information actors from waiting to see
@@ -88,7 +95,9 @@ contract Mimir {
     uint256 public totalResolved;
 
     address public owner;
+    address public pendingOwner; // two-step ownership transfer
     address public oracle; // off-chain AI oracle agent
+    bool    public paused;  // emergency freeze for state-changing entrypoints
 
     // ── Events ────────────────────────────────────────────────────────────────
     event ClaimCreated(uint256 indexed id, address indexed creator, string category);
@@ -96,6 +105,9 @@ contract Mimir {
     event ClaimResolved(uint256 indexed id, uint8 winnerSide, string summary, uint8 confidence, bytes32 evidenceHash);
     event ClaimCancelled(uint256 indexed id);
     event OracleChanged(address indexed previous, address indexed next);
+    event OwnershipTransferStarted(address indexed previous, address indexed next);
+    event OwnershipTransferred(address indexed previous, address indexed next);
+    event PausedSet(bool paused);
     event WithdrawalPending(address indexed to, uint256 amount);
     event Withdrawal(address indexed to, uint256 amount);
 
@@ -110,6 +122,11 @@ contract Mimir {
         _;
     }
 
+    modifier whenNotPaused() {
+        require(!paused, "Mimir: paused");
+        _;
+    }
+
     // ── Constructor ───────────────────────────────────────────────────────────
     constructor(address _oracle) {
         owner  = msg.sender;
@@ -119,12 +136,31 @@ contract Mimir {
 
     // ── Admin ─────────────────────────────────────────────────────────────────
     function setOracle(address _oracle) external onlyOwner {
+        require(_oracle != address(0), "Mimir: zero oracle");
         emit OracleChanged(oracle, _oracle);
         oracle = _oracle;
     }
 
+    // Two-step ownership transfer: the new owner must call acceptOwnership(),
+    // so a fat-fingered or zero address can never take (or brick) control.
     function transferOwnership(address _owner) external onlyOwner {
-        owner = _owner;
+        require(_owner != address(0), "Mimir: zero owner");
+        pendingOwner = _owner;
+        emit OwnershipTransferStarted(owner, _owner);
+    }
+
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "Mimir: not pending owner");
+        emit OwnershipTransferred(owner, pendingOwner);
+        owner = pendingOwner;
+        pendingOwner = address(0);
+    }
+
+    // Emergency freeze: halts create/challenge/resolve. withdraw() and
+    // cancelClaim() stay open so users can always exit funds.
+    function setPaused(bool _paused) external onlyOwner {
+        paused = _paused;
+        emit PausedSet(_paused);
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
@@ -134,7 +170,7 @@ contract Mimir {
 
     function _transfer(address to, uint256 amount) internal {
         if (amount == 0) return;
-        (bool ok,) = payable(to).call{value: amount}("");
+        (bool ok,) = payable(to).call{value: amount, gas: PAYOUT_GAS_STIPEND}("");
         if (!ok) {
             // Failed push (recipient rejected funds) → park for pull-withdrawal
             // so a single uncooperative recipient can't revert the settlement.
@@ -158,6 +194,28 @@ contract Mimir {
     }
 
     // ── Write: create ─────────────────────────────────────────────────────────
+    // Params bundled in a memory struct so both createClaim and createRematch
+    // share one code path without a 17-argument internal call (stack too deep).
+    struct CreateParams {
+        address creator;
+        string  question;
+        string  creatorPosition;
+        string  counterPosition;
+        string  resolutionUrl;
+        uint256 deadline;
+        uint256 stakeAmount;
+        string  category;
+        uint256 parentId;
+        string  marketType;
+        string  oddsMode;
+        uint256 challengerPayoutBps;
+        string  handicapLine;
+        string  settlementRule;
+        uint256 maxChallengers;
+        bool    isPrivate;
+        string  inviteKey;
+    }
+
     function createClaim(
         string  calldata question,
         string  calldata creatorPosition,
@@ -175,57 +233,79 @@ contract Mimir {
         uint256          maxChallengers,
         bool             isPrivate,
         string  calldata inviteKey
-    ) external payable returns (uint256 id) {
-        require(stakeAmount >= MIN_STAKE, "Mimir: stake too small");
-        require(msg.value == stakeAmount, "Mimir: wrong USDC value");
-        require(deadline > block.timestamp, "Mimir: deadline in past");
-        require(bytes(question).length > 0, "Mimir: empty question");
+    ) external payable whenNotPaused returns (uint256 id) {
+        return _createClaim(CreateParams({
+            creator:             msg.sender,
+            question:            question,
+            creatorPosition:     creatorPosition,
+            counterPosition:     counterPosition,
+            resolutionUrl:       resolutionUrl,
+            deadline:            deadline,
+            stakeAmount:         stakeAmount,
+            category:            category,
+            parentId:            parentId,
+            marketType:          marketType,
+            oddsMode:            oddsMode,
+            challengerPayoutBps: challengerPayoutBps,
+            handicapLine:        handicapLine,
+            settlementRule:      settlementRule,
+            maxChallengers:      maxChallengers,
+            isPrivate:           isPrivate,
+            inviteKey:           inviteKey
+        }));
+    }
+
+    // Internal so createRematch can call it WITHOUT `this.` — an external
+    // self-call would set msg.sender to the contract, making the contract the
+    // claim creator and locking the real payer's funds.
+    function _createClaim(CreateParams memory p) internal returns (uint256 id) {
+        require(p.stakeAmount >= MIN_STAKE, "Mimir: stake too small");
+        require(msg.value == p.stakeAmount, "Mimir: wrong USDC value");
+        require(p.deadline > block.timestamp, "Mimir: deadline in past");
+        require(bytes(p.question).length > 0, "Mimir: empty question");
+        require(p.challengerPayoutBps <= MAX_PAYOUT_BPS, "Mimir: payout bps too high");
 
         // Normalise odds params
-        bool isFixed = _strEq(oddsMode, "fixed");
+        bool isFixed = _strEq(p.oddsMode, "fixed");
         uint256 payoutBps = isFixed
-            ? (challengerPayoutBps >= 10_000 ? challengerPayoutBps : DEFAULT_PAYOUT_BPS)
+            ? (p.challengerPayoutBps >= 10_000 ? p.challengerPayoutBps : DEFAULT_PAYOUT_BPS)
             : 0;
 
-        uint256 maxCh = (maxChallengers == 0 || maxChallengers > MAX_CHALLENGERS)
+        uint256 maxCh = (p.maxChallengers == 0 || p.maxChallengers > MAX_CHALLENGERS)
             ? MAX_CHALLENGERS
-            : maxChallengers;
+            : p.maxChallengers;
 
         claimCount++;
         id = claimCount;
 
-        claims[id] = Claim({
-            creator:                  msg.sender,
-            question:                 question,
-            creatorPosition:          creatorPosition,
-            counterPosition:          counterPosition,
-            resolutionUrl:            resolutionUrl,
-            creatorStake:             stakeAmount,
-            totalChallengerStake:     0,
-            reservedCreatorLiability: 0,
-            deadline:                 deadline,
-            state:                    ST_OPEN,
-            winnerSide:               SIDE_NONE,
-            resolutionSummary:        "",
-            confidence:               0,
-            category:                 bytes(category).length > 0 ? category : "custom",
-            parentId:                 parentId,
-            challengerCount:          0,
-            createdAt:                block.timestamp,
-            marketType:               bytes(marketType).length > 0 ? marketType : "binary",
-            oddsMode:                 isFixed ? "fixed" : "pool",
-            challengerPayoutBps:      payoutBps,
-            handicapLine:             handicapLine,
-            settlementRule:           settlementRule,
-            maxChallengers:           maxCh,
-            isPrivate:                isPrivate,
-            inviteKeyHash:            bytes(inviteKey).length > 0
-                                          ? keccak256(bytes(inviteKey))
-                                          : bytes32(0),
-            evidenceHash:             bytes32(0)
-        });
+        // Field-by-field storage writes (not a Claim{...} memory literal) to
+        // keep the stack shallow under viaIR. Zero-valued fields are left at
+        // their storage default.
+        Claim storage c = claims[id];
+        c.creator             = p.creator;
+        c.question            = p.question;
+        c.creatorPosition     = p.creatorPosition;
+        c.counterPosition     = p.counterPosition;
+        c.resolutionUrl       = p.resolutionUrl;
+        c.creatorStake        = p.stakeAmount;
+        c.deadline            = p.deadline;
+        c.state               = ST_OPEN;
+        c.winnerSide          = SIDE_NONE;
+        c.category            = bytes(p.category).length > 0 ? p.category : "custom";
+        c.parentId            = p.parentId;
+        c.createdAt           = block.timestamp;
+        c.marketType          = bytes(p.marketType).length > 0 ? p.marketType : "binary";
+        c.oddsMode            = isFixed ? "fixed" : "pool";
+        c.challengerPayoutBps = payoutBps;
+        c.handicapLine        = p.handicapLine;
+        c.settlementRule      = p.settlementRule;
+        c.maxChallengers      = maxCh;
+        c.isPrivate           = p.isPrivate;
+        if (bytes(p.inviteKey).length > 0) {
+            c.inviteKeyHash = keccak256(bytes(p.inviteKey));
+        }
 
-        emit ClaimCreated(id, msg.sender, category);
+        emit ClaimCreated(id, p.creator, p.category);
     }
 
     // Rematch: create a new claim inheriting fields from a parent
@@ -234,28 +314,29 @@ contract Mimir {
         uint256 deadline,
         uint256 stakeAmount,
         string  calldata inviteKey
-    ) external payable returns (uint256 id) {
+    ) external payable whenNotPaused returns (uint256 id) {
         Claim storage parent = claims[parentId];
         require(parent.creator != address(0), "Mimir: parent not found");
 
-        return this.createClaim{value: msg.value}(
-            parent.question,
-            parent.creatorPosition,
-            parent.counterPosition,
-            parent.resolutionUrl,
-            deadline,
-            stakeAmount,
-            parent.category,
-            parentId,
-            parent.marketType,
-            parent.oddsMode,
-            parent.challengerPayoutBps,
-            parent.handicapLine,
-            parent.settlementRule,
-            parent.maxChallengers,
-            parent.isPrivate,
-            inviteKey
-        );
+        return _createClaim(CreateParams({
+            creator:             msg.sender,
+            question:            parent.question,
+            creatorPosition:     parent.creatorPosition,
+            counterPosition:     parent.counterPosition,
+            resolutionUrl:       parent.resolutionUrl,
+            deadline:            deadline,
+            stakeAmount:         stakeAmount,
+            category:            parent.category,
+            parentId:            parentId,
+            marketType:          parent.marketType,
+            oddsMode:            parent.oddsMode,
+            challengerPayoutBps: parent.challengerPayoutBps,
+            handicapLine:        parent.handicapLine,
+            settlementRule:      parent.settlementRule,
+            maxChallengers:      parent.maxChallengers,
+            isPrivate:           parent.isPrivate,
+            inviteKey:           inviteKey
+        }));
     }
 
     // ── Write: challenge ──────────────────────────────────────────────────────
@@ -263,7 +344,7 @@ contract Mimir {
         uint256 claimId,
         uint256 stakeAmount,
         string  calldata inviteKey
-    ) external payable {
+    ) external payable whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.creator != address(0), "Mimir: claim not found");
         require(claim.state == ST_OPEN || claim.state == ST_ACTIVE, "Mimir: not open");
@@ -315,11 +396,12 @@ contract Mimir {
         string  calldata summary,
         uint8   confidence,
         bytes32 evidenceHash  // keccak256 of evidence text — verifiable on-chain
-    ) external onlyOracle {
+    ) external onlyOracle whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.creator != address(0), "Mimir: claim not found");
         require(claim.state == ST_ACTIVE, "Mimir: not active");
         require(block.timestamp >= claim.deadline, "Mimir: not yet expired");
+        require(confidence <= 100, "Mimir: bad confidence");
         require(
             winnerSide == SIDE_CREATOR ||
             winnerSide == SIDE_CHALLENGERS ||
@@ -442,6 +524,12 @@ contract Mimir {
             c.handicapLine, c.settlementRule, c.maxChallengers,
             c.isPrivate, c.reservedCreatorLiability
         );
+    }
+
+    // Invite-key commitment for a private claim (bytes32(0) if none). Lets the
+    // server enforce the invite gate by comparing keccak256(providedKey).
+    function getInviteKeyHash(uint256 claimId) external view returns (bytes32) {
+        return claims[claimId].inviteKeyHash;
     }
 
     function getChallenger(uint256 claimId, uint256 index) external view returns (

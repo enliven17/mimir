@@ -10,10 +10,19 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+let warnedFallback = false;
+
 function secret(): string {
-  const s = process.env.X402_PASS_SECRET ?? process.env.CIRCLE_ENTITY_SECRET;
-  if (!s) throw new Error("X402_PASS_SECRET (or CIRCLE_ENTITY_SECRET) required to sign passes");
-  return s;
+  const dedicated = process.env.X402_PASS_SECRET;
+  if (dedicated) return dedicated;
+  const fallback = process.env.CIRCLE_ENTITY_SECRET;
+  if (!fallback) throw new Error("X402_PASS_SECRET (or CIRCLE_ENTITY_SECRET) required to sign passes");
+  // Reusing the wallet-control secret as an HMAC key widens its blast radius.
+  if (!warnedFallback) {
+    warnedFallback = true;
+    console.warn("[x402-pass] X402_PASS_SECRET not set — falling back to CIRCLE_ENTITY_SECRET. Set a dedicated X402_PASS_SECRET.");
+  }
+  return fallback;
 }
 
 function sign(body: string): string {

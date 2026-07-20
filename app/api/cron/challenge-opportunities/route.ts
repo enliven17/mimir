@@ -51,10 +51,12 @@ export async function GET(request: Request) {
       error instanceof Error
         ? error.message
         : "Unable to refresh challenge opportunities";
+    const status = /not configured/i.test(message) ? 503 : 500;
+    if (status === 500) console.error("[cron/challenge-opportunities]", message);
 
     return NextResponse.json(
-      createApiError("internal_error", message),
-      { status: /not configured/i.test(message) ? 503 : 500 }
+      createApiError("internal_error", status === 500 ? "Unable to refresh challenge opportunities" : message),
+      { status }
     );
   }
 }

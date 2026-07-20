@@ -196,6 +196,13 @@ export const MIMIR_ABI = [
   },
   {
     type: "function",
+    name: "getInviteKeyHash",
+    stateMutability: "view",
+    inputs: [{ name: "claimId", type: "uint256" }],
+    outputs: [{ name: "", type: "bytes32" }],
+  },
+  {
+    type: "function",
     name: "getChallenger",
     stateMutability: "view",
     inputs: [

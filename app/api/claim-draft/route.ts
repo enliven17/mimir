@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 
 import { generateClaimDrafts } from "@/lib/server/source-claim-generator";
 import { createApiError } from "@/lib/server/api-validation";
+import { rateLimit, clientIp } from "@/lib/server/rate-limit";
 
 export const dynamic = "force-dynamic";
+
+// This route does a server-side fetch + an LLM call per request, so it's both a
+// cost-amplification and an SSRF fan-out target. Cap it per IP.
+const RATE_LIMIT = 5;
+const RATE_WINDOW_MS = 60_000;
 
 type ClaimDraftRequestBody = {
   url?: unknown;
@@ -15,6 +21,14 @@ export async function POST(request: Request) {
     return NextResponse.json(
       createApiError("feature_disabled", "Source drafting is not enabled"),
       { status: 404 }
+    );
+  }
+
+  const limited = rateLimit(`claim-draft:${clientIp(request)}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!limited.ok) {
+    return NextResponse.json(
+      createApiError("rate_limited", "Too many requests, slow down"),
+      { status: 429, headers: { "Retry-After": String(Math.ceil(limited.retryAfterMs / 1000)) } }
     );
   }
 
@@ -43,8 +57,10 @@ export async function POST(request: Request) {
           ? 400
           : 500;
 
+    // Only surface curated 4xx/503 messages; a 500 means an unexpected internal
+    // error whose text may leak internals, so return a generic message.
     return NextResponse.json(
-      createApiError("claim_draft_error", message),
+      createApiError("claim_draft_error", status === 500 ? "Unable to draft claim suggestions" : message),
       { status }
     );
   }

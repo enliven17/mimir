@@ -136,7 +136,8 @@ async function main() {
   console.log("");
   console.log("Next steps:");
   console.log(`  1. Add to .env.local: NEXT_PUBLIC_CONTRACT_ADDRESS=${contractAddress}`);
-  console.log(`  2. Add to .env.local: ORACLE_PRIVATE_KEY=<your-oracle-key>`);
+  console.log("  2. Configure the oracle via Circle W3S (no local private key):");
+  console.log("     CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_ORACLE_WALLET_ID, CIRCLE_ORACLE_ADDRESS");
   console.log("  3. npm run dev");
   console.log("  4. npm run oracle   (start the AI resolution agent)");
 }

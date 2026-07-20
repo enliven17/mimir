@@ -70,8 +70,8 @@ export async function GET(req: Request): Promise<Response> {
     sideA = String(base[2]);
     sideB = String(base[3]);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "read failed";
-    return json({ error: msg }, { status: 502, headers: responseHeaders });
+    console.error("[council/reasoning] claim read failed:", err instanceof Error ? err.message : err);
+    return json({ error: "claim read failed" }, { status: 502, headers: responseHeaders });
   }
 
   const prompt = `${persona.promptBias}

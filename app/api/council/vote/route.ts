@@ -80,8 +80,8 @@ export async function GET(req: Request): Promise<Response> {
     }
     claim = decoded;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "read failed";
-    return json({ error: msg }, { status: 502, headers: gate.responseHeaders });
+    console.error("[council/vote] claim read failed:", err instanceof Error ? err.message : err);
+    return json({ error: "claim read failed" }, { status: 502, headers: gate.responseHeaders });
   }
 
   // Specialists only vote within their category — otherwise abstain.

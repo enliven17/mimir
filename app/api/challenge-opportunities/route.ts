@@ -57,10 +57,15 @@ export async function GET(request: Request) {
       error instanceof Error
         ? error.message
         : "Unable to load challenge opportunities";
+    const status = getStatusForMessage(message);
+    if (status === 500) console.error("[challenge-opportunities]", message);
 
     return NextResponse.json(
-      createApiError("challenge_opportunities_error", message) as ApiErrorShape,
-      { status: getStatusForMessage(message) }
+      createApiError(
+        "challenge_opportunities_error",
+        status === 500 ? "Unable to load challenge opportunities" : message
+      ) as ApiErrorShape,
+      { status }
     );
   }
 }

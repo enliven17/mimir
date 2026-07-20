@@ -59,8 +59,9 @@ export async function GET(req: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text();
+      console.error(`[gateway/balances] upstream ${res.status}: ${text.slice(0, 500)}`);
       return NextResponse.json(
-        { error: `Gateway upstream ${res.status}`, detail: text.slice(0, 500) },
+        { error: `Gateway upstream ${res.status}` },
         { status: 502 },
       );
     }
@@ -81,8 +82,9 @@ export async function GET(req: NextRequest) {
       headers: { "Cache-Control": "private, max-age=15" },
     });
   } catch (err: any) {
+    console.error("[gateway/balances] proxy failed:", err?.message ?? err);
     return NextResponse.json(
-      { error: "Gateway proxy failed", detail: err?.message ?? "unknown" },
+      { error: "Gateway proxy failed" },
       { status: 500 },
     );
   }
