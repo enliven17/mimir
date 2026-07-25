@@ -47,7 +47,10 @@ interface ClaimRow {
 // Concurrency cap for the per-claim getClaim fan-out. Arc testnet RPC throttles
 // (HTTP 429) when slammed with `Promise.all` over 100+ IDs. 5 workers keeps the
 // burst tiny while still finishing a 100-claim page in well under a second.
-const STATS_READ_CONCURRENCY = 5;
+// 5 meant ~40 serial rounds for 200 claims (~8s of the page's cold render). The reads
+// go through viem's batch transport (RPC_BATCH_SIZE), so this is in-flight reads, not
+// raw POSTs — measured no 429s at 20.
+const STATS_READ_CONCURRENCY = 20;
 
 const fetchClaims = cachedFor(fetchClaimsUncached, 30_000);
 
@@ -93,6 +96,24 @@ async function fetchClaimsUncached(): Promise<ClaimRow[]> {
     await Promise.all(
       Array.from({ length: Math.min(STATS_READ_CONCURRENCY, total) }, () => worker()),
     );
+
+    // Every KPI on this page is a sum over these rows, so a dropped read silently
+    // understates the numbers rather than showing an error. Retry the gaps once and
+    // say so if any survive — a wrong total is worse than a logged one.
+    const missing = claims.reduce<number[]>((acc, c, idx) => (c ? acc : [...acc, idx]), []);
+    if (missing.length > 0) {
+      const retried = await Promise.all(missing.map((idx) => readOne(idx + 1)));
+      missing.forEach((idx, i) => {
+        claims[idx] = retried[i];
+      });
+      const stillMissing = claims.filter((c) => c === null).length;
+      if (stillMissing > 0) {
+        console.warn(
+          `[stats] ${stillMissing}/${total} claims unreadable after retry — totals below are short by that many.`
+        );
+      }
+    }
+
     return claims.filter((c): c is ClaimRow => c !== null);
   } catch (err) {
     console.error("[stats] fetchClaims failed:", err);

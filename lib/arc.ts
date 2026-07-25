@@ -76,6 +76,84 @@ export function getDeployBlock(): bigint {
   return 42_719_056n;
 }
 
+/**
+ * How many `eth_getLogs` chunks to keep in flight. The deploy block is ~5M blocks
+ * behind head and grows, so a serial scan is 500+ round trips — the /agents page
+ * measured 74s locally and timed out on Vercel.
+ *
+ * Measured on Arc testnet, /agents cold render: 8 → 12.7s, 24 → 6.1s, 40 → 5.8s,
+ * no 429s at any of them. 24 is where the curve flattens, so the extra sockets past
+ * it only add 429 risk (see RPC_BATCH_SIZE below) for no gain.
+ */
+export const ARC_LOG_CONCURRENCY = (() => {
+  const raw = Number(
+    (typeof process !== "undefined" && process.env?.ARC_LOG_CONCURRENCY) || "24"
+  );
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 24;
+})();
+
+const PRUNED_HISTORY = /pruned history/i;
+
+function isPrunedError(error: unknown): boolean {
+  return error instanceof Error && PRUNED_HISTORY.test(error.message);
+}
+
+/**
+ * The RPC serves only a trailing window of history, and the contract's deploy block
+ * fell out of it long ago. Blindly scanning from deploy meant ~400 of 510 ranges
+ * failed on every render — wasted round trips that pushed /stats to 31s. The
+ * boundary only moves forward, so bisect for it once and reuse it per instance.
+ */
+let earliestReadableIndex: { deployBlock: bigint; index: number; at: number } | null = null;
+const EARLIEST_TTL_MS = 10 * 60 * 1000;
+
+async function findFirstReadableRange(
+  client: PublicClient,
+  params: Omit<Parameters<PublicClient["getLogs"]>[0], "fromBlock" | "toBlock">,
+  ranges: Array<{ from: bigint; to: bigint }>,
+  deployBlock: bigint,
+): Promise<number> {
+  const cached = earliestReadableIndex;
+  if (
+    cached &&
+    cached.deployBlock === deployBlock &&
+    Date.now() - cached.at < EARLIEST_TTL_MS &&
+    cached.index < ranges.length
+  ) {
+    return cached.index;
+  }
+
+  // One block is enough to tell "pruned" from "readable", and keeps the probe cheap.
+  const readable = async (index: number): Promise<boolean> => {
+    const { from } = ranges[index];
+    try {
+      await client.getLogs({ ...(params as any), fromBlock: from, toBlock: from });
+      return true;
+    } catch (error) {
+      if (isPrunedError(error)) return false;
+      throw error;
+    }
+  };
+
+  let lo = 0;
+  let hi = ranges.length - 1;
+  if (await readable(lo)) {
+    earliestReadableIndex = { deployBlock, index: 0, at: Date.now() };
+    return 0;
+  }
+  // Lower bound: smallest index whose start block the RPC still serves. A boundary
+  // falling mid-range costs us that range's first blocks, which is noise next to the
+  // history already pruned away.
+  while (lo < hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (await readable(mid)) hi = mid;
+    else lo = mid + 1;
+  }
+
+  earliestReadableIndex = { deployBlock, index: lo, at: Date.now() };
+  return lo;
+}
+
 export async function paginatedGetLogs(
   client: PublicClient,
   params: Omit<Parameters<PublicClient["getLogs"]>[0], "fromBlock" | "toBlock">,
@@ -83,14 +161,72 @@ export async function paginatedGetLogs(
   toBlock?: bigint,
 ): Promise<any[]> {
   const end = toBlock ?? (await client.getBlockNumber());
-  const all: any[] = [];
+
+  const allRanges: Array<{ from: bigint; to: bigint }> = [];
   for (let start = fromBlock; start <= end; ) {
     const stop = start + ARC_LOG_CHUNK > end ? end : start + ARC_LOG_CHUNK;
-    const logs = await client.getLogs({ ...(params as any), fromBlock: start, toBlock: stop });
-    all.push(...logs);
+    allRanges.push({ from: start, to: stop });
     start = stop + 1n;
   }
-  return all;
+
+  const firstReadable =
+    allRanges.length > 1
+      ? await findFirstReadableRange(client, params, allRanges, fromBlock)
+      : 0;
+  const ranges = allRanges.slice(firstReadable);
+  if (firstReadable > 0) {
+    console.warn(
+      `[arc] getLogs: skipping ${firstReadable}/${allRanges.length} pruned block ranges below ${ranges[0]?.from}.`
+    );
+  }
+
+  // Results stay in range order so callers still see logs oldest-first.
+  const pages: any[][] = new Array(ranges.length);
+  let next = 0;
+  let unavailable = 0;
+  let lastError: unknown = null;
+  const worker = async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= ranges.length) return;
+      const { from, to } = ranges[index];
+      try {
+        pages[index] = await client.getLogs({
+          ...(params as any),
+          fromBlock: from,
+          toBlock: to,
+        });
+      } catch (error) {
+        // The Arc RPC prunes history ("pruned history unavailable"), so ranges near
+        // the deploy block are simply gone. One dead chunk used to reject the whole
+        // scan and callers fell back to an empty list — the /agents page rendered
+        // zero events despite the recent history being perfectly readable. Drop the
+        // range we cannot read and keep the rest.
+        pages[index] = [];
+        unavailable++;
+        lastError = error;
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(ARC_LOG_CONCURRENCY, ranges.length) }, worker)
+  );
+
+  // Every range failing means the RPC is broken, not pruned: surface that instead
+  // of pretending the contract has no history.
+  if (unavailable === ranges.length && ranges.length > 0) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("eth_getLogs failed for every block range");
+  }
+  if (unavailable > 0) {
+    console.warn(
+      `[arc] getLogs: ${unavailable}/${ranges.length} block ranges unavailable (pruned history); serving the readable remainder.`
+    );
+  }
+
+  return pages.flat();
 }
 
 export function getExplorerTxUrl(txHash: string): string {
