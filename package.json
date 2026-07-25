@@ -24,7 +24,7 @@
     "seed": "npx tsx scripts/seed-claims.ts",
     "seed:dry": "DRY_RUN=1 npx tsx scripts/seed-claims.ts",
     "deploy:contract": "npx tsx deploy/deploy.ts",
-    "test:smoke": "node --import tsx --test tests/node/api-validation.test.ts tests/node/challenge-opportunities.test.ts tests/node/claim-moderation-route.test.ts tests/node/claim-moderation-sanitize.test.ts tests/node/claim-quality.test.ts tests/node/contract-smoke.test.ts tests/node/db-index.test.ts tests/node/explore-filters.test.ts tests/node/kelly.test.ts tests/node/outcome-draft.test.ts tests/node/payout-math.test.ts tests/node/self-resolving.test.ts tests/node/vs-xmtp-eligibility.test.ts tests/node/xmtp-installation-limit-error.test.ts",
+    "test:smoke": "node --import tsx --test tests/node/api-validation.test.ts tests/node/challenge-opportunities.test.ts tests/node/claim-moderation-route.test.ts tests/node/claim-moderation-sanitize.test.ts tests/node/claim-quality.test.ts tests/node/contract-smoke.test.ts tests/node/db-index.test.ts tests/node/explore-filters.test.ts tests/node/kelly.test.ts tests/node/outcome-draft.test.ts tests/node/payout-math.test.ts tests/node/self-resolving.test.ts tests/node/vs-xmtp-eligibility.test.ts tests/node/x402-baseline.test.ts tests/node/xmtp-installation-limit-error.test.ts",
     "warm:vs-index": "tsx scripts/warm-vs-index.ts"
   },
   "dependencies": {

@@ -26,7 +26,9 @@ interface PaymentEvent {
 }
 interface RevenueSummary {
   totalCalls: number;
+  baselineCalls: number;
   totalUsd: number;
+  baselineUsd: number;
   uniquePayers: number;
   uniqueSellers: number;
   byResource: Array<{ resource: string; calls: number; usd: number }>;
@@ -150,6 +152,13 @@ export default function RevenuePage() {
             <Stat label="Paying agents" value={data.uniquePayers.toLocaleString()} />
             <Stat label="Seller wallets" value={data.uniqueSellers.toLocaleString()} />
           </section>
+
+          {(data.baselineCalls > 0 || data.baselineUsd > 0) && (
+            <p className="mt-3 font-mono text-xs text-pv-muted">
+              Includes {data.baselineCalls.toLocaleString()} paid calls ($
+              {data.baselineUsd.toFixed(2)}) carried over from the previous database.
+            </p>
+          )}
 
           <section className="mt-10">
             <h2 className="label">By endpoint</h2>
