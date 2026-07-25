@@ -15,6 +15,7 @@ import { createArcPublicClient, getContractAddress } from "@/lib/arc";
 import { MIMIR_ABI } from "@/lib/mimir-abi";
 import { ZERO_ADDRESS } from "@/lib/constants";
 import { callLLM } from "@/lib/llm";
+import { getCachedReasoning, setCachedReasoning } from "@/lib/server/reasoning-cache";
 
 const PRICE = "$0.001";
 const PASS_PLAN = "council";
@@ -52,6 +53,23 @@ export async function GET(req: Request): Promise<Response> {
     responseHeaders = gate.responseHeaders;
   }
 
+  // Paid already — now serve. A warm (claim, persona) pair skips both the contract
+  // read and the LLM call; the read stays billed either way.
+  const cached = getCachedReasoning(claimId, slug);
+  if (cached) {
+    return json(
+      {
+        persona: { slug: persona.slug, name: persona.displayName, emoji: persona.emoji },
+        claimId,
+        question: cached.question,
+        reasoning: cached.reasoning,
+        paidTo: hasPass ? null : payTo,
+        price: hasPass ? "$0.00 (pass)" : PRICE,
+      },
+      { headers: responseHeaders },
+    );
+  }
+
   // Read the claim, then produce this persona's reasoning.
   let question = "";
   let sideA = "";
@@ -87,6 +105,10 @@ Write one tight paragraph (max 90 words): which side you lean toward and your ho
   let reasoning = "";
   try {
     reasoning = (await callLLM(prompt, { maxTokens: 300 })).trim();
+    if (reasoning) {
+      // Only successful generations are cached — never the fallback below.
+      setCachedReasoning(claimId, slug, { question, sideA, sideB, reasoning });
+    }
   } catch {
     reasoning = "(reasoning unavailable right now)";
   }
