@@ -45,7 +45,12 @@ export async function GET(): Promise<Response> {
       from: String(t.from?.hash ?? ""),
       valueUsdc: weiToUsdc(BigInt(t.value ?? "0")),
     }));
-    return Response.json({ gateway: GATEWAY_WALLET_ADDRESS, items });
+    return Response.json(
+      { gateway: GATEWAY_WALLET_ADDRESS, items },
+      // The upstream fetch was already revalidating every 30s, but without a response
+      // header every client poll still woke the function to serve that cached body.
+      { headers: { "cache-control": "s-maxage=30, stale-while-revalidate=60" } },
+    );
   } catch {
     return Response.json({ gateway: GATEWAY_WALLET_ADDRESS, items: [], error: true });
   }

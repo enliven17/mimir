@@ -14,6 +14,12 @@ export const dynamic = "force-dynamic";
 export async function GET(): Promise<Response> {
   const summary = await getRevenueSummary(25);
   return new Response(JSON.stringify(summary), {
-    headers: { "content-type": "application/json", "cache-control": "no-store" },
+    headers: {
+      "content-type": "application/json",
+      // Served from the edge between refreshes: the dashboard polls this every few
+      // seconds and every uncached hit was a function invocation running four
+      // aggregates over x402_payments. 10s of staleness on a counter is invisible.
+      "cache-control": "s-maxage=10, stale-while-revalidate=30",
+    },
   });
 }

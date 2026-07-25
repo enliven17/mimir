@@ -100,7 +100,9 @@ export default function RevenuePage() {
     let alive = true;
     const load = async () => {
       try {
-        const res = await fetch("/api/x402/revenue", { cache: "no-store" });
+        // No cache override: the route is edge-cached for 10s, and `no-store` here
+        // forced every poll through to the function.
+        const res = await fetch("/api/x402/revenue");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as RevenueSummary;
         if (alive) setData(json);
@@ -123,7 +125,7 @@ export default function RevenuePage() {
     };
     load();
     loadSettlements();
-    const t = setInterval(load, 5000); // live refresh
+    const t = setInterval(load, 15000); // live refresh, aligned with the 10s edge cache
     const ts = setInterval(loadSettlements, 60000);
     return () => {
       alive = false;
