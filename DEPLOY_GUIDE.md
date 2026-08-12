@@ -113,7 +113,7 @@ Then set secrets in GitHub:
    - **Schedule**: Every 6 hours (or as needed)
 3. Add the custom header in the cron service UI.
 
-## Monitoring & Observabilty
+## Monitoring & Observability
 
 ### Logging
 

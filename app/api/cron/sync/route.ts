@@ -51,7 +51,10 @@ export async function GET(request: Request) {
       }
     );
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg =
+      error instanceof Error
+        ? `${error.name}: ${error.message.split("\n")[0]}`
+        : "Unknown error";
     console.error(`[cron/sync] Reconciliation failed: ${errorMsg}`);
     return NextResponse.json(
       createApiError("internal_error", "Unable to reconcile VS index"),
