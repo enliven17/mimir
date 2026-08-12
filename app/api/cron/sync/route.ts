@@ -13,7 +13,7 @@ function isAuthorized(request: Request) {
   }
 
   const authHeader = request.headers.get("authorization") ?? "";
-  return authHeader === `Bearer ${expectedSecret}`;
+  return authHeader === expectedSecret;
 }
 
 export async function GET(request: Request) {
