@@ -1,0 +1,42 @@
+name: Cron - Index Reconciliation
+
+on:
+  schedule:
+    # Every 5 minutes
+    - cron: '*/5 * * * *'
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    name: Reconcile VS Index with PostgreSQL
+    steps:
+      - name: Trigger cron endpoint
+        run: |
+          RESPONSE=$(curl -X POST \
+            -H "Content-Type: application/json" \
+            "${{ secrets.PRODUCTION_URL }}/api/cron/sync?secret=${{ secrets.CRON_SECRET }}" \
+            -w "\n%{http_code}" \
+            -s)
+          
+          # Extract body and status code
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+          
+          echo "Status: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+          
+          # Fail if not 200 or 201
+          if [[ ! "$HTTP_CODE" =~ ^20[01]$ ]]; then
+            echo "::error::Cron endpoint failed with status $HTTP_CODE"
+            exit 1
+          fi
+          
+          # Check for errors in response
+          if echo "$HTTP_BODY" | grep -q '"error"'; then
+            echo "::error::Cron endpoint returned an error"
+            exit 1
+          fi
+          
+          echo "✓ Cron sync completed successfully"
