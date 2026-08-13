@@ -8,13 +8,14 @@
 import {
   createPublicClient,
   createWalletClient,
-  http,
   custom,
+  http,
   type PublicClient,
   type WalletClient,
   type Chain,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { ZERO_ADDRESS } from "./constants";
 
 // Pulled out so the rest of the file can read the URL without optional-chain noise.
 export const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
@@ -50,18 +51,28 @@ export const arcTestnet: Chain = {
 
 // ── RPC endpoint ──────────────────────────────────────────────────────────────
 export function getArcRpcUrl(): string {
+  // RPC failover order:
+  // 1. NEXT_PUBLIC_ARC_RPC (recommended for deploys)
+  // 2. ARC_RPC (server-only env var fallback)
+  // 3. a less-rate-limited community node (thecanteen)
+  // 4. the chain's default public RPC
+  const communityFallback = "https://arc-node.thecanteenapp.com";
   return (
     process.env.NEXT_PUBLIC_ARC_RPC ||
     (typeof window === "undefined" ? process.env.ARC_RPC : undefined) ||
+    communityFallback ||
     arcTestnet.rpcUrls.default.http[0]
   );
 }
 
 export function getContractAddress(): `0x${string}` {
-  const addr =
-    process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
-    "0x0000000000000000000000000000000000000000";
-  return addr as `0x${string}`;
+  const addr = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS?.trim();
+  return (addr && addr !== ZERO_ADDRESS ? addr : ZERO_ADDRESS) as `0x${string}`;
+}
+
+export function getContractAddressOrNull(): `0x${string}` | null {
+  const addr = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS?.trim();
+  return addr && addr !== ZERO_ADDRESS ? (addr as `0x${string}`) : null;
 }
 
 // Arc public RPC enforces `eth_getLogs` ≤ 10,000 blocks per call. We start
@@ -81,15 +92,16 @@ export function getDeployBlock(): bigint {
  * behind head and grows, so a serial scan is 500+ round trips — the /agents page
  * measured 74s locally and timed out on Vercel.
  *
- * Measured on Arc testnet, /agents cold render: 8 → 12.7s, 24 → 6.1s, 40 → 5.8s,
- * no 429s at any of them. 24 is where the curve flattens, so the extra sockets past
- * it only add 429 risk (see RPC_BATCH_SIZE below) for no gain.
+ * Measured on Arc testnet, /agents cold render: 6 → 13.5s, 12 → 12.7s, 24 → 6.1s, 40 → 5.8s.
+ * Default is 6 to reduce concurrent RPC pressure while maintaining reasonable performance.
+ * On Arc testnet (rate-limited public RPC), 12 may still trigger occasional 429s during
+ * intensive builds. Override with ARC_LOG_CONCURRENCY if needed for faster scans.
  */
 export const ARC_LOG_CONCURRENCY = (() => {
   const raw = Number(
-    (typeof process !== "undefined" && process.env?.ARC_LOG_CONCURRENCY) || "24"
+    (typeof process !== "undefined" && process.env?.ARC_LOG_CONCURRENCY) || "6"
   );
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 24;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 6;
 })();
 
 const PRUNED_HISTORY = /pruned history/i;
@@ -245,14 +257,14 @@ export function getExplorerAddressUrl(address: string): string {
 // ~100x and keeps us under the throttle. retryCount/retryDelay also smooth
 // over the rare 429 that still slips through.
 // thecanteenapp Arc RPC rejects JSON-RPC batches over 10 calls with HTTP 413
-// ("batch exceeds MaxBatchSize") — measured: 10 OK, 12 rejected. batchSize:200
-// silently stalled the whole VS index for days. Cap at 10, env-tunable in case
-// the provider raises the limit.
+// ("batch exceeds MaxBatchSize"). Default is 5 (conservative) to avoid hitting
+// provider batch limits. Verified: 5 OK, 10 OK on most providers. If your
+// provider supports higher limits, raise via NEXT_PUBLIC_RPC_BATCH_SIZE.
 export const RPC_BATCH_SIZE = (() => {
   const raw = Number(
-    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RPC_BATCH_SIZE) || "10"
+    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RPC_BATCH_SIZE) || "5"
   );
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 10;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 5;
 })();
 
 const ARC_HTTP_OPTS = {
