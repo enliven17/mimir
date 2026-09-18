@@ -1,7 +1,8 @@
-import "server-only";
-
 /**
  * The only way agent code reaches an arbitrary URL.
+ *
+ * Node-only (it resolves DNS itself), but deliberately not marked `server-only`:
+ * the agent workers import it outside the Next runtime.
  *
  * Three things `fetch` does not do on its own:
  *
