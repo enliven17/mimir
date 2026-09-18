@@ -48,6 +48,7 @@ import {
 import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
 import { gatherCouncilPreflight } from "./council-preflight";
 import { atomicToUsdc } from "../../lib/x402";
+import { reportingPoll } from "../../lib/ops/heartbeat";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const CONTRACT_ADDRESS    = getContractAddress();
@@ -875,13 +876,7 @@ async function main(): Promise<void> {
   console.log(`  Interval   : every ${RUN_INTERVAL_HOURS}h`);
   console.log("═══════════════════════════════════════════════\n");
 
-  const safeRun = async () => {
-    try {
-      await run();
-    } catch (err) {
-      console.error("[market-creator] Run failed, will retry next interval:", err);
-    }
-  };
+  const safeRun = reportingPoll("market_creator", RUN_INTERVAL_HOURS * 3600 * 1000, run);
 
   await safeRun();
   setInterval(safeRun, RUN_INTERVAL_HOURS * 3600 * 1000);

@@ -58,6 +58,7 @@ import type {
   PersonaRunnerContext,
   EvidenceCacheEntry,
 } from "./shared/types";
+import { reportingPoll } from "../../lib/ops/heartbeat";
 
 const POLL_INTERVAL_MS = Number(process.env.COUNCIL_POLL_INTERVAL_MS ?? 180_000);
 /**
@@ -268,13 +269,7 @@ async function main(): Promise<void> {
   }
   console.log("═══════════════════════════════════════════════\n");
 
-  const safePoll = async () => {
-    try {
-      await poll();
-    } catch (err) {
-      console.error("[council] poll failed, will retry next interval:", err);
-    }
-  };
+  const safePoll = reportingPoll("council", POLL_INTERVAL_MS, poll);
 
   await safePoll();
   setInterval(safePoll, POLL_INTERVAL_MS);

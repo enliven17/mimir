@@ -69,6 +69,7 @@ import {
   Q_PRIOR,
   type CouncilVote,
 } from "./council-vote";
+import { reportingPoll } from "../../lib/ops/heartbeat";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = Number(process.env.ORACLE_POLL_INTERVAL_MS ?? "60000");
@@ -723,13 +724,7 @@ async function main(): Promise<void> {
   console.log(`  Auto-challenge: ${AUTO_CHALLENGE ? `YES (≥${CHALLENGE_CONFIDENCE}% confidence, ${CHALLENGE_STAKE_USDC} USDC/claim)` : "OFF (set AUTO_CHALLENGE=1 to enable)"}`);
   console.log("═══════════════════════════════════════════════\n");
 
-  const safePoll = async () => {
-    try {
-      await poll();
-    } catch (err) {
-      console.error("[oracle] Poll failed, will retry next interval:", err);
-    }
-  };
+  const safePoll = reportingPoll("oracle", POLL_INTERVAL_MS, poll);
 
   await safePoll();
   setInterval(safePoll, POLL_INTERVAL_MS);
