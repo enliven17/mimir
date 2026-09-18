@@ -87,6 +87,7 @@ import {
   Users,
 } from "lucide-react";
 import MarketPricePanel from "@/components/vs/MarketPricePanel";
+import PriceCrossCheckNote from "@/components/vs/PriceCrossCheckNote";
 
 /** Dirección ficticia para previsualizar fases accepted / verifying / proven en VS de muestra (sin blockchain). */
 const DESIGN_PREVIEW_OPPONENT =
@@ -1575,10 +1576,16 @@ export default function VSDetailPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border-t border-white/[0.08] px-5 py-3 sm:px-8">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(51,79,169,0.6)]" />
-                  <span className="text-xs text-pv-muted">{t("provenVerifies")}</span>
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-white/[0.08] px-5 py-3 sm:px-8">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-pv-emerald shadow-[0_0_8px_rgba(51,79,169,0.6)]" />
+                    <span className="text-xs text-pv-muted">{t("provenVerifies")}</span>
+                  </div>
+                  <PriceCrossCheckNote
+                    question={display.question}
+                    settlementRule={display.settlement_rule}
+                  />
                 </div>
                 {display.resolution_url && (
                   <a

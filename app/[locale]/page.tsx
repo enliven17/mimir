@@ -639,6 +639,65 @@ export default function HomePage() {
         </div>
       </AnimatedItem>
 
+      {/* DATA SOURCES — what settlement actually reads, and who provides it */}
+      <AnimatedItem>
+        <div className="relative">
+          <BlueprintHeading>SETTLEMENT DATA</BlueprintHeading>
+
+          <div className="border-x border-pv-border/25 px-5 py-8 sm:px-8 sm:py-10">
+            <p className="mx-auto max-w-2xl text-center text-sm leading-relaxed text-pv-muted">
+              A market settled from one page has one point of failure. For price claims the
+              oracle reads two independent sources before it settles: if they agree, the
+              verdict carries more confidence; if they land on opposite sides of the
+              threshold, the claim refunds instead of picking a winner.
+            </p>
+
+            <div className="mx-auto mt-8 grid max-w-3xl grid-cols-1 gap-px bg-pv-border/25 sm:grid-cols-2">
+              <div className="bg-pv-bg p-5 sm:p-6">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald">
+                  Primary source
+                </p>
+                <a
+                  href="https://www.coingecko.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block font-display text-lg font-bold text-pv-text transition-colors hover:text-pv-emerald"
+                >
+                  CoinGecko
+                </a>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-pv-muted">
+                  Structured price data read directly from the API, which is why it carries
+                  the highest confidence ceiling of any fetch path.
+                </p>
+              </div>
+
+              <div className="bg-pv-bg p-5 sm:p-6">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-cyan">
+                  Independent cross-check
+                </p>
+                <a
+                  href="https://coinmarketcap.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block font-display text-lg font-bold text-pv-text transition-colors hover:text-pv-cyan"
+                >
+                  CoinMarketCap
+                </a>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-pv-muted">
+                  Price data provided by the CoinMarketCap API. Separate exchange coverage
+                  and separate weighting, so the two sources do not share a mistake.
+                </p>
+              </div>
+            </div>
+
+            <p className="mx-auto mt-6 max-w-2xl text-center font-mono text-[11px] text-pv-muted">
+              Both readings and the resulting verdict are committed into the on-chain
+              evidence hash, so the cross-check is auditable rather than taken on trust.
+            </p>
+          </div>
+        </div>
+      </AnimatedItem>
+
       {/* LIVE ARENA — 3x2 grid of active challenges */}
       {arenaGridCards.length > 0 && (
         <AnimatedItem>
