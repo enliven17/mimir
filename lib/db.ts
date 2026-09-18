@@ -217,6 +217,28 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_at ON x402_payments(at DESC)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_resource ON x402_payments(resource)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_seller ON x402_payments(seller)" },
+  // ── Baskets ────────────────────────────────────────────────────────────────
+  // A basket holds nothing: these rows are a definition and a set of signed
+  // intents, never a ledger of deposits.
+  { sql: `CREATE TABLE IF NOT EXISTS baskets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    thesis TEXT NOT NULL DEFAULT '',
+    creator_wallet TEXT NOT NULL,
+    members_json TEXT NOT NULL DEFAULT '[]',
+    created_at BIGINT NOT NULL DEFAULT 0
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_baskets_creator ON baskets(creator_wallet)" },
+  { sql: `CREATE TABLE IF NOT EXISTS basket_subscriptions (
+    basket_id TEXT NOT NULL,
+    follower TEXT NOT NULL,
+    per_market_cap_usdc NUMERIC NOT NULL DEFAULT 0,
+    signature TEXT NOT NULL DEFAULT '',
+    updated_at BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (basket_id, follower)
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_basket_subscriptions_follower ON basket_subscriptions(follower)" },
+
   // ── Agent registry (BYOA) ──────────────────────────────────────────────────
   { sql: `CREATE TABLE IF NOT EXISTS agent_registry (
     agent_id TEXT PRIMARY KEY,
