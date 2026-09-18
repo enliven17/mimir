@@ -217,6 +217,57 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_at ON x402_payments(at DESC)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_resource ON x402_payments(resource)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_seller ON x402_payments(seller)" },
+  // ── Agent registry (BYOA) ──────────────────────────────────────────────────
+  { sql: `CREATE TABLE IF NOT EXISTS agent_registry (
+    agent_id TEXT PRIMARY KEY,
+    owner_wallet TEXT NOT NULL,
+    operator_wallet TEXT NOT NULL,
+    payout_wallet TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    authority_level SMALLINT NOT NULL DEFAULT 0,
+    capabilities TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    limits_json TEXT NOT NULL DEFAULT '{}',
+    created_at BIGINT NOT NULL DEFAULT 0,
+    updated_at BIGINT NOT NULL DEFAULT 0,
+    last_seen_at BIGINT
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_agent_registry_owner ON agent_registry(owner_wallet)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_agent_registry_operator ON agent_registry(operator_wallet)" },
+  { sql: `CREATE TABLE IF NOT EXISTS agent_api_keys (
+    key_hash TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    key_prefix TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    created_at BIGINT NOT NULL DEFAULT 0,
+    revoked_at BIGINT
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_agent_api_keys_agent ON agent_api_keys(agent_id)" },
+  // Single-use nonces. A replayed envelope is rejected on the primary key.
+  { sql: `CREATE TABLE IF NOT EXISTS agent_api_nonces (
+    nonce TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    at BIGINT NOT NULL DEFAULT 0
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_agent_api_nonces_at ON agent_api_nonces(at)" },
+  // Stored responses make a retry with the same idempotency key safe.
+  { sql: `CREATE TABLE IF NOT EXISTS agent_api_responses (
+    idempotency_key TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    status SMALLINT NOT NULL DEFAULT 200,
+    response TEXT NOT NULL,
+    at BIGINT NOT NULL DEFAULT 0
+  )` },
+  { sql: `CREATE TABLE IF NOT EXISTS agent_request_audit (
+    id BIGSERIAL PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    ok BOOLEAN NOT NULL DEFAULT TRUE,
+    reason TEXT,
+    at BIGINT NOT NULL DEFAULT 0
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_agent_request_audit_agent_at ON agent_request_audit(agent_id, at DESC)" },
   {
     sql: "INSERT INTO sync_meta(key, value) VALUES($1, $2) ON CONFLICT(key) DO NOTHING",
     args: ["last_claim_count", "0"],
@@ -528,6 +579,22 @@ export async function getDb(): Promise<Pool> {
     );
   }
   return globalThis.__mimirDbReady;
+}
+
+/**
+ * Run one parameterized statement and return its rows.
+ *
+ * `?` placeholders are converted to Postgres `$n` in source order, matching the
+ * rest of this module. Exported so feature modules can own their own queries
+ * instead of growing this file without bound.
+ */
+export async function query(
+  sql: string,
+  args: unknown[] = [],
+): Promise<Array<Record<string, unknown>>> {
+  const pool = await getDb();
+  const { rows } = await execute(pool, { sql, args });
+  return rows;
 }
 
 export async function upsertClaim(claim: ClaimData): Promise<void> {
