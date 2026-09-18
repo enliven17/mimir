@@ -13,6 +13,7 @@
 import { ShieldCheck } from "lucide-react";
 
 import { priceCheckTarget } from "@/lib/price-consensus";
+import CoinMarketCapMark from "@/components/brand/CoinMarketCapMark";
 
 export default function PriceCrossCheckNote({
   question,
@@ -32,16 +33,9 @@ export default function PriceCrossCheckNote({
       title={`Before settling, the ${target.symbol} price is read from two independent sources and compared against the $${target.threshold.toLocaleString("en-US")} threshold.`}
     >
       <ShieldCheck size={10} aria-hidden />
-      <span>
-        {target.symbol} price cross-checked against{" "}
-        <a
-          href="https://coinmarketcap.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline decoration-dotted underline-offset-2 transition-colors hover:text-pv-cyan"
-        >
-          CoinMarketCap
-        </a>
+      <span className="inline-flex flex-wrap items-center gap-1">
+        {target.symbol} price cross-checked against
+        <CoinMarketCapMark height={12} className="translate-y-px" />
         . Sources that disagree refund instead of settling.
       </span>
     </p>

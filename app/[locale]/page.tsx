@@ -26,6 +26,7 @@ import ArenaProposeCard from "@/components/ArenaProposeCard";
 import SettlementArchiveSection from "@/components/SettlementArchiveSection";
 import LiveStat from "@/components/LiveStat";
 import { kineticContainer, kineticLetter } from "@/lib/animations/rituals";
+import CoinMarketCapMark from "@/components/brand/CoinMarketCapMark";
 
 // Canvas can't render during SSR/prerender — load client-only.
 const HeroAscii = dynamic(() => import("@/components/HeroAscii"), { ssr: false });
@@ -675,14 +676,9 @@ export default function HomePage() {
                 <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-cyan">
                   Independent cross-check
                 </p>
-                <a
-                  href="https://coinmarketcap.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-block font-display text-lg font-bold text-pv-text transition-colors hover:text-pv-cyan"
-                >
-                  CoinMarketCap
-                </a>
+                <div className="mt-2 font-display text-lg font-bold text-pv-text">
+                  <CoinMarketCapMark height={22} />
+                </div>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-pv-muted">
                   Price data provided by the CoinMarketCap API. Separate exchange coverage
                   and separate weighting, so the two sources do not share a mistake.
