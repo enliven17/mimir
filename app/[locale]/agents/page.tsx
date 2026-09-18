@@ -15,6 +15,7 @@ import {
   getPersonaForAddress,
 } from "@/lib/council-resolver";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
+import RegisteredAgents from "@/components/agents/RegisteredAgents";
 import { openPeepsAvatar } from "@/lib/avatars";
 import { shortenAddress } from "@/lib/constants";
 import { cachedFor } from "@/lib/server/ttl-cache";
@@ -330,6 +331,8 @@ export default async function AgentsPage({
           </span>
         </div>
       </header>
+
+      <RegisteredAgents />
 
       {/* Agent profiles */}
       {agentInfo && (
