@@ -70,6 +70,12 @@ import {
   type CouncilVote,
 } from "./council-vote";
 import { reportingPoll } from "../../lib/ops/heartbeat";
+import {
+  crossCheckThreshold,
+  priceCheckTarget,
+  settlementAdjustment,
+} from "../../lib/price-consensus";
+import { fetchPriceReadings, hasSecondPriceSource } from "../../lib/server/price-sources";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = Number(process.env.ORACLE_POLL_INTERVAL_MS ?? "60000");
@@ -435,6 +441,60 @@ Reply JSON only: { "final": true | false }
 
 // ── ROLE 1: Settle expired claim ──────────────────────────────────────────────
 // Returns true if resolved on-chain, false if deferred (e.g. match not final yet).
+
+/**
+ * Cross-check a price claim against a second, independent source.
+ *
+ * Only single-asset, single-threshold claims qualify; anything else falls back
+ * to the normal single-source path. Two sources agreeing earns confidence, two
+ * sources straddling the threshold forces a refund, because at that point the
+ * honest answer is that the data does not determine the outcome.
+ *
+ * Best-effort throughout: a source being down degrades the settlement to what
+ * it was before this existed rather than blocking it.
+ */
+async function applyPriceConsensus(
+  claim: ClaimOnChain,
+  verdict: OracleVerdict,
+): Promise<{ verdict: OracleVerdict; note: string | null }> {
+  const target = priceCheckTarget(claim.question, claim.settlementRule);
+  if (!target || !hasSecondPriceSource()) return { verdict, note: null };
+
+  const readings = await fetchPriceReadings(target.symbol).catch(() => []);
+  if (readings.length < 2) return { verdict, note: null };
+
+  const consensus = crossCheckThreshold(readings, target.threshold);
+  const adjustment = settlementAdjustment(consensus);
+
+  console.log(
+    `[settle] Price cross-check ${target.symbol} @ $${target.threshold.toLocaleString("en-US")}: ` +
+    `${consensus.verdict} (${readings.map((r) => `${r.source}=${r.priceUsd.toFixed(2)}`).join(", ")})`,
+  );
+
+  if (adjustment.forceUnresolvable) {
+    return {
+      verdict: {
+        verdict: "UNRESOLVABLE",
+        confidence: verdict.confidence,
+        explanation: `[SOURCES DISAGREE — refunded] ${adjustment.note}`.slice(0, 500),
+      },
+      note: adjustment.note,
+    };
+  }
+
+  if (adjustment.confidenceDelta > 0) {
+    return {
+      verdict: {
+        ...verdict,
+        confidence: Math.min(100, verdict.confidence + adjustment.confidenceDelta),
+      },
+      note: adjustment.note,
+    };
+  }
+
+  return { verdict, note: adjustment.note };
+}
+
 async function settle(claim: ClaimOnChain): Promise<boolean> {
   console.log(`\n[settle] Claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
 
@@ -505,8 +565,14 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
     rawVerdict = await evaluateClaim(claim, evidence.text);
   }
 
+  // A second independent price source, before any of the confidence tiering:
+  // if the sources disagree there is nothing for the tiers to grade.
+  const consensus = await applyPriceConsensus(claim, rawVerdict);
+  if (consensus.note) commit = `${commit}
+[price-consensus]${consensus.note}`;
+
   const evidenceHash = hashEvidence(commit);
-  const trusted      = applyFetcherTrust(rawVerdict, evidence.fetcher);
+  const trusted      = applyFetcherTrust(consensus.verdict, evidence.fetcher);
   const verdict      = tierVerdict(trusted);
 
   const tierTag =
