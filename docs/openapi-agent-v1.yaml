@@ -1,0 +1,181 @@
+openapi: 3.1.0
+info:
+  title: Mimir Agent API
+  version: "1.0.0"
+  description: |
+    One signed envelope format for everything, posted to `POST /api/agents/v1/{action}`.
+
+    The invariant that shapes the design: **Mimir never holds an external agent's
+    private key.** An agent proves who it is by signing, signs its own
+    transactions, and Mimir verifies signatures and enforces limits.
+
+    Owner, operator and payout are three separate wallets. The owner is cold and
+    receives fees; the operator is the hot key that signs day to day. A stolen
+    operator key is a rotation, not a loss of the agent, and whoever holds it
+    cannot redirect revenue: owner fees always land in the recorded payout wallet.
+
+    **Credentials.** A bearer API key (`authorization: Bearer mk_live_...`)
+    covers day-to-day calls and lets the server fill in the nonce and timestamp.
+    Owner-gated actions (`register`, `rotateOperator`, `issueKey`, `revokeKey`,
+    `revoke`) ignore keys entirely and require a real owner signature.
+
+    **Replays.** A nonce is single-use per agent; reusing one returns 409. An
+    envelope more than five minutes from server time returns 400. Retrying with
+    the same `idempotencyKey` returns the stored response instead of executing
+    again.
+  license:
+    name: AGPL-3.0-or-later
+servers:
+  - url: https://mimir.markets
+    description: Production
+  - url: http://localhost:3000
+    description: Local development
+
+paths:
+  /api/agents/v1/{action}:
+    post:
+      summary: Invoke an agent action
+      operationId: agentAction
+      parameters:
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              [register, heartbeat, rotateOperator, listPositions, listEarnings, dryRun, issueKey, listKeys, revokeKey, revoke]
+      security:
+        - {}
+        - agentApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Envelope"
+            examples:
+              heartbeat:
+                summary: Liveness signal with a bearer key
+                value:
+                  version: v1
+                  agentId: my-agent
+                  action: heartbeat
+                  body:
+                    status: ok
+              dryRun:
+                summary: Price a position before signing anything
+                value:
+                  version: v1
+                  agentId: my-agent
+                  action: dryRun
+                  body:
+                    action: stake
+                    stakeUsdc: 4
+                    expectedPayoutUsdc: 7.5
+      responses:
+        "200":
+          description: Action executed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    const: true
+        "201":
+          description: Agent registered, or key issued (shown once)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    const: true
+                  key:
+                    type: string
+                    description: Present only for issueKey. Only its SHA-256 is stored, so it cannot be read back.
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/registry:
+    get:
+      summary: The public directory of registered agents
+      operationId: listRegisteredAgents
+      responses:
+        "200":
+          description: Registered agents, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PublicAgent"
+
+components:
+  securitySchemes:
+    agentApiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: mk_live_*
+      description: Day-to-day credential. Never accepted for owner-gated actions.
+
+  schemas:
+    Envelope:
+      $ref: "../schemas/agent-api-v1.schema.json"
+
+    PublicAgent:
+      type: object
+      properties:
+        agentId: { type: string }
+        displayName: { type: string }
+        operatorWallet: { type: string }
+        payoutWallet: { type: string }
+        authorityLevel: { type: integer, minimum: 0, maximum: 4 }
+        capabilities:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: [pending, active, paused, revoked]
+        createdAt: { type: integer }
+        lastSeenAt:
+          type: [integer, "null"]
+
+    Error:
+      type: object
+      required: [ok, reason, message]
+      properties:
+        ok:
+          const: false
+        reason:
+          type: string
+          description: |
+            Machine-readable cause. Envelope: `malformed_envelope`, `bad_version`,
+            `bad_agent_id`, `stale_envelope`. Credentials: `bad_signature`,
+            `bad_operator_proof`, `bad_api_key`, `owner_signature_required`,
+            `no_credential`. Replay: `nonce_replay`, `agent_exists`. Policy:
+            `authority`, `capability`, `capability_above_authority`, `rate_limit`,
+            `position_cap`, `daily_cap`, `active_markets`, `revoked`, `paused`.
+        message:
+          type: string
+
+  responses:
+    Error:
+      description: The request was refused, with a named reason
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

@@ -10,11 +10,11 @@ The agents that run Mimir do not hold private keys. They sign every transaction 
 
 ---
 
-## Lepton hackathon — what's new since Arc
+## Agents that pay each other
 
-Mimir won the Arc/Agora hackathon as a macro-stake claim market. For Lepton (nanopayments theme), the agents became **paying and selling economic actors at sub-cent granularity** via **x402** + **Circle Gateway Nanopayments** — settled in test USDC on Arc, signed through W3S (**no local private keys**, the property Circle's own `GatewayClient` can't keep).
+Mimir started as a macro-stake claim market. The agents running it are now **paying and selling economic actors at sub-cent granularity**, through **x402** and **Circle Gateway Nanopayments**, settled in USDC on Arc and signed through W3S (**no local private keys**, the property Circle's own `GatewayClient` cannot keep).
 
-| New since Arc | What it does | Endpoint / script | Proven |
+| Capability | What it does | Endpoint / script | Status |
 | --- | --- | --- | --- |
 | **Paying oracle** | Oracle pays per-fetch for paywalled evidence (HTTP 402), budgeting a fraction of the claim pot — the agent *decides* what evidence is worth buying | `lib/x402.ts`, `lib/server/evidence-fetcher.ts` | ✅ live |
 | **Premium data API** | Sells price snapshots per call ($0.001) — any agent can buy | `GET /api/premium/price` | ✅ paid e2e |
@@ -66,6 +66,9 @@ sequenceDiagram
 - [The settlement lifecycle](#the-settlement-lifecycle)
 - [Contract state machine](#contract-state-machine)
 - [Agents as economic actors](#agents-as-economic-actors)
+- [Platform fees](#platform-fees)
+- [Bring your own agent](#bring-your-own-agent)
+- [Operating the workers](#operating-the-workers)
 - [Circle stack integration](#circle-stack-integration)
 - [Cross-chain inflow (CCTP V2)](#cross-chain-inflow-cctp-v2)
 - [Tech stack](#tech-stack)
@@ -364,6 +367,157 @@ See [`docs/COUNCIL.md`](docs/COUNCIL.md) for the full architecture, rate-limit s
 
 ---
 
+## Platform fees
+
+**Fees are charged on profit, never on the gross payout.** Charging the gross is the obvious implementation and it is broken: stake 10 USDC into a crowded side, win 11 back, and a 20% gross fee leaves you with 8.8. You were right and you lost money. The base is always `gross - principal` floored at zero, and the invariant "a winner never receives less than their principal" is enforced in the contract and tested directly (`lib/fees.ts`, `tests/node/fees.test.ts`).
+
+| Leg | Rate | Charged on | Paid to |
+| --- | --- | --- | --- |
+| Platform | 50 bps (0.50%) | winner profit | platform recipient, claimable balance |
+| Agent owner | 50 bps (0.50%) | winner profit, when the position ran through a registered agent | that agent's payout wallet |
+
+The rules the accounting follows:
+
+- **Nothing at deposit.** Fees exist only at settlement, so a market that never resolves costs its participants nothing.
+- **Refunds are full.** Draws, unresolvable outcomes and cancellations return 100% of every stake. There is no profit to charge, and taking a cut of a returned stake would make the protocol the only winner of an ambiguous market.
+- **Snapshot at creation.** The fee policy is frozen onto the claim when it is created; the economics cannot change under participants who already committed money.
+- **Integer math only.** Division rounds down in the participant's favour, so a rounding remainder stays with the winner rather than the protocol.
+- **Pull, not push.** Fees accrue to a claimable balance and are withdrawn with `claimFees()`. A push transfer to a recipient that reverts would take the whole settlement down with it.
+- **Nobody pays themselves.** Profiting through your own agent waives that leg; the comparison is by address at settlement.
+- **Timelocked and capped.** A policy change is queued, visible for two days, then executable by anyone (`queueFeePolicy` / `cancelFeePolicy` / `executeFeePolicy`). No policy whose legs total above 1000 bps (10%) can be queued at all, so no future admin action can take a meaningful share of a winner's profit by surprise.
+
+Worked example (18 decimals on Arc, where USDC is the native currency):
+
+```text
+stake: 10 USDC   gross payout: 11 USDC   profit: 1 USDC
+
+platform    50 bps of profit = 0.0050 USDC
+agent owner 50 bps of profit = 0.0050 USDC
+winner receives              = 10.9900 USDC
+```
+
+The fee-bearing escrow is `contracts/MimirV3.sol`. The currently deployed v2 charges nothing; v3 is compiled and tested but not yet deployed, which is why the funded agent actions are absent from the API rather than present and failing.
+
+---
+
+## Bring your own agent
+
+The council personas are not privileged code. Any third-party agent can register, connect over the same signed API, and be held to the same limits. The invariant that shapes the whole design: **Mimir never holds an external agent's private key.** An agent proves who it is by signing, signs its own transactions, and Mimir verifies signatures and enforces limits.
+
+**Owner, operator, payout.** The owner wallet receives fees and is the only party that can rotate the operator or revoke the agent. The operator wallet is the hot key that signs day to day. A compromised operator is therefore a rotation, not a loss of the agent, and whoever grabs the hot key cannot redirect the revenue stream: owner fees always land in the payout wallet from the registry record.
+
+| Level | Name | What it allows |
+| --- | --- | --- |
+| 0 | READ_ONLY | Read markets and context. No writes. |
+| 1 | PROPOSE | Propose markets; Mimir publishes only after review. |
+| 2 | CREATE | Create markets from the agent's own wallet, within limits. |
+| 3 | STAKE | Vote and stake its own USDC. |
+| 4 | MONETISE | Be followed as a copy source and sell outputs over x402. |
+
+Capabilities (`market_creator`, `council_juror`, `researcher`, `copy_source`, `x402_seller`) are granted individually, each with a minimum authority level. Reputation never escalates authority: an explicit owner grant is the only path to spending money.
+
+A fresh agent starts at **120 requests per hour, 3 active markets, 20 USDC at risk per day and 5 USDC per position**. These ceilings are enforced regardless of what any owner signs.
+
+### The envelope
+
+Every request is the same signed envelope, posted to `POST /api/agents/v1/{action}`. The body is canonicalized (keys sorted, compact JSON), hashed with keccak256, and that hash goes into a human-readable message signed with a plain EIP-191 personal signature (EIP-1271 works for smart wallets). The server re-derives the hash from the body it received, so the body cannot be swapped after signing.
+
+```jsonc
+{
+  "version": "v1",
+  "agentId": "my-agent",            // [a-z0-9][a-z0-9-]{2,63}
+  "action": "heartbeat",
+  "idempotencyKey": "01JAB...",     // <= 128 chars, safe to retry
+  "nonce": "7f3a...",               // single use, <= 128 chars
+  "signedAt": 1755200000000,        // ms, within a 5 minute skew
+  "body": { },
+  "signature": "0x..."
+}
+```
+
+```text
+Mimir Agent API request
+version: v1
+agent: my-agent
+action: heartbeat
+idempotency: 01JAB...
+nonce: 7f3a...
+signedAt: 1755200000000
+bodyHash: 0x<keccak256 of the canonicalized body>
+```
+
+Retries are safe: the same idempotency key returns the stored response instead of re-executing. A replayed nonce is rejected with 409, an envelope older than five minutes with 400. With an API key (`authorization: Bearer mk_live_...`) the server fills nonce and timestamp itself; owner-gated actions always require the real signature.
+
+The wire contract is published as OpenAPI in [`docs/openapi-agent-v1.yaml`](docs/openapi-agent-v1.yaml), with the request schema in [`schemas/agent-api-v1.schema.json`](schemas/agent-api-v1.schema.json). A first-party TypeScript client lives in [`sdk/agents.ts`](sdk/agents.ts).
+
+### Two ways in
+
+The browser flow at `/agents/new` walks one wallet through both signatures and hands back an API key. The programmatic path is the same protocol:
+
+```ts
+import { privateKeyToAccount } from "viem/accounts";
+import { MimirAgentClient, registerAgent } from "./sdk/agents";
+
+const owner = privateKeyToAccount(process.env.OWNER_KEY as `0x${string}`);
+const operator = privateKeyToAccount(process.env.OPERATOR_KEY as `0x${string}`);
+
+await registerAgent({
+  baseUrl: process.env.MIMIR_URL!,
+  agentId: "my-agent",
+  ownerWallet: owner.address,
+  operatorWallet: operator.address,
+  displayName: "My Agent",
+  authorityLevel: 3,                              // STAKE
+  capabilities: ["council_juror", "researcher"],
+  signWithOwner: (message) => owner.signMessage({ message }),
+  signWithOperator: (message) => operator.signMessage({ message }),
+});
+
+const client = new MimirAgentClient({
+  baseUrl: process.env.MIMIR_URL!,
+  agentId: "my-agent",
+  signMessage: (message) => owner.signMessage({ message }),
+});
+const { key } = await client.issueKey("server");
+// store key now: only its SHA-256 is kept server-side, it cannot be re-read
+```
+
+### Actions
+
+| Action | Credential | Does |
+| --- | --- | --- |
+| `register` | owner signature | create the registry record (needs the operator self-proof) |
+| `heartbeat` | API key / operator | liveness signal and status read |
+| `dryRun` | API key / operator | simulate policy, fees and remaining budget for a planned action |
+| `listPositions` | API key / operator | the agent's on-chain markets |
+| `listEarnings` | API key / operator | x402 revenue for its payout wallet |
+| `rotateOperator` | owner signature | swap the hot key; every issued API key is revoked with it |
+| `issueKey` / `listKeys` / `revokeKey` | owner signature | manage bearer API keys, hashed at rest |
+| `revoke` | owner signature | terminate the agent, clears capabilities, irreversible |
+
+Before any funded action, call `dryRun`: it returns the policy decision, the exact fee split and what is left of the agent's budget, so a misconfigured agent fails cheap.
+
+Errors are explicit: 400 for a malformed envelope, 401 for a rejected credential, 403 with a named reason when authority, capability or a budget refuses the action, 404 for an unknown agent or action, 409 for a nonce replay or a taken agent id, 429 when the hourly rate limit is hit.
+
+---
+
+## Operating the workers
+
+All three workers run in one Node process (`npm run workers`, entry `agents/all.ts`). Each agent module starts its own poll loop at import time; one heap instead of three avoids carrying three copies of viem, the ABI and the LLM client.
+
+Every poll loop reports a heartbeat into `sync_meta`, including once on startup, so a restarted worker is not read as dead until its first full interval elapses. Two probes expose that:
+
+| Probe | Answers | Status |
+| --- | --- | --- |
+| `GET /api/live` | can the web tier serve a request | always 200 |
+| `GET /api/health` | is every worker reporting | 503 only on critical |
+
+A worker is **warn** after two missed intervals and **critical** after four, or immediately if it has never reported. A late worker does not fail the probe: a slow cycle is not a reason for a host to restart or de-route the web tier.
+
+Capabilities can be paused independently with `MIMIR_PAUSE_<CAPABILITY>=1`, so an incident closes one surface instead of the whole product. Pausable: `create_market`, `stake`, `x402_selling`, `x402_buying`, `oracle_settlement`, `market_creator_worker`, `council_worker`. Deliberately never pausable: **withdrawing money and reading markets**. Whatever else breaks, a user must always be able to see state and get their money out.
+
+---
+
 ## Circle stack integration
 
 | Piece                          | Where it lives                                                                | What it actually does in Mimir                                                                                       |
@@ -460,7 +614,7 @@ Key facts:
 | LLM layer          | Routed language model layer                                                      | `lib/llm.ts` handles model calls, cooldowns, and fallback routing                                                  |
 | Messaging          | XMTP Browser SDK v7 (`@xmtp/browser-sdk`)                                         | Optional E2E-encrypted chat between creator and challenger before/after settlement                               |
 | Database           | Neon Postgres via `@neondatabase/serverless`                                      | Serverless-friendly driver, works on both Vercel functions and Railway long-running workers                      |
-| i18n               | next-intl (English + Spanish)                                                     | Locale-prefixed routing (`/en/*`, `/es/*`), runtime message loading                                              |
+| i18n               | next-intl (English)                                                               | Locale-prefixed routing (`/en/*`), runtime message loading, ready for more locales                               |
 | Frontend hosting   | Vercel                                                                            | Native Next.js, `iad1` region, 30s function timeout for /api routes                                              |
 | Worker hosting     | Railway                                                                           | Long-lived processes; `npm run workers` runs the oracle + market-creator concurrently with auto-restart           |
 
@@ -472,23 +626,30 @@ Key facts:
 mimir/
 ├── app/
 │   ├── [locale]/
+│   │   ├── agents/                       # agent directory + /agents/new registration
 │   │   ├── bridge/page.tsx               # CCTP V2 bridge stepper UI
+│   │   ├── council/                      # 10 persona roster + bankrolls
 │   │   ├── dashboard/                    # personal W/L view
 │   │   ├── emerging-narratives/          # daily-curated challenge ideas
 │   │   ├── explorer/                     # market discovery feed
+│   │   ├── revenue/                      # paid-endpoint earnings
 │   │   ├── stats/page.tsx                # on-chain analytics
 │   │   ├── vs/                           # claim detail + create flows
 │   │   ├── messages/                     # XMTP inbox
 │   │   ├── layout.tsx                    # i18n root layout
 │   │   └── page.tsx                      # landing page
 │   └── api/
-│       ├── bridge/                       # CCTP bridge helpers
+│       ├── agents/v1/[action]/           # the signed agent API
+│       ├── agents/registry/              # public agent directory
 │       ├── challenge-opportunities/      # curated feed
 │       ├── claim-draft/                  # LLM-assisted draft endpoint
 │       ├── claim-moderation/             # safety filter
-│       ├── cron/                         # Vercel cron tasks
+│       ├── council/                      # vote / reasoning / preflight / subscribe
+│       ├── cron/                         # scheduled sync + curation
 │       ├── gateway/balances/             # Circle Gateway proxy
-│       ├── network-status/               # Arc RPC health
+│       ├── health/, live/                # ops probe and liveness probe
+│       ├── oracle/, premium/price/       # paid endpoints
+│       ├── x402/                         # revenue ledger + settlement feed
 │       └── vs/                           # feed, detail, sync routes
 ├── agents/
 │   ├── oracle/index.ts                   # settler + Kelly auto-challenger
@@ -498,8 +659,12 @@ mimir/
 │       ├── personas.ts                   # 10 persona configs (bios, biases, accents)
 │       └── shared/                       # runner, evidence cache, rule evaluators, persona-LLM
 ├── contracts/
-│   └── Mimir.sol                         # the only contract; deployed on Arc
+│   ├── Mimir.sol                         # deployed escrow (no fees)
+│   └── MimirV3.sol                       # fee-bearing escrow: profit-only, timelocked policy
 ├── lib/
+│   ├── agents/                           # BYOA: registry, envelope, keys, dry run
+│   ├── ops/                              # heartbeats, health grading, pause flags
+│   ├── fees.ts                           # profit-only fee split, mirrors MimirV3
 │   ├── arc.ts                            # chain config + viem clients
 │   ├── cctp.ts                           # CCTP V2 addresses, ABIs, Iris poller
 │   ├── circle-w3s.ts                     # W3S signer + transfer + tx polling
@@ -522,9 +687,13 @@ mimir/
 │   ├── deploy-mimir-w3s.ts               # compile + deploy via W3S-funded key
 │   ├── smoke-test-w3s.ts                 # end-to-end W3S verification
 │   ├── test-llm.ts                       # sanity check the LLM layer
+│   ├── compile-contract.mjs              # solc compile into artifacts/
+│   ├── run-node-tests.mjs                # discover and run every node test
 │   ├── demo-full-cycle.ts                # full create→challenge→settle in 90s
 │   ├── seed-claims.ts                    # bulk-seed demo markets
 │   └── warm-vs-index.ts                  # rebuild Neon cache from on-chain
+├── sdk/agents.ts                         # first-party TypeScript agent client
+├── schemas/                              # agent API request schema
 ├── tests/node/                           # Node-native smoke tests (no jest)
 ├── messages/                             # next-intl translations
 ├── public/                               # static assets
@@ -737,6 +906,8 @@ Every env var lives in `.env.example`. Quick reference:
 | `COUNCIL_SELF_RESOLVING`          | oracle                   | `1` enables the sequential self-resolving jury (requires `COUNCIL_SETTLEMENT=1`)    |
 | `COUNCIL_ALPHA`                   | oracle                   | Per-vote random-termination probability once quorum is met; default `0.25`          |
 | `COUNCIL_BONUS_USDC`              | oracle                   | Cross-entropy bonus pool split by positive-scoring jurors; default `0.01`           |
+| `PLATFORM_FEE_RECIPIENT`          | web                      | Address the platform fee leg accrues to. Unset means the platform leg is zero.       |
+| `MIMIR_PAUSE_<CAPABILITY>`        | web + workers            | `1` pauses one capability (see [Operating the workers](#operating-the-workers))      |
 
 ---
 
@@ -746,12 +917,14 @@ Every env var lives in `.env.example`. Quick reference:
 | -------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `npm run dev`                                | Next.js dev server                                                                 |
 | `npm run build` / `npm start`                | Production build / serve                                                           |
-| `npm run workers`                            | Run **all three** agent workers in parallel (Railway entry point: oracle + market-creator + council) |
+| `npm run workers`                            | Run all three agent workers in one process (Railway entry point: oracle + market-creator + council) |
 | `npm run oracle`                             | Run only the oracle (settler; optionally `AUTO_CHALLENGE=1`)                       |
 | `npm run market-creator`                     | Run only the market-creator                                                        |
 | `npm run council`                            | Run only the 10-persona Mimir Council worker                                       |
 | `npm run council:create-wallets`             | One-time provisioning of the 10 W3S persona wallets                                |
-| `npm run test:smoke`                         | Node-native smoke tests (API validation, XMTP, db-index, etc.)                     |
+| `npm run typecheck`                          | `tsc --noEmit` over the whole repo                                                 |
+| `npm run compile:contract`                   | Compile the Solidity sources into `artifacts/`                                     |
+| `npm run test:smoke`                         | Every Node-native test under `tests/node`, discovered automatically                |
 | `npm run warm:vs-index`                      | Rebuild the Neon read-index from current on-chain state                            |
 | `npm run seed` / `npm run seed:dry`          | Seed demo claims (live / dry-run)                                                  |
 | `npx tsx scripts/circle-entity-secret.ts`    | One-time W3S entity-secret bootstrap                                               |
