@@ -24,6 +24,15 @@ import { cachedFor } from "@/lib/server/ttl-cache";
 // doesn't cache it (Next skips the Full Route Cache for dynamic renders) —
 // the persona filter would otherwise re-scan the full chain history on every
 // click. cachedFor covers the actual expensive work regardless.
+/**
+ * Rendered per request, not prerendered.
+ *
+ * Building this page statically means scanning the contract's whole log history
+ * at build time, which grew past the 60s export budget once the roster reached
+ * twenty personas. Per-request rendering with a short cache gives the same
+ * freshness without putting a chain scan on the critical path of a deploy.
+ */
+export const dynamic = "force-dynamic";
 export const revalidate = 20;
 
 /* ── Data ────────────────────────────────────────────────────────────────── */

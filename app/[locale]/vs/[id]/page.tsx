@@ -86,6 +86,7 @@ import {
   SlidersHorizontal,
   Users,
 } from "lucide-react";
+import MarketPricePanel from "@/components/vs/MarketPricePanel";
 
 /** Dirección ficticia para previsualizar fases accepted / verifying / proven en VS de muestra (sin blockchain). */
 const DESIGN_PREVIEW_OPPONENT =
@@ -1522,6 +1523,8 @@ export default function VSDetailPage() {
                     )}
                   </div>
                 </div>
+
+                <MarketPricePanel vs={display} />
 
                 {/* Métricas: mobile-first — 1 col → 2 (sm) → 4 (lg); panel unificado + celdas con min-h táctil */}
                 <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-white/[0.1] bg-white/[0.07] p-px shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] sm:grid-cols-2 lg:grid-cols-4">

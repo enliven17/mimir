@@ -19,6 +19,15 @@ import { BlueprintHeading } from "@/components/BlueprintGrid";
 // getLogs history from the deploy block). That's fine once per 30s, not
 // once per page view — cache each so concurrent/rapid visits share one
 // chain round-trip instead of each paying the full scan cost.
+/**
+ * Rendered per request, not prerendered.
+ *
+ * Building this page statically means scanning the contract's whole log history
+ * at build time, which grew past the 60s export budget once the roster reached
+ * twenty personas. Per-request rendering with a short cache gives the same
+ * freshness without putting a chain scan on the critical path of a deploy.
+ */
+export const dynamic = "force-dynamic";
 export const revalidate = 30;
 
 // ── Data ─────────────────────────────────────────────────────────────────────

@@ -16,6 +16,15 @@ import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { openPeepsAvatar } from "@/lib/avatars";
 import { shortenAddress } from "@/lib/constants";
 
+/**
+ * Rendered per request, not prerendered.
+ *
+ * Building this page statically means scanning the contract's whole log history
+ * at build time, which grew past the 60s export budget once the roster reached
+ * twenty personas. Per-request rendering with a short cache gives the same
+ * freshness without putting a chain scan on the critical path of a deploy.
+ */
+export const dynamic = "force-dynamic";
 export const revalidate = 30;
 
 // ── Data ─────────────────────────────────────────────────────────────────────
