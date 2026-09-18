@@ -1,106 +1,168 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeClaimQuality } from "../../lib/claimQuality";
+import { computeClaimQuality, type ClaimQualityInput } from "../../lib/claimQuality";
 
 const NOW_TS = 1_800_000_000;
 
-test("minimal claim quality scores as weak", () => {
+const STRONG: ClaimQualityInput = {
+  question: "Will BTC close above $100,000 on 2026-05-25 according to CoinGecko?",
+  creator_position: "BTC closes above $100,000",
+  opponent_position: "BTC closes at or below $100,000",
+  resolution_url: "https://www.coingecko.com/en/coins/bitcoin",
+  settlement_rule:
+    "Resolve from the linked source page, reading the closing price at the deadline timestamp in UTC.",
+  category: "crypto",
+  deadline: NOW_TS + 48 * 60 * 60,
+};
+
+const passed = (input: ClaimQualityInput, key: string) =>
+  computeClaimQuality(input, NOW_TS).signals.find((s) => s.key === key)?.passed;
+
+test("a well-formed claim scores strong", () => {
+  const result = computeClaimQuality(STRONG, NOW_TS);
+  assert.equal(result.score, 100);
+  assert.equal(result.tier, "strong");
+});
+
+test("a vague question scores weak even when every field is filled in", () => {
+  // The old scorer graded length and presence, so this passed as strong.
   const result = computeClaimQuality(
     {
       question: "Will it rain?",
       creator_position: "Yes",
       opponent_position: "No",
+      resolution_url: "https://weather.example.com/forecast",
+      settlement_rule:
+        "Resolve this from the linked source page as of the deadline, reading whatever it says.",
+      category: "weather",
+      deadline: NOW_TS + 48 * 60 * 60,
+    },
+    NOW_TS,
+  );
+  assert.equal(result.tier, "weak");
+  assert.ok(result.score < 40, `scored ${result.score}`);
+});
+
+test("scores are bounded and tiers line up with them", () => {
+  const empty = computeClaimQuality(
+    {
+      question: "",
+      creator_position: "",
+      opponent_position: "",
       resolution_url: "",
       settlement_rule: "",
       category: "custom",
-      deadline: NOW_TS + 60,
+      deadline: 0,
     },
-    NOW_TS
+    NOW_TS,
   );
-
-  assert.equal(result.score, 15);
-  assert.equal(result.tier, "weak");
+  assert.equal(empty.score, 0);
+  assert.equal(empty.tier, "weak");
+  assert.equal(computeClaimQuality(STRONG, NOW_TS).score, 100);
 });
 
-test("well-formed claim quality scores as strong", () => {
-  const result = computeClaimQuality(
-    {
-      question: "Will BTC close above $100k before next Friday at 23:59 UTC?",
-      creator_position: "BTC closes above $100k",
-      opponent_position: "BTC stays at or below $100k",
-      resolution_url: "https://coingecko.com/en/coins/bitcoin",
-      settlement_rule:
-        "Resolve this using the linked source price exactly at the deadline timestamp.",
-      category: "crypto",
-      deadline: NOW_TS + 48 * 60 * 60,
-    },
-    NOW_TS
-  );
-
-  assert.equal(result.score, 100);
-  assert.equal(result.tier, "strong");
+test("a question needs two independent decidability signals", () => {
+  // A number alone is not enough.
+  assert.equal(passed({ ...STRONG, question: "Will 2026 be a year for Bitcoin holders?" }, "question_decidable"), false);
+  // A verb alone is not enough.
+  assert.equal(passed({ ...STRONG, question: "Will the company announce a new thing?" }, "question_decidable"), false);
+  // A threshold plus a comparison is.
+  assert.equal(passed({ ...STRONG, question: "Will ETH trade above $4,000 before 2026-12-01?" }, "question_decidable"), true);
 });
 
-test("identical positions lose the positions_clear signal", () => {
-  const result = computeClaimQuality(
-    {
-      question: "Will Argentina beat Brazil in regulation time this Saturday?",
-      creator_position: "Argentina wins",
-      opponent_position: "Argentina wins",
-      resolution_url: "https://bbc.com/sport/football/scores-fixtures",
-      settlement_rule: "Use the official final result listed on the linked source.",
-      category: "deportes",
-      deadline: NOW_TS + 24 * 60 * 60,
-    },
-    NOW_TS
-  );
-
+test("subjective wording fails, in the question or the rule", () => {
+  assert.equal(passed({ ...STRONG, question: "Will BTC make a significant move above $100,000 by 2026-05-25?" }, "objective_language"), false);
   assert.equal(
-    result.signals.find((signal) => signal.key === "positions_clear")?.passed,
-    false
+    passed(
+      { ...STRONG, settlement_rule: "Resolve from the linked source at the deadline if the move was substantial." },
+      "objective_language",
+    ),
+    false,
   );
-  assert.equal(result.score, 85);
+  assert.equal(passed(STRONG, "objective_language"), true);
 });
 
-test("custom category loses the structured category points", () => {
-  const result = computeClaimQuality(
-    {
-      question: "Will this custom event happen before the end of the month?",
-      creator_position: "It happens",
-      opponent_position: "It does not happen",
-      resolution_url: "https://example.com/result",
-      settlement_rule: "Resolve only using the linked source and the exact wording above.",
-      category: "custom",
-      deadline: NOW_TS + 24 * 60 * 60,
-    },
-    NOW_TS
-  );
-
+test("a subjective term inside a longer word does not trip the check", () => {
+  // "goodwill" contains "good"; the check is word-bounded.
   assert.equal(
-    result.signals.find((signal) => signal.key === "structured_category")?.passed,
-    false
+    passed({ ...STRONG, question: "Will goodwill impairment exceed $100,000,000 before 2026-05-25?" }, "objective_language"),
+    true,
   );
-  assert.equal(result.score, 90);
 });
 
-test("near deadlines lose the sufficient time signal", () => {
-  const result = computeClaimQuality(
-    {
-      question: "Will ETH trade above $7k in the next three hours?",
-      creator_position: "ETH trades above $7k",
-      opponent_position: "ETH stays below $7k",
-      resolution_url: "https://coingecko.com/en/coins/ethereum",
-      settlement_rule: "Resolve against the linked source exactly at the deadline.",
-      category: "crypto",
-      deadline: NOW_TS + 3 * 60 * 60,
-    },
-    NOW_TS
-  );
-
+test("compound questions fail", () => {
   assert.equal(
-    result.signals.find((signal) => signal.key === "sufficient_time")?.passed,
-    false
+    passed({ ...STRONG, question: "Will BTC close above $100,000 and will ETH close above $4,000 by 2026-05-25?" }, "single_outcome"),
+    false,
   );
-  assert.equal(result.score, 90);
+  assert.equal(
+    passed({ ...STRONG, question: "Will BTC close above $100,000? Will ETH?" }, "single_outcome"),
+    false,
+  );
+  assert.equal(passed(STRONG, "single_outcome"), true);
+});
+
+test("a name containing 'and' is not treated as compound", () => {
+  assert.equal(
+    passed({ ...STRONG, question: "Will Standard and Poor's 500 close above 6,000 before 2026-05-25?" }, "single_outcome"),
+    true,
+  );
+});
+
+test("sources that cannot settle anything are refused", () => {
+  for (const url of [
+    "",
+    "not a url",
+    "https://x.com/someone/status/1",
+    "https://twitter.com/someone",
+    "https://www.reddit.com/r/bitcoin",
+    "https://youtube.com/watch?v=abc",
+    "https://coingecko.com", // bare homepage
+    "https://coingecko.com/", // still bare
+  ]) {
+    assert.equal(passed({ ...STRONG, resolution_url: url }, "source_present"), false, url);
+  }
+  for (const url of [
+    "https://www.coingecko.com/en/coins/bitcoin",
+    "https://api.example.com/v1/price?symbol=btc",
+    "coingecko.com/en/coins/bitcoin",
+  ]) {
+    assert.equal(passed({ ...STRONG, resolution_url: url }, "source_present"), true, url);
+  }
+});
+
+test("a settlement rule must name both the source and the timing", () => {
+  assert.equal(passed({ ...STRONG, settlement_rule: "Resolve it fairly." }, "settlement_specific"), false);
+  assert.equal(
+    passed({ ...STRONG, settlement_rule: "Read the linked source page and decide from what it says." }, "settlement_specific"),
+    false,
+    "no timing",
+  );
+  assert.equal(
+    passed({ ...STRONG, settlement_rule: "Check the value exactly at the deadline timestamp in UTC and settle on it." }, "settlement_specific"),
+    false,
+    "no source",
+  );
+  assert.equal(passed(STRONG, "settlement_specific"), true);
+});
+
+test("the time window is bounded at both ends", () => {
+  assert.equal(passed({ ...STRONG, deadline: NOW_TS + 60 }, "sufficient_time"), false, "too soon");
+  assert.equal(passed({ ...STRONG, deadline: NOW_TS + 6 * 3600 }, "sufficient_time"), true, "exactly at the floor");
+  assert.equal(passed({ ...STRONG, deadline: NOW_TS + 400 * 24 * 3600 }, "sufficient_time"), false, "too far out");
+  assert.equal(passed({ ...STRONG, deadline: NOW_TS - 3600 }, "sufficient_time"), false, "already past");
+});
+
+test("a question must be a question, and not an essay", () => {
+  assert.equal(passed({ ...STRONG, question: "BTC above 100000 on 2026-05-25 per CoinGecko" }, "question_specific"), false);
+  assert.equal(passed({ ...STRONG, question: `${"Will BTC close above $100,000? ".repeat(20)}` }, "question_specific"), false);
+  assert.equal(passed(STRONG, "question_specific"), true);
+});
+
+test("identical positions fail", () => {
+  assert.equal(
+    passed({ ...STRONG, creator_position: "Yes", opponent_position: " yes " }, "positions_clear"),
+    false,
+  );
 });

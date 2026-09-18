@@ -557,12 +557,14 @@
       "weak": "Weak"
     },
     "signals": {
-      "question_specific": "Specific question",
+      "question_specific": "Specific, well-formed question",
+      "question_decidable": "Names a checkable threshold or event",
       "positions_clear": "Clear opposing positions",
-      "source_present": "Verifiable source linked",
-      "settlement_specific": "Specific settlement rule",
-      "structured_category": "Structured category",
-      "sufficient_time": "Enough time before deadline"
+      "objective_language": "No subjective wording",
+      "single_outcome": "One outcome, not two",
+      "source_present": "Usable settlement source",
+      "settlement_specific": "Rule says how to read the source",
+      "sufficient_time": "Workable time to the deadline"
     },
     "moderationLabel": "Moderation",
     "moderationAnalyzing": "Analyzing with AI…",
