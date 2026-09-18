@@ -31,7 +31,7 @@ function permission(over: Partial<CopyPermission> = {}): CopyPermission {
     maxRealizedLossUsdc: 15,
     allowedCategories: [],
     allowedModes: [],
-    minConfidence: 70,
+    minClaimQuality: 70,
     minPayoutRatio: 1.2,
     signature: "0xabc",
     createdAt: NOW,
@@ -46,7 +46,7 @@ function signal(over: Partial<CopySignal> = {}): CopySignal {
     category: "crypto",
     oddsMode: "pool",
     stakeUsdc: 5,
-    confidence: 85,
+    claimQuality: 85,
     payoutRatio: 1.9,
     placedAt: NOW - 1000,
     ...over,
@@ -149,9 +149,9 @@ test("a populated allowlist excludes everything else", () => {
   );
 });
 
-test("confidence and payout floors are enforced at the boundary", () => {
-  assert.equal(run({ signal: { confidence: 70 } }).allowed, true);
-  assert.equal(run({ signal: { confidence: 69 } }).reason, "confidence_below_floor");
+test("claim-quality and payout floors are enforced at the boundary", () => {
+  assert.equal(run({ signal: { claimQuality: 70 } }).allowed, true);
+  assert.equal(run({ signal: { claimQuality: 69 } }).reason, "quality_below_floor");
   assert.equal(run({ signal: { payoutRatio: 1.2 } }).allowed, true);
   assert.equal(run({ signal: { payoutRatio: 1.19 } }).reason, "payout_below_floor");
 });
@@ -210,7 +210,7 @@ test("every skip reason the gate can return is in the published enum", () => {
     run({ signal: { placedAt: 0 } }),
     run({ permission: { allowedCategories: ["sports"] } }),
     run({ permission: { allowedModes: ["fixed"] }, signal: { oddsMode: "pool" } }),
-    run({ signal: { confidence: 1 } }),
+    run({ signal: { claimQuality: 1 } }),
     run({ signal: { payoutRatio: 1 } }),
     run({ usage: { realizedLossUsdc: 99 } }),
     run({ usage: { spentTodayUsdc: 99 } }),
@@ -230,7 +230,7 @@ test("a permission must be internally coherent", () => {
     { maxPerPositionUsdc: 0 },
     { maxPerPositionUsdc: 11 }, // above the daily cap
     { maxDailyUsdc: 50 }, // above the weekly cap
-    { minConfidence: 101 },
+    { minClaimQuality: 101 },
     { minPayoutRatio: 0.9 },
   ];
   for (const over of bad) {
@@ -258,7 +258,7 @@ test("the signed message spells out every bound", () => {
     "per week: 40 USDC",
     "open exposure: 20 USDC",
     "stop after losing: 15 USDC",
-    "min confidence: 70",
+    "min claim quality: 70/100",
     "min payout: 1.2x",
     "categories: crypto",
     "modes: pool",

@@ -101,7 +101,7 @@ export async function POST(req: Request): Promise<Response> {
     maxRealizedLossUsdc: numberOr(body.maxRealizedLossUsdc, 0),
     allowedCategories: stringList(body.allowedCategories),
     allowedModes: stringList(body.allowedModes),
-    minConfidence: numberOr(body.minConfidence, 0),
+    minClaimQuality: numberOr(body.minClaimQuality, 0),
     minPayoutRatio: numberOr(body.minPayoutRatio, 1),
   };
 

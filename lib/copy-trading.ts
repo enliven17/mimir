@@ -23,7 +23,7 @@ export const COPY_SKIP_REASONS = [
   "stale_signal",
   "category_not_allowed",
   "mode_not_allowed",
-  "confidence_below_floor",
+  "quality_below_floor",
   "payout_below_floor",
   "position_cap",
   "daily_cap",
@@ -56,7 +56,16 @@ export interface CopyPermission {
   allowedCategories: string[];
   /** Empty means every settlement mode is allowed. */
   allowedModes: string[];
-  minConfidence: number;
+  /**
+   * Floor on the claim's quality score, 0 to 100.
+   *
+   * Named for what it actually measures. At copy time the signal agent has not
+   * published a confidence anywhere readable, so the only honest signal about
+   * the position is how decidable the claim itself is (`lib/claimQuality.ts`).
+   * Calling that "confidence" in a message somebody signs would be a claim the
+   * data does not support.
+   */
+  minClaimQuality: number;
   minPayoutRatio: number;
   signature: string;
   createdAt: number;
@@ -69,7 +78,8 @@ export interface CopySignal {
   /** "pool" or "fixed". */
   oddsMode: string;
   stakeUsdc: number;
-  confidence: number;
+  /** The claim's quality score, 0 to 100. */
+  claimQuality: number;
   /** Gross payout per unit staked, e.g. 1.8 means 1.8x. */
   payoutRatio: number;
   /** ms epoch of the signal position. */
@@ -130,8 +140,8 @@ export function validateCopyPermission(p: CopyPermission, now = Date.now()): voi
   if (p.maxDailyUsdc > p.maxWeeklyUsdc) {
     throw new InvalidCopyPermissionError("the daily cap cannot exceed the weekly cap");
   }
-  if (p.minConfidence < 0 || p.minConfidence > 100) {
-    throw new InvalidCopyPermissionError("minConfidence must be between 0 and 100");
+  if (p.minClaimQuality < 0 || p.minClaimQuality > 100) {
+    throw new InvalidCopyPermissionError("minClaimQuality must be between 0 and 100");
   }
   if (p.minPayoutRatio < 1) {
     throw new InvalidCopyPermissionError("minPayoutRatio below 1 would accept a guaranteed loss");
@@ -190,8 +200,8 @@ export function evaluateCopy(args: {
     return deny("mode_not_allowed", `${s.oddsMode} odds are not allowed`);
   }
 
-  if (s.confidence < p.minConfidence) {
-    return deny("confidence_below_floor", `confidence ${s.confidence} is below ${p.minConfidence}`);
+  if (s.claimQuality < p.minClaimQuality) {
+    return deny("quality_below_floor", `claim quality ${s.claimQuality} is below ${p.minClaimQuality}`);
   }
   if (s.payoutRatio < p.minPayoutRatio) {
     return deny("payout_below_floor", `payout ${s.payoutRatio}x is below ${p.minPayoutRatio}x`);
@@ -249,7 +259,7 @@ export function copyPermissionMessage(p: Omit<CopyPermission, "signature" | "cre
     `per week: ${p.maxWeeklyUsdc} USDC`,
     `open exposure: ${p.maxOpenExposureUsdc} USDC`,
     `stop after losing: ${p.maxRealizedLossUsdc} USDC`,
-    `min confidence: ${p.minConfidence}`,
+    `min claim quality: ${p.minClaimQuality}/100`,
     `min payout: ${p.minPayoutRatio}x`,
     `categories: ${p.allowedCategories.length > 0 ? p.allowedCategories.join(", ") : "any"}`,
     `modes: ${p.allowedModes.length > 0 ? p.allowedModes.join(", ") : "any"}`,

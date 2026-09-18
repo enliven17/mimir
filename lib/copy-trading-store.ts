@@ -36,7 +36,7 @@ function toPermission(r: Record<string, unknown>): CopyPermission {
     maxRealizedLossUsdc: Number(policy.maxRealizedLossUsdc ?? 0),
     allowedCategories: policy.allowedCategories ?? [],
     allowedModes: policy.allowedModes ?? [],
-    minConfidence: Number(policy.minConfidence ?? 0),
+    minClaimQuality: Number(policy.minClaimQuality ?? 0),
     minPayoutRatio: Number(policy.minPayoutRatio ?? 1),
     signature: String(r.signature ?? ""),
     createdAt: Number(r.created_at ?? 0),
@@ -52,7 +52,7 @@ export async function savePermission(p: CopyPermission): Promise<void> {
     maxRealizedLossUsdc: p.maxRealizedLossUsdc,
     allowedCategories: p.allowedCategories,
     allowedModes: p.allowedModes,
-    minConfidence: p.minConfidence,
+    minClaimQuality: p.minClaimQuality,
     minPayoutRatio: p.minPayoutRatio,
   };
   await query(
@@ -138,4 +138,78 @@ export async function listExecutions(permissionId: string, limit = 50) {
     txHash: r.tx_hash === null || r.tx_hash === undefined ? null : String(r.tx_hash),
     at: Number(r.at ?? 0),
   }));
+}
+
+/**
+ * What a permission has already spent and has at risk.
+ *
+ * Derived from the execution ledger rather than tracked as a running total: a
+ * counter that drifts out of sync with the rows is a counter that silently
+ * raises somebody's ceiling. Open exposure and realized loss come from joining
+ * executed copies against the claims they went into.
+ */
+export async function loadUsage(permissionId: string, now = Date.now()) {
+  const dayAgo = now - 24 * 3_600_000;
+  const weekAgo = now - 7 * 24 * 3_600_000;
+
+  const [spend, positions] = await Promise.all([
+    query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN at > ? THEN stake_usdc ELSE 0 END), 0) AS today,
+         COALESCE(SUM(CASE WHEN at > ? THEN stake_usdc ELSE 0 END), 0) AS week
+       FROM copy_executions
+       WHERE permission_id = ? AND executed = TRUE`,
+      [dayAgo, weekAgo, permissionId],
+    ),
+    query(
+      `SELECT e.claim_id, e.stake_usdc, c.state, c.winner_side
+         FROM copy_executions e
+         LEFT JOIN claims c ON c.id = e.claim_id
+        WHERE e.permission_id = ? AND e.executed = TRUE`,
+      [permissionId],
+    ),
+  ]);
+
+  let openExposureUsdc = 0;
+  let realizedLossUsdc = 0;
+  const heldClaimIds: number[] = [];
+
+  for (const row of positions) {
+    const stake = Number(row.stake_usdc ?? 0);
+    const state = String(row.state ?? "");
+    const claimId = Number(row.claim_id ?? 0);
+    heldClaimIds.push(claimId);
+
+    if (state === "resolved") {
+      // The copy sits on the challenger side, so a creator win is a total loss
+      // of the stake. Draws and unresolvable outcomes refund in full.
+      if (String(row.winner_side ?? "") === "creator") realizedLossUsdc += stake;
+    } else {
+      // Unsettled, or not in the read index yet: treat it as still at risk,
+      // which is the direction that protects the follower's ceiling.
+      openExposureUsdc += stake;
+    }
+  }
+
+  return {
+    spentTodayUsdc: Number(spend[0]?.today ?? 0),
+    spentThisWeekUsdc: Number(spend[0]?.week ?? 0),
+    openExposureUsdc,
+    realizedLossUsdc,
+    heldClaimIds,
+  };
+}
+
+/** Active, unexpired permissions naming this agent as the executor. */
+export async function permissionsForExecutor(
+  executionAgentId: string,
+  now = Date.now(),
+): Promise<CopyPermission[]> {
+  const rows = await query(
+    `SELECT * FROM copy_permissions
+      WHERE execution_agent_id = ? AND active = TRUE AND revoked_at IS NULL AND expires_at > ?
+      ORDER BY created_at DESC`,
+    [executionAgentId, now],
+  );
+  return rows.map(toPermission);
 }
