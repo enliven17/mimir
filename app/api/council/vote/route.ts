@@ -20,8 +20,9 @@ import { fetchDecodedClaim } from "@/lib/claim-codec";
 import { evaluateClaimAsPersona } from "@/agents/council/shared/persona-llm";
 import { fetchEvidence } from "@/lib/server/evidence-fetcher";
 import type { ClaimOnChain } from "@/agents/council/shared/types";
+import { priceOf } from "@/lib/x402-resources";
 
-const PRICE = "$0.001";
+const PRICE = priceOf("councilVote");
 const MAX_EVIDENCE_CHARS = 8_000;
 
 function personaAddress(slug: string): string | undefined {

@@ -13,9 +13,10 @@
  */
 
 import { requirePayment, json } from "@/lib/x402-server";
+import { priceOf } from "@/lib/x402-resources";
 
 const COINGECKO = "https://api.coingecko.com/api/v3";
-const PRICE_USDC = "$0.001";
+const PRICE_USDC = priceOf("premiumPrice");
 
 export async function GET(req: Request): Promise<Response> {
   // 1. Gate behind payment. 402 until the caller pays.

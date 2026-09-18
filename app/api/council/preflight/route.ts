@@ -11,8 +11,9 @@
 import { requirePayment, json } from "@/lib/x402-server";
 import { COUNCIL_PERSONAS } from "@/agents/council/personas";
 import { callLLM } from "@/lib/llm";
+import { priceOf } from "@/lib/x402-resources";
 
-const PRICE = "$0.001";
+const PRICE = priceOf("councilPreflight");
 
 interface CandidatePayload {
   question?: string;

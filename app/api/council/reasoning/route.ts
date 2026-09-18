@@ -16,8 +16,9 @@ import { MIMIR_ABI } from "@/lib/mimir-abi";
 import { ZERO_ADDRESS } from "@/lib/constants";
 import { callLLM } from "@/lib/llm";
 import { getCachedReasoning, setCachedReasoning } from "@/lib/server/reasoning-cache";
+import { priceOf } from "@/lib/x402-resources";
 
-const PRICE = "$0.001";
+const PRICE = priceOf("councilReasoning");
 const PASS_PLAN = "council";
 
 function personaAddress(slug: string): string | undefined {

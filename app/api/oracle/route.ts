@@ -16,8 +16,9 @@ import { keccak256, toBytes } from "viem";
 import { requirePayment, json } from "@/lib/x402-server";
 import { callLLM, extractJson } from "@/lib/llm";
 import { fetchEvidence } from "@/lib/server/evidence-fetcher";
+import { priceOf } from "@/lib/x402-resources";
 
-const PRICE = "$0.005";
+const PRICE = priceOf("oracle");
 const MAX_EVIDENCE_CHARS = 8_000;
 
 interface VerdictRequest {

@@ -12,8 +12,9 @@
 import { requirePayment, json } from "@/lib/x402-server";
 import { issuePass } from "@/lib/x402-pass";
 import { decodePaymentResponseHeader } from "@x402/core/http";
+import { priceOf } from "@/lib/x402-resources";
 
-const PRICE = "$0.01";
+const PRICE = priceOf("councilSubscribe");
 const PLAN = "council";
 const TTL_MS = Number(process.env.COUNCIL_PASS_TTL_MS ?? 10 * 60 * 1000);
 
