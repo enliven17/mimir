@@ -209,6 +209,11 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     at BIGINT NOT NULL DEFAULT 0
   )` },
   { sql: "ALTER TABLE x402_payments ADD COLUMN IF NOT EXISTS seller TEXT" },
+  { sql: "ALTER TABLE x402_payments ADD COLUMN IF NOT EXISTS payment_id TEXT" },
+  // A settlement retried by the facilitator must not be counted twice. The index
+  // is partial so rows predating the column (payment_id NULL) stay valid.
+  { sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_x402_payments_payment_id
+          ON x402_payments(payment_id) WHERE payment_id IS NOT NULL` },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_at ON x402_payments(at DESC)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_resource ON x402_payments(resource)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_seller ON x402_payments(seller)" },
@@ -859,6 +864,8 @@ export interface X402PaymentRow {
   seller: string | null;
   tx_id: string | null;
   at: number;
+  /** Facilitator settlement identifier; unique when present, used to dedupe retries. */
+  payment_id?: string | null;
 }
 
 export interface X402RevenueSummary {
@@ -874,8 +881,10 @@ export interface X402RevenueSummary {
 export async function insertX402Payment(e: X402PaymentRow): Promise<void> {
   const pool = await getDb();
   await execute(pool, {
-    sql: "INSERT INTO x402_payments(resource, price_usd, payer, seller, tx_id, at) VALUES (?, ?, ?, ?, ?, ?)",
-    args: [e.resource, e.price_usd, e.payer, e.seller, e.tx_id, e.at],
+    sql: `INSERT INTO x402_payments(resource, price_usd, payer, seller, tx_id, at, payment_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (payment_id) WHERE payment_id IS NOT NULL DO NOTHING`,
+    args: [e.resource, e.price_usd, e.payer, e.seller, e.tx_id, e.at, e.payment_id ?? null],
   });
 }
 

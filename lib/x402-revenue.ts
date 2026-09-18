@@ -49,6 +49,9 @@ export function recordPayment(e: PaymentEvent): Promise<void> {
     seller: e.seller,
     tx_id: e.txId,
     at: e.at,
+    // The settlement id is what the facilitator replays on a retry, so it is the
+    // dedupe key. Without it the same settlement could be counted twice.
+    payment_id: e.txId,
   }).catch((err) => {
     console.warn("[x402] payment durable write failed:", err instanceof Error ? err.message : err);
   });
@@ -56,11 +59,7 @@ export function recordPayment(e: PaymentEvent): Promise<void> {
 
 export interface RevenueSummary {
   totalCalls: number;
-  /** Portion of totalCalls carried over from the retired Neon project (0 when unset). */
-  baselineCalls: number;
   totalUsd: number;
-  /** Portion of totalUsd carried over from the retired Neon project (0 when unset). */
-  baselineUsd: number;
   uniquePayers: number;
   uniqueSellers: number;
   byResource: Array<{ resource: string; calls: number; usd: number }>;
@@ -68,30 +67,9 @@ export interface RevenueSummary {
   recent: PaymentEvent[];
 }
 
-/**
- * Volume served before the Neon free-plan compute quota expired. Those rows still exist
- * in the retired project but are unreadable without compute, so displayed totals resume
- * on top of these figures instead of restarting at zero.
- * ponytail: env constants, delete both once the old rows are dumped into the new DB.
- */
-function positiveEnvNumber(key: string): number {
-  const n = Number(process.env[key] ?? 0);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-export function baselineCalls(): number {
-  return Math.floor(positiveEnvNumber("X402_BASELINE_CALLS"));
-}
-
-export function baselineUsd(): number {
-  return Math.round(positiveEnvNumber("X402_BASELINE_USD") * 1e6) / 1e6;
-}
-
 function fromDbSummary(s: X402RevenueSummary): RevenueSummary {
   return {
     totalCalls: s.totalCalls,
-    baselineCalls: 0,
-    baselineUsd: 0,
     totalUsd: s.totalUsd,
     uniquePayers: s.uniquePayers,
     uniqueSellers: s.uniqueSellers,
@@ -132,8 +110,6 @@ function inMemorySummary(limit: number): RevenueSummary {
   }
   return {
     totalCalls: events.length,
-    baselineCalls: 0,
-    baselineUsd: 0,
     totalUsd: Math.round(totalUsd * 1e6) / 1e6,
     uniquePayers: payers.size,
     uniqueSellers: sellers.size,
@@ -149,22 +125,10 @@ function inMemorySummary(limit: number): RevenueSummary {
 
 /** Durable summary from Neon; falls back to the in-memory buffer on any error. */
 export async function getRevenueSummary(limit = 25): Promise<RevenueSummary> {
-  const withBaseline = (s: RevenueSummary): RevenueSummary => {
-    const calls = baselineCalls();
-    const usd = baselineUsd();
-    if (calls === 0 && usd === 0) return s;
-    return {
-      ...s,
-      totalCalls: s.totalCalls + calls,
-      baselineCalls: calls,
-      totalUsd: Math.round((s.totalUsd + usd) * 1e6) / 1e6,
-      baselineUsd: usd,
-    };
-  };
   try {
-    return withBaseline(fromDbSummary(await getX402RevenueSummary(limit)));
+    return fromDbSummary(await getX402RevenueSummary(limit));
   } catch {
-    return withBaseline(inMemorySummary(limit));
+    return inMemorySummary(limit);
   }
 }
 
