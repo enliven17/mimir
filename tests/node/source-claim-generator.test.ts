@@ -7,6 +7,15 @@ import {
   sanitizeGeneratedDrafts,
 } from "../../lib/server/source-claim-generator";
 
+/**
+ * Deadlines are relative to now: a fixed calendar date made these cases pass
+ * only until that date, then the sanitizer correctly rejected them as expired
+ * and the suite started failing for a reason unrelated to what it tests.
+ */
+const IN_30_DAYS = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+const DEADLINE = IN_30_DAYS.toISOString();
+const DEADLINE_LABEL = IN_30_DAYS.toISOString().slice(0, 10);
+
 test("blocks unsupported social source hosts", () => {
   assert.equal(isBlockedSourceHost("https://x.com/some/status/1"), true);
   assert.equal(isBlockedSourceHost("https://twitter.com/test"), true);
@@ -27,10 +36,10 @@ test("sanitizeGeneratedDrafts keeps valid unique candidates only", () => {
       candidates: [
         {
           category: "culture",
-          claimText: "Will OpenAI publish the announced update before June 30, 2026?",
-          sideA: "OpenAI publishes it before June 30, 2026",
-          sideB: "OpenAI does not publish it before June 30, 2026",
-          deadlineAt: "2026-06-30T23:00:00.000Z",
+          claimText: `Will OpenAI publish the announced update before ${DEADLINE_LABEL}?`,
+          sideA: `OpenAI publishes it before ${DEADLINE_LABEL}`,
+          sideB: `OpenAI does not publish it before ${DEADLINE_LABEL}`,
+          deadlineAt: DEADLINE,
           timezone: "UTC",
           primaryResolutionSource: "https://openai.com/index/update",
           settlementRule:
@@ -40,10 +49,10 @@ test("sanitizeGeneratedDrafts keeps valid unique candidates only", () => {
         },
         {
           category: "culture",
-          claimText: "Will OpenAI publish the announced update before June 30, 2026?",
+          claimText: `Will OpenAI publish the announced update before ${DEADLINE_LABEL}?`,
           sideA: "Duplicate",
           sideB: "Duplicate",
-          deadlineAt: "2026-06-30T23:00:00.000Z",
+          deadlineAt: DEADLINE,
           timezone: "UTC",
           primaryResolutionSource: "https://openai.com/index/update",
           settlementRule: "This duplicate should be removed because the claim text repeats.",
@@ -72,7 +81,7 @@ test("sanitizeGeneratedDrafts rejects short-window relative change claims", () =
             "La temperatura aumenta 10° en Buenos Aires durante los siguientes 8 minutos?",
           sideA: "Sí, aumenta 10° en los siguientes 8 minutos",
           sideB: "No, no aumenta 10° en los siguientes 8 minutos",
-          deadlineAt: "2026-06-30T23:00:00.000Z",
+          deadlineAt: DEADLINE,
           timezone: "UTC",
           primaryResolutionSource:
             "https://www.accuweather.com/es/ar/buenos-aires/7894/10-day-weather-forecast/7894",
@@ -104,7 +113,7 @@ test("sanitizeGeneratedDrafts keeps deadline-based event claims even with time w
           claimText: "Will Apple announce a new iPad in the next 24 hours?",
           sideA: "Apple announces a new iPad before the deadline",
           sideB: "Apple does not announce a new iPad before the deadline",
-          deadlineAt: "2026-06-30T23:00:00.000Z",
+          deadlineAt: DEADLINE,
           timezone: "UTC",
           primaryResolutionSource: "https://apple.com/newsroom",
           settlementRule:
