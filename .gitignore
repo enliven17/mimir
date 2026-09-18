@@ -95,3 +95,8 @@ artifacts/
 
 # Internal planning notes (not published)
 docs/BASE_PARITY_PLAN.md
+
+# Foundry
+forge-out/
+forge-cache/
+cache/
