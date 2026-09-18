@@ -131,9 +131,15 @@ interface StakerRow {
   persona?:       PersonaSpec;
 }
 
-const fetchStakers = cachedFor(fetchStakersUncached, 30_000);
+// Split from classification below: this only needs the deploy block, not
+// oracle/creator addresses, so it can run in the page's first Promise.all
+// instead of waiting on fetchOracleAndCreator. Stakers was the one fetch
+// left to run serially after everything else — on a cold render that tail
+// scan was the one landing outside the RPC's timeout window while the
+// concurrent fetches ahead of it had already come back fine.
+const fetchStakerLogs = cachedFor(fetchStakerLogsUncached, 30_000);
 
-async function fetchStakersUncached(oracleAddr?: string, creatorAddr?: string): Promise<StakerRow[]> {
+async function fetchStakerLogsUncached(): Promise<{ created: any[]; challenged: any[] }> {
   const client  = createArcPublicClient();
   const address = getContractAddress();
   const fromBlock = getDeployBlock();
@@ -164,7 +170,20 @@ async function fetchStakersUncached(oracleAddr?: string, creatorAddr?: string): 
         } as any,
       }, fromBlock),
     ]);
+    return { created, challenged };
+  } catch (err) {
+    console.error("[stats] fetchStakerLogs failed:", err);
+    return { created: [], challenged: [] };
+  }
+}
 
+function buildStakers(
+  created: any[],
+  challenged: any[],
+  oracleAddr?: string,
+  creatorAddr?: string,
+): StakerRow[] {
+  try {
     const oracleLower  = oracleAddr?.toLowerCase();
     const creatorLower = creatorAddr?.toLowerCase();
     const byAddr = new Map<string, StakerRow>();
@@ -348,12 +367,18 @@ function tierLabel(c: number): { label: string; cls: string } {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function StatsPage() {
-  const [claims, settlements, agentInfo] = await Promise.all([
+  const [claims, settlements, agentInfo, stakerLogs] = await Promise.all([
     fetchClaims(),
     fetchSettlements(),
     fetchOracleAndCreator(),
+    fetchStakerLogs(),
   ]);
-  const stakers = await fetchStakers(agentInfo?.oracle, agentInfo?.owner);
+  const stakers = buildStakers(
+    stakerLogs.created,
+    stakerLogs.challenged,
+    agentInfo?.oracle,
+    agentInfo?.owner,
+  );
   const humanStakers   = stakers.filter((s) => s.kind === "human");
   const councilStakers = stakers.filter((s) => s.kind === "council");
 
