@@ -217,6 +217,35 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_at ON x402_payments(at DESC)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_resource ON x402_payments(resource)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_x402_payments_seller ON x402_payments(seller)" },
+  // ── Copy trading ───────────────────────────────────────────────────────────
+  // A permission is a signed intent with hard bounds; an execution row is the
+  // audit trail, including the copies that were refused and why.
+  { sql: `CREATE TABLE IF NOT EXISTS copy_permissions (
+    id TEXT PRIMARY KEY,
+    follower TEXT NOT NULL,
+    signal_agent_id TEXT NOT NULL,
+    execution_agent_id TEXT NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    expires_at BIGINT NOT NULL DEFAULT 0,
+    policy_json TEXT NOT NULL DEFAULT '{}',
+    signature TEXT NOT NULL DEFAULT '',
+    created_at BIGINT NOT NULL DEFAULT 0,
+    revoked_at BIGINT
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_copy_permissions_follower ON copy_permissions(follower)" },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_copy_permissions_signal ON copy_permissions(signal_agent_id)" },
+  { sql: `CREATE TABLE IF NOT EXISTS copy_executions (
+    id BIGSERIAL PRIMARY KEY,
+    permission_id TEXT NOT NULL,
+    claim_id BIGINT NOT NULL,
+    executed BOOLEAN NOT NULL DEFAULT FALSE,
+    skip_reason TEXT,
+    stake_usdc NUMERIC NOT NULL DEFAULT 0,
+    tx_hash TEXT,
+    at BIGINT NOT NULL DEFAULT 0
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_copy_executions_permission ON copy_executions(permission_id, at DESC)" },
+
   // ── Baskets ────────────────────────────────────────────────────────────────
   // A basket holds nothing: these rows are a definition and a set of signed
   // intents, never a ledger of deposits.

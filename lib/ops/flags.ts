@@ -10,6 +10,7 @@
 export const PAUSABLE = [
   "create_market",
   "stake",
+  "copy_execution",
   "x402_selling",
   "x402_buying",
   "oracle_settlement",
@@ -22,6 +23,7 @@ export const NEVER_PAUSABLE = ["withdraw", "read_markets", "read_reasoning"] as 
 export type Pausable = (typeof PAUSABLE)[number];
 
 export const FEATURES = [
+  "copy_trading",
   "source_drafts",
   "xmtp_chat",
   "council_settlement",
