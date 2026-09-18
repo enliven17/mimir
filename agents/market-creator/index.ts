@@ -47,6 +47,12 @@ import {
 } from "../../lib/circle-w3s";
 import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
 import { gatherCouncilPreflight } from "./council-preflight";
+import {
+  fetchPolymarketCandidates,
+  formatPolymarketPrompt,
+  isPolymarketEnabled,
+  type PolymarketCandidate,
+} from "./polymarket";
 import { atomicToUsdc } from "../../lib/x402";
 import { reportingPoll } from "../../lib/ops/heartbeat";
 
@@ -478,6 +484,7 @@ async function draftClaimCandidates(sourceData: {
   stocksText:   string;
   stocksEvents: StockEvent[];
   weather:      string;
+  polymarket:   PolymarketCandidate[];
 }): Promise<ClaimCandidate[]> {
   const now = new Date();
 
@@ -508,6 +515,8 @@ ${sourceData.stocksText}
 
 ### Weather Opportunity
 ${sourceData.weather}
+
+${formatPolymarketPrompt(sourceData.polymarket)}
 
 ## ALLOWED RESOLUTION URLs (CRITICAL — read carefully)
 For sports and crypto candidates you MUST copy one of the URLs below verbatim into
@@ -562,12 +571,28 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
   const sportsUrls = new Map(sourceData.sportsEvents.map((e) => [e.resolutionUrl, e]));
   const cryptoUrls = new Map(sourceData.cryptoEvents.map((c) => [c.resolutionUrl, c]));
   const stocksUrls = new Set(sourceData.stocksEvents.map((s) => s.resolutionUrl));
+  const polymarketUrls = new Map(sourceData.polymarket.map((p) => [p.url, p]));
   const nowMs      = Date.now();
 
   return candidates.filter((c) => {
     if (typeof c?.qualityScore !== "number" || c.qualityScore < MIN_QUALITY_SCORE) {
       return false;
     }
+
+    // A claim borrowed from a live market takes that market's own resolution
+    // date. The whole point of the source is that the date is already correct,
+    // so letting the model guess one back would give up the quality win.
+    const borrowedUrl = String(c.resolutionUrl ?? "");
+    if (borrowedUrl.includes("polymarket.com")) {
+      const live = polymarketUrls.get(borrowedUrl);
+      if (!live) {
+        console.warn(`[market-creator] Drop candidate — live-market URL not in allowlist: ${borrowedUrl}`);
+        return false;
+      }
+      c.deadlineHours = (live.endDate - nowMs) / 3_600_000;
+      return true;
+    }
+
     const deadlineHours = Number(c.deadlineHours ?? 0);
     if (!Number.isFinite(deadlineHours) || deadlineHours < 2 || deadlineHours > MAX_DEADLINE_HOURS) {
       console.warn(`[market-creator] Drop candidate - invalid deadlineHours=${String(c.deadlineHours)}: ${String(c.question ?? "").slice(0, 90)}`);
@@ -802,9 +827,11 @@ async function run(): Promise<void> {
     fetchWeatherEvents(),
   ]);
   const stocks = fetchStockEvents();
+  const polymarket = isPolymarketEnabled() ? await fetchPolymarketCandidates() : [];
   console.log(
     `[market-creator] Sources: crypto=${crypto.events.length} pairs, ` +
-    `sports=${sports.events.length} games, stocks=${stocks.events.length} tickers`
+    `sports=${sports.events.length} games, stocks=${stocks.events.length} tickers, ` +
+    `live-markets=${polymarket.length}`
   );
 
   console.log("[market-creator] Drafting claim candidates...");
@@ -816,6 +843,7 @@ async function run(): Promise<void> {
     stocksText:   stocks.text,
     stocksEvents: stocks.events,
     weather,
+    polymarket,
   });
   const candidates = filterDuplicateCandidates(draftedCandidates, joinableClaims);
 
