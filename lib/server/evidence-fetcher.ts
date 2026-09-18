@@ -18,6 +18,8 @@
  * evidence came via Jina rather than a structured API).
  */
 
+import { gatewayFetch, GatewayRejectedError } from "@/lib/research/gateway";
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_CHARS = 14_000;
 const COINGECKO_API_BASE = "https://api.coingecko.com/api/v3";
@@ -178,31 +180,33 @@ async function tryDirectFetch(
 ): Promise<DirectFetchResult> {
   const finalUrl = url.toString();
   try {
-    const response = await fetch(finalUrl, {
-      method: "GET",
+    // Through the research gateway, never a bare fetch: the URL comes from
+    // whoever created the claim, and a public host is free to redirect into
+    // our own network on the second hop.
+    const response = await gatewayFetch(finalUrl, {
       headers: {
         "User-Agent": args.userAgent,
         Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.8",
       },
-      cache: "no-store",
-      redirect: "follow",
-      signal: AbortSignal.timeout(args.timeoutMs),
+      timeoutMs: args.timeoutMs,
     });
 
-    const contentType = response.headers.get("content-type") || "";
-    const isTexty = /text\/html|application\/xhtml\+xml|text\/plain|application\/json/i.test(contentType);
+    const isTexty = /text\/html|application\/xhtml\+xml|text\/plain|application\/json/i.test(
+      response.contentType,
+    );
+    const okStatus = response.status >= 200 && response.status < 300;
 
-    if (!response.ok) {
-      return { ok: false, body: "", finalUrl: response.url || finalUrl, statusCode: response.status };
+    if (!okStatus || !isTexty) {
+      return { ok: false, body: "", finalUrl: response.finalUrl, statusCode: response.status };
     }
-    if (!isTexty) {
-      return { ok: false, body: "", finalUrl: response.url || finalUrl, statusCode: response.status };
+    return { ok: true, body: response.body, finalUrl: response.finalUrl, statusCode: response.status };
+  } catch (err) {
+    if (err instanceof GatewayRejectedError) {
+      // A refused hop is a property of the source, not a transient blip, so it
+      // is worth surfacing rather than silently retrying through Jina.
+      console.warn(`[evidence] gateway refused ${finalUrl}: ${err.reason} - ${err.message}`);
     }
-
-    const body = await response.text();
-    return { ok: true, body, finalUrl: response.url || finalUrl, statusCode: response.status };
-  } catch {
     return { ok: false, body: "", finalUrl };
   }
 }
