@@ -12,6 +12,7 @@
     "clean": "rm -rf .next",
     "build": "next build",
     "typecheck": "tsc --noEmit",
+    "compile:contract": "node scripts/compile-contract.mjs",
     "start": "next start",
     "oracle": "tsx --env-file-if-exists=.env.local agents/oracle/index.ts",
     "oracle:challenge": "AUTO_CHALLENGE=1 tsx --env-file-if-exists=.env.local agents/oracle/index.ts",

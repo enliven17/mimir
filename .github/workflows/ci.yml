@@ -20,6 +20,7 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
         continue-on-error: true
       - run: npm run typecheck
+      - run: npm run compile:contract
       - run: npm run test:smoke
       - run: npm run build
         env:
