@@ -64,6 +64,7 @@ sequenceDiagram
 - [Architecture](#architecture)
 - [End-to-end market flow](#end-to-end-market-flow)
 - [The settlement lifecycle](#the-settlement-lifecycle)
+- [Two sources, or no verdict](#two-sources-or-no-verdict)
 - [Contract state machine](#contract-state-machine)
 - [Agents as economic actors](#agents-as-economic-actors)
 - [Platform fees](#platform-fees)
@@ -274,6 +275,25 @@ sequenceDiagram
 - **Verifiable.** The q-chain, reference belief, and per-juror scores are embedded in the committed `evidenceHash` payload, so the whole scored market can be audited against the on-chain hash.
 
 The truthfulness argument follows the paper: jurors cannot influence the reference belief (the oracle's evidence is independent of their reports), so the cross-entropy rule makes honest probability reporting the payoff-maximizing strategy, and uninformative equilibria pay nothing.
+
+---
+
+## Two sources, or no verdict
+
+A market settled from one URL has one point of failure. If that page is stale, wrong, or briefly serving garbage at the deadline, the oracle settles confidently on bad data and somebody loses money to a typo.
+
+For claims that name a single asset and a single USD threshold, the oracle reads the price from two independent sources before settling: CoinGecko and CoinMarketCap. They run separate exchange sets and separate weighting, so they do not share a mistake.
+
+| Outcome | What the oracle does |
+| --- | --- |
+| Both sources on the same side of the threshold | Settles, with a confidence bonus. The answer is not in doubt. |
+| Sources on opposite sides | Settles **UNRESOLVABLE**, refunding everyone. |
+| Sources more than 2% apart | Settles **UNRESOLVABLE**. Even if both land on the same side, one of them is broken. |
+| One source unavailable or stale | Settles from the designated source alone, with no bonus. |
+
+Disagreement is not a tie-break for the model to resolve. The point is that the data does not determine the outcome, and no amount of reasoning over contradictory inputs produces a trustworthy verdict. The protocol already has the right answer for that case: refund rather than pick a winner by coin flip.
+
+The readings and the verdict are appended to the committed `evidenceHash` payload, so the cross-check is auditable against the chain rather than taken on trust. Set `CMC_API_KEY` to enable the second source; without it the oracle behaves exactly as it did before.
 
 ---
 
@@ -580,7 +600,11 @@ Some details that decide whether this is safe:
 | `POST /api/copy/permissions` | grant one, signed over the human-readable terms |
 | `DELETE /api/copy/permissions?id=…&follower=0x…` | revoke, immediately |
 
-The surface is gated behind `MIMIR_FEATURE_COPY_TRADING` and returns 404 while it is off, rather than accepting grants it cannot act on. Execution lands with the funded agent actions; the policy layer ships first because it is what execution has to obey.
+**Mimir does not place the copy.** Arc has no spend permission an operator could draw on, and inventing one would mean holding a follower's key, which is the thing the whole agent design refuses to do. Instead the follower's own registered execution agent calls `POST /api/copy/signals`, gets a gated answer with a size attached, stakes it from the follower's wallet with its own key, and reports the result back into the audit ledger. Policy stays with Mimir, execution stays with the agent, and the only thing that can move the follower's money is the follower's own wallet.
+
+Usage is derived from the execution ledger rather than tracked as a running total: a counter that drifts out of sync with the rows is a counter that silently raises somebody's ceiling. Within one batch the caps are consumed as signals are allocated, so two copies cannot each be sized against the same untouched daily headroom.
+
+The surface is gated behind `MIMIR_FEATURE_COPY_TRADING` and returns 404 while it is off, rather than accepting grants it cannot act on.
 
 ---
 
@@ -742,6 +766,7 @@ mimir/
 │       ├── agents/registry/              # public agent directory
 │       ├── baskets/                      # directory, compose, subscribe
 │       ├── copy/permissions/             # copy-trading policy routes
+│       ├── copy/signals/                 # gated copy instructions for an executor
 │       ├── challenge-opportunities/      # curated feed
 │       ├── claim-draft/                  # LLM-assisted draft endpoint
 │       ├── claim-moderation/             # safety filter
@@ -769,6 +794,8 @@ mimir/
 │   ├── ops/                              # heartbeats, health grading, pause flags
 │   ├── baskets.ts                        # basket validation + virtual NAV
 │   ├── copy-trading.ts                   # copy permissions + the deterministic gate
+│   ├── odds.ts                           # implied odds from the funded stakes
+│   ├── price-consensus.ts                # two-source settlement cross-check
 │   ├── research/                         # SSRF-checked fetch gateway
 │   ├── fees.ts                           # profit-only fee split, mirrors MimirV3
 │   ├── arc.ts                            # chain config + viem clients
@@ -1016,6 +1043,8 @@ Every env var lives in `.env.example`. Quick reference:
 | `MIMIR_PAUSE_<CAPABILITY>`        | web + workers            | `1` pauses one capability (see [Operating the workers](#operating-the-workers))      |
 | `COUNCIL_TRACK`                   | council (worker)         | `classic` or `philosopher` runs one jury only; unset runs every provisioned persona  |
 | `MIMIR_FEATURE_COPY_TRADING`      | web                      | `1` exposes the copy-permission routes; off returns 404                              |
+| `CMC_API_KEY`                     | oracle                   | CoinMarketCap key. Unset disables the settlement cross-check; nothing else changes.   |
+| `MARKET_CREATOR_POLYMARKET`       | market-creator           | `1` sources claim candidates from live prediction markets                            |
 
 ---
 
