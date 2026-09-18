@@ -3,7 +3,9 @@
   "framework": "nextjs",
   "buildCommand": "next build",
   "installCommand": "npm install",
-  "regions": ["iad1"],
+  "regions": [
+    "iad1"
+  ],
   "functions": {
     "app/api/**/route.ts": {
       "maxDuration": 30
@@ -11,5 +13,15 @@
   },
   "github": {
     "silent": true
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/sync",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/challenge-opportunities",
+      "schedule": "0 */6 * * *"
+    }
+  ]
 }

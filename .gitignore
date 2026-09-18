@@ -92,3 +92,6 @@ artifacts/
 .vercel
 
 .vercel
+
+# Internal planning notes (not published)
+docs/BASE_PARITY_PLAN.md
