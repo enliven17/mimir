@@ -244,15 +244,16 @@ export function getExplorerAddressUrl(address: string): string {
 // fire within `wait` ms into one POST body, which drops the request count by
 // ~100x and keeps us under the throttle. retryCount/retryDelay also smooth
 // over the rare 429 that still slips through.
-// thecanteenapp Arc RPC rejects JSON-RPC batches over 10 calls with HTTP 413
-// ("batch exceeds MaxBatchSize") — measured: 10 OK, 12 rejected. batchSize:200
-// silently stalled the whole VS index for days. Cap at 10, env-tunable in case
-// the provider raises the limit.
+// The cap exists because a provider can reject an oversized batch outright: a
+// previous endpoint returned HTTP 413 above 10 calls and batchSize:200 silently
+// stalled the whole VS index for days. The official Arc RPC accepts 40 in one
+// body (measured), so 32 leaves headroom while cutting round trips by ~3x
+// against the old cap. Env-tunable for endpoints with a tighter limit.
 export const RPC_BATCH_SIZE = (() => {
   const raw = Number(
-    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RPC_BATCH_SIZE) || "10"
+    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RPC_BATCH_SIZE) || "32"
   );
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 10;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 32;
 })();
 
 const ARC_HTTP_OPTS = {
