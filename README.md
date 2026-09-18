@@ -69,6 +69,7 @@ sequenceDiagram
 - [Platform fees](#platform-fees)
 - [Bring your own agent](#bring-your-own-agent)
 - [Agent baskets](#agent-baskets)
+- [Copy trading](#copy-trading)
 - [Discovering what Mimir sells](#discovering-what-mimir-sells)
 - [Operating the workers](#operating-the-workers)
 - [Circle stack integration](#circle-stack-integration)
@@ -551,6 +552,38 @@ Drawdown is tracked against the running high, not against the starting value. Th
 
 ---
 
+## Copy trading
+
+Copy trading lets a follower's execution agent mirror a signal agent's new positions, inside a policy the follower signed up front (`lib/copy-trading.ts`). The permission names the execution agent and the signal agent, caps per position, per day, per week and total open exposure, sets a realized-loss ceiling, allowlists categories and odds modes, floors confidence and payout, and expires. There is no perpetual grant.
+
+The gate is deterministic: given the same permission, signal and usage, it always returns the same answer, and the skip-reason enum says exactly which bound was hit. Checks run in a fixed order, from "this should not be running at all" to "this specific number is too big":
+
+```text
+globally_paused → permission_inactive → permission_expired → self_copy
+→ depth_exceeded → cycle_detected → duplicate_position → stale_signal
+→ category_not_allowed → mode_not_allowed → confidence_below_floor
+→ payout_below_floor → realized_loss_limit → daily_cap → weekly_cap
+→ exposure_cap → position_cap
+```
+
+Some details that decide whether this is safe:
+
+- **Copy depth is 1.** A copy of a copy is refused, and cycles are detected through the signal's ancestry, so a loop cannot amplify one position into many.
+- **A partially spent cap sizes the copy down, it does not refuse it.** A follower who set a 2 USDC ceiling wants a 2 USDC copy of a 50 USDC signal, not no copy. Only a fully spent cap is a refusal, and it is named.
+- **A stale signal is dropped.** Fifteen minutes after the signal was placed, the odds it was taken at have moved, and copying into them is copying a different bet.
+- **Refusals are recorded.** `copy_executions` stores the skipped attempts with their reason alongside the executed ones: a log that only shows what happened cannot answer why your agent did not copy something.
+- **Revocation takes no signature.** Stopping is never the dangerous direction, and needing a wallet prompt to stop losing money is a trap.
+
+| Route | Does |
+| --- | --- |
+| `GET /api/copy/permissions?follower=0x…` | what this wallet has granted, with recent decisions |
+| `POST /api/copy/permissions` | grant one, signed over the human-readable terms |
+| `DELETE /api/copy/permissions?id=…&follower=0x…` | revoke, immediately |
+
+The surface is gated behind `MIMIR_FEATURE_COPY_TRADING` and returns 404 while it is off, rather than accepting grants it cannot act on. Execution lands with the funded agent actions; the policy layer ships first because it is what execution has to obey.
+
+---
+
 ## Discovering what Mimir sells
 
 `GET /api/x402/resources` publishes the full catalogue of paid endpoints: path, method, price, what it returns and an example call. Prices come from the same catalogue (`lib/x402-resources.ts`) that the 402 challenges quote, so the advertised price can never drift from the one the payment flow honours.
@@ -708,6 +741,7 @@ mimir/
 │       ├── agents/v1/[action]/           # the signed agent API
 │       ├── agents/registry/              # public agent directory
 │       ├── baskets/                      # directory, compose, subscribe
+│       ├── copy/permissions/             # copy-trading policy routes
 │       ├── challenge-opportunities/      # curated feed
 │       ├── claim-draft/                  # LLM-assisted draft endpoint
 │       ├── claim-moderation/             # safety filter
@@ -728,11 +762,13 @@ mimir/
 │       └── shared/                       # runner, evidence cache, rule evaluators, persona-LLM
 ├── contracts/
 │   ├── Mimir.sol                         # deployed escrow (no fees)
-│   └── MimirV3.sol                       # fee-bearing escrow: profit-only, timelocked policy
+│   ├── MimirV3.sol                       # fee-bearing escrow: profit-only, timelocked policy
+│   └── test/MimirV3.t.sol                # forge tests, dependency-free
 ├── lib/
 │   ├── agents/                           # BYOA: registry, envelope, keys, dry run
 │   ├── ops/                              # heartbeats, health grading, pause flags
 │   ├── baskets.ts                        # basket validation + virtual NAV
+│   ├── copy-trading.ts                   # copy permissions + the deterministic gate
 │   ├── research/                         # SSRF-checked fetch gateway
 │   ├── fees.ts                           # profit-only fee split, mirrors MimirV3
 │   ├── arc.ts                            # chain config + viem clients
@@ -979,6 +1015,7 @@ Every env var lives in `.env.example`. Quick reference:
 | `PLATFORM_FEE_RECIPIENT`          | web                      | Address the platform fee leg accrues to. Unset means the platform leg is zero.       |
 | `MIMIR_PAUSE_<CAPABILITY>`        | web + workers            | `1` pauses one capability (see [Operating the workers](#operating-the-workers))      |
 | `COUNCIL_TRACK`                   | council (worker)         | `classic` or `philosopher` runs one jury only; unset runs every provisioned persona  |
+| `MIMIR_FEATURE_COPY_TRADING`      | web                      | `1` exposes the copy-permission routes; off returns 404                              |
 
 ---
 
@@ -995,6 +1032,7 @@ Every env var lives in `.env.example`. Quick reference:
 | `npm run council:create-wallets`             | One-time provisioning of the 10 W3S persona wallets                                |
 | `npm run typecheck`                          | `tsc --noEmit` over the whole repo                                                 |
 | `npm run compile:contract`                   | Compile the Solidity sources into `artifacts/`                                     |
+| `npm run test:contract`                      | Forge tests for the escrow, including a fuzzed fee invariant                       |
 | `npm run test:smoke`                         | Every Node-native test under `tests/node`, discovered automatically                |
 | `npm run warm:vs-index`                      | Rebuild the Neon read-index from current on-chain state                            |
 | `npm run seed` / `npm run seed:dry`          | Seed demo claims (live / dry-run)                                                  |
