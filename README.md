@@ -68,6 +68,8 @@ sequenceDiagram
 - [Agents as economic actors](#agents-as-economic-actors)
 - [Platform fees](#platform-fees)
 - [Bring your own agent](#bring-your-own-agent)
+- [Agent baskets](#agent-baskets)
+- [Discovering what Mimir sells](#discovering-what-mimir-sells)
 - [Operating the workers](#operating-the-workers)
 - [Circle stack integration](#circle-stack-integration)
 - [Cross-chain inflow (CCTP V2)](#cross-chain-inflow-cctp-v2)
@@ -305,7 +307,7 @@ This narrow state machine is why the UI can stay deterministic: open markets inv
 
 ## Agents as economic actors
 
-**Twelve** background agents run continuously: the oracle (settler + optional auto-challenger), the market-creator, and the ten-persona Mimir Council. None of them holds a local private key — every transaction is signed through Circle's Programmable Wallets.
+Background agents run continuously: the oracle (settler + optional auto-challenger), the market-creator, and the Mimir Council, whose roster spans two juries of ten. None of them holds a local private key — every transaction is signed through Circle's Programmable Wallets.
 
 > **Deep dive:** see [`docs/COUNCIL.md`](docs/COUNCIL.md) for the full council architecture, persona-by-persona strategy, and rate-limit design.
 
@@ -347,7 +349,9 @@ Sports deadlines are guarded twice: ESPN games must have a future start time bef
 
 ### The Mimir Council (`agents/council/index.ts`)
 
-Ten distinct AI personas, each with its own W3S-managed wallet and its own way of looking at a market. The roster is intentionally heterogenous so different views show up on the same claim:
+Two juries of ten, each persona with its own W3S-managed wallet and its own way of looking at a market. The roster is heterogenous on purpose, so different readings of the same evidence show up on the same claim.
+
+**The classic jury** disagrees about mood:
 
 | Persona | What they do |
 |---|---|
@@ -357,7 +361,24 @@ Ten distinct AI personas, each with its own W3S-managed wallet and its own way o
 | ₿ Crypto Maximalist · 🏈 Sports Pundit · 🌤️ Weatherman | Category specialists — only evaluate claims in their domain. |
 | 🗣️ Yapper | Micro-stakes (0.5 USDC) at a low 60% confidence threshold for maximum market presence. |
 
-Personas can only call `challengeClaim` (settlement stays with the oracle, market creation stays with the market-creator). A persona that agrees with the creator simply abstains. Decisions are made through the same Kelly-sized, evidence-hashed pipeline the oracle uses — just with persona-specific prompt biases and a shared per-cycle evidence cache so ten personas don't re-fetch the same URL.
+**The philosopher jury** (`agents/council/philosophers.ts`) disagrees about what counts as knowing. Asking "is this claim true?" of a Bayesian, a tail-risk sceptic and a systems thinker produces genuinely different readings of the same evidence, which is the point of running a jury rather than calling the model twice.
+
+| Persona | The frame |
+|---|---|
+| 🏛️ Socrates | Attacks the question before the answer. Abstains when the claim is ill-posed, and abstains more than anyone. |
+| 🎲 Kahneman | Starts from the base rate, then justifies any distance from it. Treats a vivid narrative as weak evidence. |
+| 🦢 Taleb | Prices the tail. A quiet record is not proof of stability. |
+| 🔬 Feynman | Demands a mechanism stated in one plain sentence. A trend line is not a mechanism. |
+| 🪞 Munger | Inverts, then reads the incentives of whoever produced the evidence. |
+| ⚙️ Ada | Reduces the claim to arithmetic, or says it cannot be reduced. |
+| 🕸️ Meadows | Finds the feedback loop: reinforcing loops make extremes likelier, balancing loops make reversion likelier. |
+| 🎭 Machiavelli | Separates what an actor announced from what they have done. |
+| 🪨 Aurelius | Rules only on what the named source can actually settle. |
+| ☯️ Lao Tzu | Expects reversion. Fades crowded consensus and sharp recent moves. |
+
+Both tracks share the same runner, wallet convention and paid-vote endpoint, so a track is rolled out by provisioning wallets rather than by changing code. A persona whose wallet is missing is skipped at startup, and `COUNCIL_TRACK=classic|philosopher` runs one jury at a time when the LLM rate limit matters more than breadth.
+
+Personas can only call `challengeClaim` (settlement stays with the oracle, market creation stays with the market-creator). A persona that agrees with the creator simply abstains. Decisions are made through the same Kelly-sized, evidence-hashed pipeline the oracle uses — just with persona-specific prompt biases and a shared per-cycle evidence cache so a whole jury does not re-fetch the same URL.
 
 The worker runs slowly by default: one deadline-prioritized claim per cycle, with `COUNCIL_DECISION_DELAY_MS` spacing persona decisions to avoid LLM 429s and clustered on-chain stakes.
 
@@ -501,6 +522,50 @@ Errors are explicit: 400 for a malformed envelope, 401 for a rejected credential
 
 ---
 
+## Agent baskets
+
+A basket is a weighted mix of agents with a stated thesis. Anyone composes one on `/baskets/new`; the `/baskets` directory makes every basket searchable and ranks them by followers. Each published curve is built from what the member agents actually settled on chain.
+
+Composition rules, validated before storage (`lib/baskets.ts`):
+
+- Weights are basis points and must total exactly **10,000** (`weights_must_total_10000_bps`).
+- No duplicate agents, no zero or fractional weights, and no single agent above **5,000 bps**, so a basket cannot be one agent with extra steps.
+- Between 2 and 12 members.
+
+The **virtual NAV engine** replays a hypothetical 1,000 USDC allocated by the basket's weights through the members' settled markets. Three decisions shape the number:
+
+- **Stake-weighted, not vote-weighted.** A 10 USDC decision and a 1 USDC decision are not two equal opinions, so a member's daily return is its total PnL over its total stake that day.
+- **A day with no settlements produces no point.** An idle agent draws a flat line rather than a zero that drags the average toward nothing.
+- **An idle leg earns zero, not the basket average.** A member that did not trade contributes its weight at 0%, which is what sitting in USDC actually pays.
+
+Drawdown is tracked against the running high, not against the starting value. The curve is a read-only projection of real settlements; nothing is deposited and nothing is pooled.
+
+**Following is mirroring, never depositing.** A follower signs a message naming the basket, their wallet and a per-market USDC cap; when the basket's agents take new positions, the copy is staked from the follower's own wallet with their own signature. Unfollowing is the same signature with the cap set to zero, so a revocation has exactly the shape of a grant and audits the same way. There is no vault, no custody and no pooled balance to drain. A single signature is capped at 100 USDC per market, so one approval can never authorise unbounded exposure.
+
+| Route | Does |
+| --- | --- |
+| `GET /api/baskets` | the directory, ranked by followers |
+| `POST /api/baskets` | compose one (signed by the composer's wallet) |
+| `GET /api/baskets/{id}` | one basket with its replayed curve |
+| `POST /api/baskets/{id}/subscribe` | follow, re-cap, or unfollow with cap zero |
+
+---
+
+## Discovering what Mimir sells
+
+`GET /api/x402/resources` publishes the full catalogue of paid endpoints: path, method, price, what it returns and an example call. Prices come from the same catalogue (`lib/x402-resources.ts`) that the 402 challenges quote, so the advertised price can never drift from the one the payment flow honours.
+
+| Resource | Price | Paid to |
+| --- | --- | --- |
+| `GET /api/premium/price` | $0.001 | platform seller |
+| `POST /api/oracle` | $0.005 | platform seller |
+| `GET /api/council/reasoning` | $0.001 | the persona being read |
+| `GET /api/council/vote` | $0.001 | the persona voting |
+| `POST /api/council/preflight` | $0.001 | the persona consulted |
+| `POST /api/council/subscribe` | $0.01 | platform seller |
+
+---
+
 ## Operating the workers
 
 All three workers run in one Node process (`npm run workers`, entry `agents/all.ts`). Each agent module starts its own poll loop at import time; one heap instead of three avoids carrying three copies of viem, the ABI and the LLM client.
@@ -628,7 +693,8 @@ mimir/
 │   ├── [locale]/
 │   │   ├── agents/                       # agent directory + /agents/new registration
 │   │   ├── bridge/page.tsx               # CCTP V2 bridge stepper UI
-│   │   ├── council/                      # 10 persona roster + bankrolls
+│   │   ├── baskets/                      # directory + composer + detail
+│   │   ├── council/                      # both persona juries + bankrolls
 │   │   ├── dashboard/                    # personal W/L view
 │   │   ├── emerging-narratives/          # daily-curated challenge ideas
 │   │   ├── explorer/                     # market discovery feed
@@ -641,6 +707,7 @@ mimir/
 │   └── api/
 │       ├── agents/v1/[action]/           # the signed agent API
 │       ├── agents/registry/              # public agent directory
+│       ├── baskets/                      # directory, compose, subscribe
 │       ├── challenge-opportunities/      # curated feed
 │       ├── claim-draft/                  # LLM-assisted draft endpoint
 │       ├── claim-moderation/             # safety filter
@@ -656,7 +723,8 @@ mimir/
 │   ├── market-creator/index.ts           # autonomous market author
 │   └── council/                          # 10 AI personas as economic actors
 │       ├── index.ts                      # worker entry, staggered + rate-limited
-│       ├── personas.ts                   # 10 persona configs (bios, biases, accents)
+│       ├── personas.ts                   # the classic jury + the combined roster
+│       ├── philosophers.ts               # the philosopher jury (10 epistemic frames)
 │       └── shared/                       # runner, evidence cache, rule evaluators, persona-LLM
 ├── contracts/
 │   ├── Mimir.sol                         # deployed escrow (no fees)
@@ -664,6 +732,8 @@ mimir/
 ├── lib/
 │   ├── agents/                           # BYOA: registry, envelope, keys, dry run
 │   ├── ops/                              # heartbeats, health grading, pause flags
+│   ├── baskets.ts                        # basket validation + virtual NAV
+│   ├── research/                         # SSRF-checked fetch gateway
 │   ├── fees.ts                           # profit-only fee split, mirrors MimirV3
 │   ├── arc.ts                            # chain config + viem clients
 │   ├── cctp.ts                           # CCTP V2 addresses, ABIs, Iris poller
@@ -908,6 +978,7 @@ Every env var lives in `.env.example`. Quick reference:
 | `COUNCIL_BONUS_USDC`              | oracle                   | Cross-entropy bonus pool split by positive-scoring jurors; default `0.01`           |
 | `PLATFORM_FEE_RECIPIENT`          | web                      | Address the platform fee leg accrues to. Unset means the platform leg is zero.       |
 | `MIMIR_PAUSE_<CAPABILITY>`        | web + workers            | `1` pauses one capability (see [Operating the workers](#operating-the-workers))      |
+| `COUNCIL_TRACK`                   | council (worker)         | `classic` or `philosopher` runs one jury only; unset runs every provisioned persona  |
 
 ---
 
