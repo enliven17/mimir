@@ -90,10 +90,21 @@ const PERSONA_ALLOWLIST = (() => {
   return slugs.length > 0 ? new Set(slugs) : null;
 })();
 
+// Optional single-track mode. Twenty personas on one cycle is a lot of LLM
+// calls; running one jury at a time keeps the rate limit reachable without
+// giving up the other track's wallets.
+const TRACK_FILTER = (() => {
+  const raw = process.env.COUNCIL_TRACK?.trim().toLowerCase();
+  return raw === "classic" || raw === "philosopher" ? raw : null;
+})();
+
 // Skip personas missing wallet env (e.g. before scripts/create-wallets has run
 // for that persona). Warn once at startup, not every cycle.
 const ACTIVE_PERSONAS = COUNCIL_PERSONAS.filter((p) => {
   if (PERSONA_ALLOWLIST && !PERSONA_ALLOWLIST.has(p.slug)) {
+    return false;
+  }
+  if (TRACK_FILTER && (p.track ?? "classic") !== TRACK_FILTER) {
     return false;
   }
   const ok =

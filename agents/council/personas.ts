@@ -13,6 +13,8 @@
  * staggered timing to stay under Gemini free-tier rate limits.
  */
 
+import { PHILOSOPHER_PERSONAS } from "./philosophers";
+
 export type PersonaArchetype =
   | "llm-biased"
   | "rule-based"
@@ -25,9 +27,17 @@ export type RuleEvaluator =
   /** Copies the side staked by the wallet with the largest individual stake. */
   | "whale-follow";
 
+/**
+ * Which jury a persona belongs to. The classic track disagrees about mood, the
+ * philosopher track about what counts as knowing.
+ */
+export type CouncilTrack = "classic" | "philosopher";
+
 export interface PersonaSpec {
   /** Lowercase-kebab identifier. Used for env var names and URLs. */
   slug:           string;
+  /** Jury this persona sits on. Defaults to the classic track when unset. */
+  track?:         CouncilTrack;
   /** Display name shown in the UI. */
   displayName:    string;
   /** Single emoji used in cards/badges. */
@@ -62,7 +72,7 @@ export interface PersonaSpec {
  * share one source of truth. Order matters: the Council page renders in
  * this order and the staggered runner offsets by index.
  */
-export const COUNCIL_PERSONAS: PersonaSpec[] = [
+export const CLASSIC_PERSONAS: PersonaSpec[] = [
   {
     slug:        "optimist",
     displayName: "The Optimist",
@@ -120,7 +130,7 @@ export const COUNCIL_PERSONAS: PersonaSpec[] = [
     bio:           "Rare but decisive. Only bets when the data is overwhelming.",
     longBio:       "Demands rigorous evidence before staking. The Statistician skips most claims but bets larger when it does move. Lean toward UNRESOLVABLE-equivalent abstention if data is sparse.",
     archetype:     "llm-biased",
-    promptBias:    "You are the Statistician on the Mimir Council. Demand rigorous, citable evidence before asserting a verdict. Only return high confidence (>= 90) when the evidence is overwhelming and unambiguous. When data is sparse or contested, return lower confidence — the runner will abstain. Cite base rates and historical priors when possible.",
+    promptBias:    "You are the Statistician on the Mimir Council. Demand rigorous, citable evidence before asserting a verdict. Only return high confidence (>= 90) when the evidence is overwhelming and unambiguous. When data is sparse or contested, return lower confidence — the runner will abstain. Cite base rates and historical priors when possible. Never invent evidence or numbers that are not in the source.",
     minConfidence: 90,
     stakeUsdc:     3,
     accent: {
@@ -172,7 +182,7 @@ export const COUNCIL_PERSONAS: PersonaSpec[] = [
     longBio:       "A sports-only analyst. Treats every claim like a pre-game studio show. Looks at recent form, head-to-head record, and noted absences in the evidence. Confident when the data is clear, abstains when it's noise.",
     archetype:     "specialist",
     categoryFilter: ["sports", "soccer", "nba", "nfl", "tennis", "f1"],
-    promptBias:    "You are the Sports Pundit on the Mimir Council. Treat each claim like a pre-game analysis: weigh recent form, head-to-head record, and noted absences mentioned in the evidence. Be confident when the data is clear. Specific numbers (scores, win streaks) outweigh narrative descriptions.",
+    promptBias:    "You are the Sports Pundit on the Mimir Council. Treat each claim like a pre-game analysis: weigh recent form, head-to-head record, and noted absences mentioned in the evidence. Be confident when the data is clear. Specific numbers (scores, win streaks) outweigh narrative descriptions. Never invent evidence or a scoreline the source does not state.",
     minConfidence: 72,
     stakeUsdc:     2,
     accent: {
@@ -190,7 +200,7 @@ export const COUNCIL_PERSONAS: PersonaSpec[] = [
     longBio:       "Reads weather data like a meteorologist. Specific values (temperature, precipitation, wind) carry decisive weight; descriptive language gets discounted. Doesn't touch markets outside its domain.",
     archetype:     "specialist",
     categoryFilter: ["weather", "climate"],
-    promptBias:    "You are the Weatherman on the Mimir Council. Read weather data with a meteorologist's eye. Specific numerical values (temperature, precipitation amounts, wind speed) outweigh narrative descriptions. When the claim hinges on a threshold, evaluate against the threshold directly.",
+    promptBias:    "You are the Weatherman on the Mimir Council. Read weather data with a meteorologist's eye. Specific numerical values (temperature, precipitation amounts, wind speed) outweigh narrative descriptions. When the claim hinges on a threshold, evaluate against the threshold directly. Never invent evidence or a reading the source does not report.",
     minConfidence: 72,
     stakeUsdc:     2,
     accent: {
@@ -235,6 +245,21 @@ export const COUNCIL_PERSONAS: PersonaSpec[] = [
     },
   },
 ];
+
+/**
+ * The full roster: both juries, classic first.
+ *
+ * Everything downstream (wallet provisioning, the worker, the paid vote
+ * endpoint, the UI) reads this one list, so adding a track is a matter of
+ * provisioning wallets rather than touching call sites. A persona whose wallet
+ * env is missing is skipped at startup, so the philosopher track can be rolled
+ * out one wallet at a time.
+ */
+export const COUNCIL_PERSONAS: PersonaSpec[] = [...CLASSIC_PERSONAS, ...PHILOSOPHER_PERSONAS];
+
+export function personasForTrack(track: CouncilTrack): PersonaSpec[] {
+  return COUNCIL_PERSONAS.filter((p) => (p.track ?? "classic") === track);
+}
 
 /**
  * SLUG_UPPER for env var names: "crypto-maxi" -> "CRYPTO_MAXI".

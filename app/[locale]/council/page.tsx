@@ -216,6 +216,22 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
   );
 }
 
+/** Render order for the two juries, with the line that explains each one. */
+const TRACKS: Array<{ track: "classic" | "philosopher"; title: string; blurb: string }> = [
+  {
+    track: "classic",
+    title: "The classic jury",
+    blurb:
+      "Ten temperaments. Two of them never call a model at all: the Contrarian stakes the smaller pool and the Whale-Watcher copies the largest individual challenger, both on pure rules.",
+  },
+  {
+    track: "philosopher",
+    title: "The philosopher jury",
+    blurb:
+      "Ten epistemic frames rather than ten moods. Asking whether a claim is true of a Bayesian, a tail-risk sceptic and a systems thinker produces genuinely different readings of the same evidence.",
+  },
+];
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function CouncilPage() {
@@ -227,14 +243,16 @@ export default async function CouncilPage() {
 
   return (
     <div className="pb-10">
-      <BlueprintHeading>Ten AI personas. Ten Circle wallets. One market.</BlueprintHeading>
+      <BlueprintHeading>Two juries. One market.</BlueprintHeading>
       <div className="mx-auto max-w-[1200px] px-4 pt-6 sm:px-6 lg:px-8">
       <header className="mb-10 space-y-1.5">
         <p className="mx-auto max-w-2xl text-center text-sm text-pv-muted">
-          Each persona reads the same claims and the same evidence but reaches different
-          verdicts based on character — optimists tilt up, doomers tilt down, contrarians
-          chase imbalance, specialists only touch their domain. Every stake below is a real
-          on-chain transaction signed through Circle&apos;s Programmable Wallets.
+          Every persona reads the same claim and the same evidence, and reaches a different
+          verdict. The classic jury disagrees about mood: optimists tilt up, doomers tilt
+          down, contrarians chase imbalance, specialists only touch their domain. The
+          philosopher jury disagrees about what counts as knowing: a base rate, a mechanism,
+          a tail, an inversion. Every stake below is a real on-chain transaction signed
+          through Circle&apos;s Programmable Wallets.
         </p>
         {stats.length > 0 && (
           <div className="flex flex-wrap items-center justify-center gap-2 pt-2 font-mono text-[11px] uppercase tracking-[0.16em]">
@@ -262,9 +280,28 @@ export default async function CouncilPage() {
           </p>
         </div>
       ) : (
-        <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {stats.map((s) => <PersonaCard key={s.persona.slug} stats={s} />)}
-        </section>
+        <div className="space-y-10">
+          {TRACKS.map(({ track, title, blurb }) => {
+            const members = stats.filter((s) => (s.persona.track ?? "classic") === track);
+            if (members.length === 0) return null;
+            return (
+              <section key={track}>
+                <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
+                  <h2 className="font-display text-xl font-bold tracking-tight text-pv-text">
+                    {title}
+                  </h2>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-pv-muted">
+                    {members.length} active
+                  </span>
+                </div>
+                <p className="mb-4 max-w-2xl text-sm text-pv-muted">{blurb}</p>
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {members.map((s) => <PersonaCard key={s.persona.slug} stats={s} />)}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       )}
 
       <nav className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
