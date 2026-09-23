@@ -83,7 +83,7 @@ export async function GET(req: Request): Promise<Response> {
     if (!decoded) {
       return json({ error: `claim ${claimId} not found` }, { status: 404, headers: gate.responseHeaders });
     }
-    claim = decoded;
+    claim = { ...decoded, chain };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "read failed";
     return json({ error: msg }, { status: 502, headers: gate.responseHeaders });
