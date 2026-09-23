@@ -12,6 +12,7 @@ import {
 function makeClaim(overrides: Partial<ClaimData> = {}): ClaimData {
   return {
     id: 4,
+    chain: "arc",
     creator: "0x00000000000000000000000000000000000000a1",
     question: "Will BTC close above 100k?",
     creator_position: "Yes",

@@ -1,7 +1,9 @@
 /**
- * Mimir contract client (Arc / viem)
+ * Mimir contract client (viem), multichain.
  *
- * USDC is the native currency on Arc (6 decimals, like ETH on Ethereum).
+ * Every read and write names a ChainKey. On Arc USDC is native (msg.value,
+ * 18 decimals); on Base and Arbitrum it is a 6-decimal ERC-20 the escrow pulls
+ * after an approve. Callers pass whole USDC and never see either unit.
  */
 import {
   createPublicClient,
@@ -12,25 +14,27 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
+import { erc20Abi } from "viem";
+import { getContractAddress, ensureChain, RPC_BATCH_SIZE } from "./arc";
 import {
-  arcTestnet,
-  getArcRpcUrl,
-  getContractAddress,
-  getExplorerTxUrl,
-  ensureArcChain,
-  usdcToWei,
-  weiToUsdc,
-  RPC_BATCH_SIZE,
-} from "./arc";
+  getChain,
+  enabledChainKeys,
+  usdcToStakeUnits,
+  stakeUnitsToUsdc,
+  explorerTxUrl,
+  type ChainKey,
+} from "./chains";
 import { MIMIR_ABI, STATE, WINNER_SIDE, BPS_DIVISOR } from "./mimir-abi";
+import { MIMIR_V3_ABI } from "./mimir-v3-abi";
 import { normalizeCategoryId, ZERO_ADDRESS } from "./constants";
 import { decodeClaimTuple } from "./claim-codec";
 import type { VSCacheFreshness } from "./vs-freshness";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-// MIN_STAKE in display USDC (matches Mimir.sol: 2 * 10^18 wei = 2 USDC)
+/** @deprecated Arc only — use getContractAddress(chain). */
+export const CONTRACT_ADDRESS = getContractAddress("arc");
 
-export const CONTRACT_ADDRESS = getContractAddress();
+export type { ChainKey };
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 export interface ClaimChallenger {
@@ -41,6 +45,8 @@ export interface ClaimChallenger {
 
 export interface ClaimData {
   id: number;
+  /** Network the claim lives on. Ids are only unique within a chain. */
+  chain: ChainKey;
   creator: string;
   question: string;
   creator_position: string;
@@ -82,6 +88,8 @@ export interface ClaimData {
 
 export interface VSData {
   id: number;
+  /** Absent on rows written before multichain: those are Arc. */
+  chain?: ChainKey;
   creator: string;
   opponent: string;
   question: string;
@@ -138,6 +146,8 @@ export interface CreateClaimParams {
   max_challengers?: number;
   visibility?: "public" | "private";
   invite_key?: string;
+  /** Network to open the claim on. Defaults to Arc. */
+  chain?: ChainKey;
 }
 
 export interface ContractWriteResult {
@@ -184,23 +194,30 @@ function mapWinnerSide(n: number): ClaimData["winner_side"] {
   }
 }
 
-// ── viem public client (singleton per process) ────────────────────────────────
-// Uses the same JSON-RPC batching transport as createArcPublicClient — see
-// lib/arc.ts ARC_HTTP_OPTS for the rationale.
-let _publicClient: PublicClient | null = null;
-function getPublicClient(): PublicClient {
-  if (!_publicClient) {
-    _publicClient = createPublicClient({
-      chain: arcTestnet,
-      transport: http(getArcRpcUrl(), {
+// ── viem public client (one per chain per process) ────────────────────────────
+// Same JSON-RPC batching as lib/arc.ts ARC_HTTP_OPTS, with a longer timeout
+// because the feed fans out hundreds of reads.
+const _publicClients = new Map<ChainKey, PublicClient>();
+function getPublicClient(chain: ChainKey = "arc"): PublicClient {
+  let c = _publicClients.get(chain);
+  if (!c) {
+    const cfg = getChain(chain);
+    c = createPublicClient({
+      chain: cfg.chain,
+      transport: http(cfg.rpcUrl, {
         batch: { batchSize: RPC_BATCH_SIZE, wait: 16 },
         retryCount: 3,
         retryDelay: 300,
         timeout: 20_000,
       }),
     }) as PublicClient;
+    _publicClients.set(chain, c);
   }
-  return _publicClient;
+  return c;
+}
+
+export function vsChain(vs: { chain?: ChainKey }): ChainKey {
+  return vs.chain ?? "arc";
 }
 
 // ── Bulk-read concurrency limiter ─────────────────────────────────────────────
@@ -239,16 +256,43 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function readClaimsRange(startId: number, count: number): Promise<(ClaimData | null)[]> {
+async function readClaimsRange(
+  startId: number,
+  count: number,
+  chain: ChainKey = "arc",
+): Promise<(ClaimData | null)[]> {
   const ids = Array.from({ length: count }, (_, i) => startId + i);
-  return mapWithConcurrency(ids, (id) => readClaimRaw(id));
+  return mapWithConcurrency(ids, (id) => readClaimRaw(id, chain));
+}
+
+/** Every claim on every deployed chain. One dead chain does not blank the rest. */
+async function readAllChains(): Promise<ClaimData[]> {
+  const perChain = await Promise.all(
+    enabledChainKeys().map(async (chain) => {
+      try {
+        const count = await getClaimCount(chain);
+        if (count <= 0) return [];
+        return (await readClaimsRange(1, count, chain)).filter(Boolean) as ClaimData[];
+      } catch (err) {
+        console.warn(`[contract] ${chain} read failed`, err);
+        return [];
+      }
+    }),
+  );
+  return perChain.flat();
+}
+
+/** Newest first across chains. Ids collide between chains, creation time does not. */
+function byNewest(a: VSData, b: VSData): number {
+  return (b.created_at ?? 0) - (a.created_at ?? 0) || b.id - a.id;
 }
 
 // ── Raw on-chain read ─────────────────────────────────────────────────────────
 const READ_CLAIM_RETRY_ATTEMPTS = 3;
 const READ_CLAIM_RETRY_BASE_MS = 200;
 
-async function readClaimContractTriplet(client: PublicClient, claimId: number) {
+async function readClaimContractTriplet(client: PublicClient, claimId: number, chain: ChainKey) {
+  const CONTRACT_ADDRESS = getContractAddress(chain);
   return Promise.all([
     client.readContract({
       address:      CONTRACT_ADDRESS,
@@ -271,8 +315,11 @@ async function readClaimContractTriplet(client: PublicClient, claimId: number) {
   ]);
 }
 
-export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
-  const client = getPublicClient();
+export async function readClaimRaw(
+  claimId: number,
+  chain: ChainKey = "arc",
+): Promise<ClaimData | null> {
+  const client = getPublicClient(chain);
   let base: readonly any[] | null = null;
   let market: readonly any[] | null = null;
   let challengerData: [string[], bigint[]] | null = null;
@@ -280,7 +327,7 @@ export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < READ_CLAIM_RETRY_ATTEMPTS; attempt += 1) {
     try {
-      [base, market, challengerData] = await readClaimContractTriplet(client, claimId);
+      [base, market, challengerData] = await readClaimContractTriplet(client, claimId, chain);
       lastError = null;
       break;
     } catch (err) {
@@ -294,7 +341,7 @@ export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
 
   if (lastError || !base || !market || !challengerData) {
     if (lastError) {
-      console.warn(`[readClaimRaw] claim ${claimId} failed after ${READ_CLAIM_RETRY_ATTEMPTS} attempts`, lastError);
+      console.warn(`[readClaimRaw] ${chain} claim ${claimId} failed after ${READ_CLAIM_RETRY_ATTEMPTS} attempts`, lastError);
     }
     return null;
   }
@@ -303,15 +350,16 @@ export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
     const decoded = decodeClaimTuple(claimId, base, market);
     if (!decoded) return null;
 
-    const creatorStakeUsdc = weiToUsdc(decoded.creatorStake);
-    const totalChStakeUsdc = weiToUsdc(decoded.totalChallengerStake);
-    const reservedUsdc     = weiToUsdc(decoded.reservedCreatorLiability);
+    const toUsdc = (v: bigint) => stakeUnitsToUsdc(chain, v);
+    const creatorStakeUsdc = toUsdc(decoded.creatorStake);
+    const totalChStakeUsdc = toUsdc(decoded.totalChallengerStake);
+    const reservedUsdc     = toUsdc(decoded.reservedCreatorLiability);
 
     const [chAddrs, chStakes] = challengerData;
     const payBps  = Number(decoded.challengerPayoutBps);
     const isFixed = decoded.oddsMode === "fixed";
     const challengers: ClaimChallenger[] = chAddrs.map((addr, i) => {
-      const stake  = weiToUsdc(chStakes[i]);
+      const stake  = toUsdc(chStakes[i]);
       const payout = isFixed
         ? (stake * payBps) / BPS_DIVISOR
         : stake + (totalChStakeUsdc > 0 ? (stake / totalChStakeUsdc) * creatorStakeUsdc : 0);
@@ -322,6 +370,7 @@ export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
 
     return {
       id:                         claimId,
+      chain,
       creator:                    decoded.creator,
       question:                   decoded.question,
       creator_position:           decoded.creatorPosition,
@@ -361,71 +410,92 @@ export async function readClaimRaw(claimId: number): Promise<ClaimData | null> {
 }
 
 // ── Public read functions ─────────────────────────────────────────────────────
-export async function getClaim(claimId: number): Promise<ClaimData | null> {
-  return readClaimRaw(claimId);
+export async function getClaim(claimId: number, chain: ChainKey = "arc"): Promise<ClaimData | null> {
+  return readClaimRaw(claimId, chain);
 }
 
-export async function getClaimCount(): Promise<number> {
-  const client = getPublicClient();
-  const count = await client.readContract({
-    address:      CONTRACT_ADDRESS,
+export async function getClaimCount(chain: ChainKey = "arc"): Promise<number> {
+  const count = await getPublicClient(chain).readContract({
+    address:      getContractAddress(chain),
     abi:          MIMIR_ABI,
     functionName: "claimCount",
   }) as bigint;
   return Number(count);
 }
 
-export async function getVSSummaries(startId: number, limit: number): Promise<VSData[]> {
-  const results = await readClaimsRange(startId, limit);
+export async function getVSSummaries(
+  startId: number,
+  limit: number,
+  chain: ChainKey = "arc",
+): Promise<VSData[]> {
+  const results = await readClaimsRange(startId, limit, chain);
   return (results.filter(Boolean) as ClaimData[]).map(mapClaimToVS);
 }
 
-export async function getUserVSSummaries(address: string): Promise<VSData[]> {
-  const count = await getClaimCount();
-  if (count <= 0) return [];
-
-  const all = await readClaimsRange(1, count);
-
+function involves(c: ClaimData, address: string): boolean {
   const addr = address.toLowerCase();
-  return all
-    .filter((c): c is ClaimData => {
-      if (!c) return false;
-      const isCreator    = c.creator.toLowerCase() === addr;
-      const isChallenger = (c.challenger_addresses ?? []).some(
-        (a) => a.toLowerCase() === addr
-      );
-      return isCreator || isChallenger;
-    })
-    .map(mapClaimToVS);
+  return (
+    c.creator.toLowerCase() === addr ||
+    (c.challenger_addresses ?? []).some((a) => a.toLowerCase() === addr)
+  );
 }
 
-export async function getUserStats(address: string): Promise<{ wins: number; losses: number }> {
-  const client = getPublicClient();
-  const [wins, losses] = (await client.readContract({
-    address:      CONTRACT_ADDRESS,
-    abi:          MIMIR_ABI,
-    functionName: "getUserStats",
-    args:         [address as `0x${string}`],
-  })) as [bigint, bigint];
-  return { wins: Number(wins), losses: Number(losses) };
+export async function getUserVSSummaries(address: string): Promise<VSData[]> {
+  return (await readAllChains()).filter((c) => involves(c, address)).map(mapClaimToVS);
 }
 
-export async function getPlatformStats(): Promise<{
+/** Wins and losses, summed across chains unless one is named. */
+export async function getUserStats(
+  address: string,
+  chain?: ChainKey,
+): Promise<{ wins: number; losses: number }> {
+  const chains = chain ? [chain] : enabledChainKeys();
+  const rows = await Promise.all(
+    chains.map(async (c) => {
+      const [wins, losses] = (await getPublicClient(c).readContract({
+        address:      getContractAddress(c),
+        abi:          MIMIR_ABI,
+        functionName: "getUserStats",
+        args:         [address as `0x${string}`],
+      })) as [bigint, bigint];
+      return { wins: Number(wins), losses: Number(losses) };
+    }),
+  );
+  return rows.reduce((t, r) => ({ wins: t.wins + r.wins, losses: t.losses + r.losses }), {
+    wins: 0,
+    losses: 0,
+  });
+}
+
+/** Platform totals, summed across chains unless one is named. */
+export async function getPlatformStats(chain?: ChainKey): Promise<{
   total_claims: number;
   total_resolved: number;
   total_pool: number;
 }> {
-  const client = getPublicClient();
-  const [totalClaims, resolved, balance] = (await client.readContract({
-    address:      CONTRACT_ADDRESS,
-    abi:          MIMIR_ABI,
-    functionName: "getPlatformStats",
-  })) as [bigint, bigint, bigint];
-  return {
-    total_claims:   Number(totalClaims),
-    total_resolved: Number(resolved),
-    total_pool:     weiToUsdc(balance),
-  };
+  const chains = chain ? [chain] : enabledChainKeys();
+  const rows = await Promise.all(
+    chains.map(async (c) => {
+      const [totalClaims, resolved, balance] = (await getPublicClient(c).readContract({
+        address:      getContractAddress(c),
+        abi:          MIMIR_ABI,
+        functionName: "getPlatformStats",
+      })) as [bigint, bigint, bigint];
+      return {
+        total_claims:   Number(totalClaims),
+        total_resolved: Number(resolved),
+        total_pool:     stakeUnitsToUsdc(c, balance),
+      };
+    }),
+  );
+  return rows.reduce(
+    (t, r) => ({
+      total_claims:   t.total_claims + r.total_claims,
+      total_resolved: t.total_resolved + r.total_resolved,
+      total_pool:     t.total_pool + r.total_pool,
+    }),
+    { total_claims: 0, total_resolved: 0, total_pool: 0 },
+  );
 }
 
 // ── Fast feed (browser uses /api/vs, server reads directly) ──────────────────
@@ -440,17 +510,11 @@ export async function getAllVSFast(): Promise<VSFeedSnapshot> {
 }
 
 export async function getAllVSDirect(): Promise<VSFeedSnapshot> {
-  const count = await getClaimCount();
-  if (count <= 0) return { items: [], cache: makeLiveFreshness() };
-
-  // Single concurrency-limited read across all IDs — paginating then
-  // Promise.all-ing pages just multiplied the concurrent request burst by
-  // page-count and was the main 429 source on Arc.
-  const all = await readClaimsRange(1, count);
+  // One concurrency-limited read per chain — paginating then Promise.all-ing
+  // pages just multiplied the request burst and was the main 429 source.
+  const all = await readAllChains();
   return {
-    items: (all.filter(Boolean) as ClaimData[])
-      .map(mapClaimToVS)
-      .sort((a, b) => b.id - a.id),
+    items: all.map(mapClaimToVS).sort(byNewest),
     cache: makeLiveFreshness(),
   };
 }
@@ -463,47 +527,101 @@ export async function getUserVSFast(address: string): Promise<VSFeedSnapshot> {
     return { items: data.items ?? [], cache: data.cache ?? null };
   }
   const items = await getUserVSSummaries(address);
-  return { items: items.sort((a, b) => b.id - a.id), cache: makeLiveFreshness() };
+  return { items: items.sort(byNewest), cache: makeLiveFreshness() };
+}
+
+function vsApiUrl(vsId: number, opts?: { inviteKey?: string; chain?: ChainKey }): string {
+  const q = new URLSearchParams();
+  if (opts?.chain && opts.chain !== "arc") q.set("chain", opts.chain);
+  if (opts?.inviteKey) q.set("invite", opts.inviteKey);
+  const qs = q.toString();
+  return `/api/vs/${vsId}${qs ? `?${qs}` : ""}`;
 }
 
 /** Returns VSData | null directly (backwards compatible). */
 export async function getVS(
   vsId: number,
-  opts?: { inviteKey?: string; viewerAddress?: string }
+  opts?: { inviteKey?: string; viewerAddress?: string; chain?: ChainKey }
 ): Promise<VSData | null> {
   if (typeof window !== "undefined") {
-    const url = opts?.inviteKey
-      ? `/api/vs/${vsId}?invite=${encodeURIComponent(opts.inviteKey)}`
-      : `/api/vs/${vsId}`;
-    const res = await fetch(url);
+    const res = await fetch(vsApiUrl(vsId, opts));
     if (!res.ok) return null;
     const data = await res.json();
     return data.item ?? null;
   }
-  const claim = await readClaimRaw(vsId);
+  const claim = await readClaimRaw(vsId, opts?.chain ?? "arc");
   return claim ? mapClaimToVS(claim) : null;
 }
 
 /** Returns VSDetailSnapshot with cache metadata. */
 export async function getVSFull(
   vsId: number,
-  opts?: { inviteKey?: string; viewerAddress?: string }
+  opts?: { inviteKey?: string; viewerAddress?: string; chain?: ChainKey }
 ): Promise<VSDetailSnapshot> {
   if (typeof window !== "undefined") {
-    const url = opts?.inviteKey
-      ? `/api/vs/${vsId}?invite=${encodeURIComponent(opts.inviteKey)}`
-      : `/api/vs/${vsId}`;
-    const res = await fetch(url);
+    const res = await fetch(vsApiUrl(vsId, opts));
     if (!res.ok) return { item: null, cache: null };
     const data = await res.json();
     return { item: data.item ?? null, cache: data.cache ?? null };
   }
-  const claim = await readClaimRaw(vsId);
+  const claim = await readClaimRaw(vsId, opts?.chain ?? "arc");
   return { item: claim ? mapClaimToVS(claim) : null, cache: makeLiveFreshness() };
+}
+
+// ── Write plumbing shared by browser and server ──────────────────────────────
+/**
+ * The ABI a chain's escrow speaks, and the args adjusted to it. v3 adds an
+ * agent-owner attribution arg to createClaim and challengeClaim; a human
+ * position through the web app has no agent, so it is always zero here.
+ */
+function writeCall(chain: ChainKey, functionName: string, args: unknown[]) {
+  if (getChain(chain).abiVersion === "v2") {
+    return { abi: MIMIR_ABI as readonly unknown[], args };
+  }
+  const attributed =
+    functionName === "createClaim" || functionName === "challengeClaim"
+      ? [...args, ZERO_ADDRESS]
+      : args;
+  return { abi: MIMIR_V3_ABI as readonly unknown[], args: attributed };
+}
+
+/** msg.value for a stake: the stake itself on Arc, zero on ERC-20 chains. */
+function nativeValue(chain: ChainKey, valueUsdc: number): bigint {
+  return getChain(chain).stakeMode === "native" ? usdcToStakeUnits(chain, valueUsdc) : 0n;
+}
+
+/**
+ * ERC-20 chains: make sure the escrow may pull `valueUsdc` from `account`.
+ * Approves the exact amount rather than unlimited, so a compromised escrow can
+ * never reach more than the stake being placed.
+ */
+async function ensureAllowance(
+  chain: ChainKey,
+  account: `0x${string}`,
+  valueUsdc: number,
+  approve: (amount: bigint) => Promise<`0x${string}`>,
+): Promise<void> {
+  const cfg = getChain(chain);
+  if (cfg.stakeMode !== "erc20" || valueUsdc <= 0) return;
+  const need = usdcToStakeUnits(chain, valueUsdc);
+  const spender = getContractAddress(chain);
+  const client = getPublicClient(chain);
+  const [allowance, balance] = await Promise.all([
+    client.readContract({ address: cfg.usdc, abi: erc20Abi, functionName: "allowance", args: [account, spender] }),
+    client.readContract({ address: cfg.usdc, abi: erc20Abi, functionName: "balanceOf", args: [account] }),
+  ]);
+  if (balance < need) {
+    throw new Error(`Not enough USDC on ${cfg.name}: need ${valueUsdc}, have ${stakeUnitsToUsdc(chain, balance)}`);
+  }
+  if (allowance >= need) return;
+  const hash = await approve(need);
+  const receipt = await client.waitForTransactionReceipt({ hash });
+  if (receipt.status === "reverted") throw new Error("USDC approval reverted");
 }
 
 // ── Write: browser (wagmi / injected wallet) ──────────────────────────────────
 async function sendBrowserTx(
+  chain: ChainKey,
   functionName: string,
   args: unknown[],
   valueUsdc: number
@@ -512,77 +630,91 @@ async function sendBrowserTx(
     typeof window !== "undefined" ? (window as any).ethereum : undefined;
   if (!ethereum) throw new Error("No wallet connected. Please connect a wallet first.");
 
-  await ensureArcChain(ethereum);
+  await ensureChain(ethereum, chain);
 
   const accounts: string[] = await ethereum.request({ method: "eth_accounts" });
   if (!accounts.length) throw new Error("Wallet not connected");
+  const account = accounts[0] as `0x${string}`;
+  const cfg = getChain(chain);
 
-  const wc = createWalletClient({
-    chain:     arcTestnet,
-    transport: custom(ethereum),
-    account:   accounts[0] as `0x${string}`,
-  });
+  const wc = createWalletClient({ chain: cfg.chain, transport: custom(ethereum), account });
 
-  const valueMicro = usdcToWei(valueUsdc);
+  await ensureAllowance(chain, account, valueUsdc, (amount) =>
+    wc.writeContract({
+      address: cfg.usdc,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [getContractAddress(chain), amount],
+      account,
+      chain: cfg.chain,
+    }),
+  );
 
+  const call = writeCall(chain, functionName, args);
   const txHash = await wc.writeContract({
-    address:      CONTRACT_ADDRESS,
-    abi:          MIMIR_ABI,
+    address:      getContractAddress(chain),
+    abi:          call.abi as any,
     functionName: functionName as any,
-    args:         args as any,
+    args:         call.args as any,
     // value cast: with functionName widened to `any`, viem unions all ABI
     // entries and collapses `value` to `undefined` (nonpayable fns like
     // withdraw exist alongside payable createClaim/challengeClaim).
-    value:        valueMicro as any,
-    account:      accounts[0] as `0x${string}`,
-    chain:        arcTestnet,
+    value:        nativeValue(chain, valueUsdc) as any,
+    account,
+    chain:        cfg.chain,
   });
 
-  // Arc has sub-second finality — receipt arrives quickly
+  const explorerUrl = explorerTxUrl(chain, txHash);
   try {
     const receipt = await Promise.race([
-      getPublicClient().waitForTransactionReceipt({ hash: txHash }),
+      getPublicClient(chain).waitForTransactionReceipt({ hash: txHash }),
       new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 30_000)),
     ]);
     if ((receipt as any).status === "reverted") throw new Error("Transaction reverted");
-    const explorerUrl = getExplorerTxUrl(txHash);
     return { txHash, explorerUrl, explorerTxHash: explorerUrl, receipt, pending: false };
   } catch (err: any) {
     if (err?.message === "Transaction reverted") throw err;
-    const explorerUrl = getExplorerTxUrl(txHash);
     return { txHash, explorerUrl, explorerTxHash: explorerUrl, receipt: null, pending: true };
   }
 }
 
 // ── Write: server (private key) ───────────────────────────────────────────────
 async function sendServerTx(
+  chain: ChainKey,
   privateKey: string,
   functionName: string,
   args: unknown[],
   valueUsdc: number
 ): Promise<ContractWriteResult> {
   const account = privateKeyToAccount(privateKey as `0x${string}`);
-  const walletClient = createWalletClient({
-    chain:     arcTestnet,
-    transport: http(getArcRpcUrl()),
-    account,
-  });
+  const cfg = getChain(chain);
+  const walletClient = createWalletClient({ chain: cfg.chain, transport: http(cfg.rpcUrl), account });
 
-  const valueMicro = usdcToWei(valueUsdc);
+  await ensureAllowance(chain, account.address, valueUsdc, (amount) =>
+    walletClient.writeContract({
+      address: cfg.usdc,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [getContractAddress(chain), amount],
+      account,
+      chain: cfg.chain,
+    }),
+  );
 
+  const call = writeCall(chain, functionName, args);
   const txHash = await walletClient.writeContract({
-    address:      CONTRACT_ADDRESS,
-    abi:          MIMIR_ABI,
+    address:      getContractAddress(chain),
+    abi:          call.abi as any,
     functionName: functionName as any,
-    args:         args as any,
-    value:        valueMicro as any, // see sendBrowserTx: widened union collapses value to undefined
+    args:         call.args as any,
+    value:        nativeValue(chain, valueUsdc) as any, // see sendBrowserTx
     account,
-    chain:        arcTestnet,
+    chain:        cfg.chain,
   });
 
-  const receipt = await getPublicClient().waitForTransactionReceipt({ hash: txHash });
+  const receipt = await getPublicClient(chain).waitForTransactionReceipt({ hash: txHash });
   if (receipt.status === "reverted") throw new Error("Transaction reverted");
-  return { txHash, explorerUrl: getExplorerTxUrl(txHash), receipt };
+  return { txHash, explorerUrl: explorerTxUrl(chain, txHash), receipt };
 }
 
 // ── Write: demo relay (via server API) ───────────────────────────────────────
@@ -597,9 +729,10 @@ async function sendDemoTx(
   });
   if (!res.ok) throw new Error(`Demo relay error: ${res.status}`);
   const data = await res.json();
+  const chain = (params.chain as ChainKey | undefined) ?? "arc";
   return {
     txHash:    data.txHash ?? "",
-    explorerUrl: data.txHash ? getExplorerTxUrl(data.txHash) : undefined,
+    explorerUrl: data.txHash ? explorerTxUrl(chain, data.txHash) : undefined,
     receipt:   null,
     pending:   data.pending ?? false,
     claimId:   data.claimId ?? null,
@@ -611,14 +744,15 @@ export async function createClaim(
   wallet: string,
   params: CreateClaimParams
 ): Promise<ClaimWriteResult> {
+  const chain = params.chain ?? "arc";
   const args = buildCreateArgs(params);
 
   if (isDemoMode()) {
     return sendDemoTx("create_claim", params as unknown as Record<string, unknown>);
   }
 
-  const result = await sendBrowserTx("createClaim", args, params.stake_amount);
-  const count  = await getClaimCount().catch(() => null);
+  const result = await sendBrowserTx(chain, "createClaim", args, params.stake_amount);
+  const count  = await getClaimCount(chain).catch(() => null);
   return { ...result, claimId: count };
 }
 
@@ -626,14 +760,16 @@ export async function challengeClaim(
   wallet: string,
   claimId: number,
   stakeAmount: number,
-  inviteKey = ""
+  inviteKey = "",
+  chain: ChainKey = "arc",
 ): Promise<ClaimWriteResult> {
   if (isDemoMode()) {
-    return sendDemoTx("challenge_claim", { claimId, stakeAmount, inviteKey });
+    return sendDemoTx("challenge_claim", { claimId, stakeAmount, inviteKey, chain });
   }
   const result = await sendBrowserTx(
+    chain,
     "challengeClaim",
-    [BigInt(claimId), usdcToWei(stakeAmount), inviteKey],
+    [BigInt(claimId), usdcToStakeUnits(chain, stakeAmount), inviteKey],
     stakeAmount
   );
   return { ...result, claimId };
@@ -641,13 +777,13 @@ export async function challengeClaim(
 
 export async function resolveClaim(
   wallet: string,
-  claimId: number
+  claimId: number,
+  chain: ChainKey = "arc",
 ): Promise<ClaimWriteResult> {
   if (isDemoMode()) {
-    return sendDemoTx("resolve_claim", { claimId });
+    return sendDemoTx("resolve_claim", { claimId, chain });
   }
-  // Browser resolution is not supported — resolution is oracle-only on Arc.
-  // This path allows demo/test only.
+  // Browser resolution is not supported — resolution is oracle-only.
   throw new Error(
     "Claims are resolved by the Mimir oracle agent. Connect as oracle to resolve manually."
   );
@@ -655,29 +791,33 @@ export async function resolveClaim(
 
 export async function cancelClaim(
   wallet: string,
-  claimId: number
+  claimId: number,
+  chain: ChainKey = "arc",
 ): Promise<ClaimWriteResult> {
   if (isDemoMode()) {
-    return sendDemoTx("cancel_claim", { claimId });
+    return sendDemoTx("cancel_claim", { claimId, chain });
   }
-  const result = await sendBrowserTx("cancelClaim", [BigInt(claimId)], 0);
+  const result = await sendBrowserTx(chain, "cancelClaim", [BigInt(claimId)], 0);
   return { ...result, claimId };
 }
 
 export async function createRematch(
   wallet: string,
   parentId: number,
-  params: Pick<CreateClaimParams, "deadline" | "stake_amount" | "invite_key">
+  params: Pick<CreateClaimParams, "deadline" | "stake_amount" | "invite_key" | "chain">
 ): Promise<ClaimWriteResult> {
+  // A rematch lives on its parent's chain: parentId means nothing elsewhere.
+  const chain = params.chain ?? "arc";
   if (isDemoMode()) {
     return sendDemoTx("create_rematch", { parentId, ...params });
   }
   const result = await sendBrowserTx(
+    chain,
     "createRematch",
-    [BigInt(parentId), BigInt(params.deadline), usdcToWei(params.stake_amount), params.invite_key ?? ""],
+    [BigInt(parentId), BigInt(params.deadline), usdcToStakeUnits(chain, params.stake_amount), params.invite_key ?? ""],
     params.stake_amount
   );
-  const count = await getClaimCount().catch(() => null);
+  const count = await getClaimCount(chain).catch(() => null);
   return { ...result, claimId: count };
 }
 
@@ -688,20 +828,21 @@ export async function executeDemoWrite(
 ): Promise<ClaimWriteResult> {
   const privateKey = getDemoPrivateKey(action);
   if (!privateKey) throw new Error(`No demo key configured for action: ${action}`);
+  const chain = (params.chain as ChainKey | undefined) ?? "arc";
 
   if (action === "create_claim") {
     const p = params as unknown as CreateClaimParams;
     const args = buildCreateArgs(p);
-    const result = await sendServerTx(privateKey, "createClaim", args, p.stake_amount);
-    const count  = await getClaimCount().catch(() => null);
+    const result = await sendServerTx(chain, privateKey, "createClaim", args, p.stake_amount);
+    const count  = await getClaimCount(chain).catch(() => null);
     return { ...result, claimId: count };
   }
 
   if (action === "challenge_claim") {
     const { claimId, stakeAmount, inviteKey = "" } = params as any;
     const result = await sendServerTx(
-      privateKey, "challengeClaim",
-      [BigInt(claimId), usdcToWei(stakeAmount), inviteKey],
+      chain, privateKey, "challengeClaim",
+      [BigInt(claimId), usdcToStakeUnits(chain, stakeAmount), inviteKey],
       stakeAmount
     );
     return { ...result, claimId: Number(claimId) };
@@ -710,23 +851,23 @@ export async function executeDemoWrite(
   if (action === "resolve_claim") {
     // Demo resolve: oracle agent handles real resolution; demo just simulates
     const { claimId } = params as any;
-    throw new Error(`Claim ${claimId}: use the oracle agent to resolve on Arc.`);
+    throw new Error(`Claim ${claimId}: use the oracle agent to resolve on ${getChain(chain).name}.`);
   }
 
   if (action === "cancel_claim") {
     const { claimId } = params as any;
-    const result = await sendServerTx(privateKey, "cancelClaim", [BigInt(claimId)], 0);
+    const result = await sendServerTx(chain, privateKey, "cancelClaim", [BigInt(claimId)], 0);
     return { ...result, claimId: Number(claimId) };
   }
 
   if (action === "create_rematch") {
     const { parentId, deadline, stake_amount, invite_key = "" } = params as any;
     const result = await sendServerTx(
-      privateKey, "createRematch",
-      [BigInt(parentId), BigInt(deadline), usdcToWei(stake_amount), invite_key],
+      chain, privateKey, "createRematch",
+      [BigInt(parentId), BigInt(deadline), usdcToStakeUnits(chain, stake_amount), invite_key],
       stake_amount
     );
-    const count = await getClaimCount().catch(() => null);
+    const count = await getClaimCount(chain).catch(() => null);
     return { ...result, claimId: count };
   }
 
@@ -741,7 +882,7 @@ function buildCreateArgs(p: CreateClaimParams): unknown[] {
     p.counter_position,
     p.resolution_url,
     BigInt(p.deadline),
-    usdcToWei(p.stake_amount),
+    usdcToStakeUnits(p.chain ?? "arc", p.stake_amount),
     p.category ?? "custom",
     BigInt(p.parent_id ?? 0),
     p.market_type ?? "binary",
@@ -956,58 +1097,48 @@ export async function acceptVS(
   wallet: string,
   claimId: number,
   stakeAmount: number,
-  inviteKey = ""
+  inviteKey = "",
+  chain: ChainKey = "arc",
 ): Promise<ClaimWriteResult> {
-  return challengeClaim(wallet, claimId, stakeAmount, inviteKey);
+  return challengeClaim(wallet, claimId, stakeAmount, inviteKey, chain);
 }
 
 // ── Server-layer aliases (used by lib/server/vs-cache.ts + vs-index.ts) ──────
 
-/** Returns open/active public claims as VSData[]. */
+/** Returns open/active public claims as VSData[], across chains. */
 export async function getOpenVSSummaries(): Promise<VSData[]> {
-  const count = await getClaimCount();
-  if (count <= 0) return [];
-  const all = await readClaimsRange(1, count);
-  return (all.filter(Boolean) as ClaimData[])
-    .filter((c) => (c.state === "open" || c.state === "active") && !c.is_private)
-    .map(mapClaimToVS);
+  return (await getOpenClaimSummaries()).map(mapClaimToVS);
 }
 
 /** Returns paginated claims as ClaimData (for server-side indexer). */
-export async function getClaimSummaries(startId: number, limit: number): Promise<ClaimData[]> {
-  const results = await readClaimsRange(startId, limit);
+export async function getClaimSummaries(
+  startId: number,
+  limit: number,
+  chain: ChainKey = "arc",
+): Promise<ClaimData[]> {
+  const results = await readClaimsRange(startId, limit, chain);
   return results.filter(Boolean) as ClaimData[];
 }
 
 /** Returns a single claim, optionally checking invite key. */
 export async function getClaimWithAccess(
   claimId: number,
-  _inviteKey?: string
+  _inviteKey?: string,
+  chain: ChainKey = "arc",
 ): Promise<ClaimData | null> {
-  return readClaimRaw(claimId);
+  return readClaimRaw(claimId, chain);
 }
 
-/** Returns open/active public claims as ClaimData. */
+/** Returns open/active public claims as ClaimData, across chains. */
 export async function getOpenClaimSummaries(): Promise<ClaimData[]> {
-  const count = await getClaimCount();
-  if (count <= 0) return [];
-  const all = await readClaimsRange(1, count);
-  return (all.filter(Boolean) as ClaimData[]).filter(
+  return (await readAllChains()).filter(
     (c) => (c.state === "open" || c.state === "active") && !c.is_private
   );
 }
 
-/** Returns claims for a user as ClaimData. */
+/** Returns claims for a user as ClaimData, across chains. */
 export async function getUserClaimSummaries(address: string): Promise<ClaimData[]> {
-  const count = await getClaimCount();
-  if (count <= 0) return [];
-  const all = await readClaimsRange(1, count);
-  const addr = address.toLowerCase();
-  return (all.filter(Boolean) as ClaimData[]).filter((c) => {
-    const isCreator    = c.creator.toLowerCase() === addr;
-    const isChallenger = (c.challenger_addresses ?? []).some((a) => a.toLowerCase() === addr);
-    return isCreator || isChallenger;
-  });
+  return (await readAllChains()).filter((c) => involves(c, address));
 }
 
 /** @deprecated use getAllVSFast */
@@ -1039,16 +1170,17 @@ export async function getUserVSSnapshot(
     return { items: data.items ?? [], cache: data.cache ?? null };
   }
   const items = await getUserVSSummaries(address);
-  return { items: items.sort((a, b) => b.id - a.id), cache: makeLiveFreshness() };
+  return { items: items.sort(byNewest), cache: makeLiveFreshness() };
 }
 
 /** Alias for cancelClaim — kept for page compatibility */
 export async function cancelVS(
   wallet: string,
   claimId: number,
-  _inviteKey = ""
+  _inviteKey = "",
+  chain: ChainKey = "arc",
 ): Promise<ClaimWriteResult> {
-  return cancelClaim(wallet, claimId);
+  return cancelClaim(wallet, claimId, chain);
 }
 
 /** Alias for getUserVSSummaries — kept for page compatibility */
@@ -1060,7 +1192,7 @@ export async function getUserVSDirect(address: string): Promise<VSData[]> {
  * Traverse parent_id chain to build a rivalry chain.
  * Returns an array of claim IDs from root → all descendants (BFS).
  */
-export async function getRivalryChain(claimId: number): Promise<number[]> {
+export async function getRivalryChain(claimId: number, chain: ChainKey = "arc"): Promise<number[]> {
   const visited = new Set<number>();
   const queue   = [claimId];
   const result: number[] = [];
@@ -1071,7 +1203,7 @@ export async function getRivalryChain(claimId: number): Promise<number[]> {
     visited.add(id);
     result.push(id);
 
-    const claim = await readClaimRaw(id);
+    const claim = await readClaimRaw(id, chain);
     if (!claim) continue;
 
     // Walk up to root

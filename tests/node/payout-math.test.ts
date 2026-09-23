@@ -15,6 +15,7 @@ const CHALLENGER = "0x00000000000000000000000000000000000000b2";
 function makeClaim(overrides: Partial<ClaimData> = {}): ClaimData {
   return {
     id: 7,
+    chain: "arc",
     creator: CREATOR,
     question: "Will BTC close above 100k?",
     creator_position: "Yes",
