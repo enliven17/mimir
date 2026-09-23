@@ -51,7 +51,7 @@ contract MimirV3Test {
 
     function setUp() public {
         vm.warp(1_000_000);
-        mimir = new MimirV3(oracle, 50, 50, platform);
+        mimir = new MimirV3(oracle, 50, 50, platform, address(0));
         vm.deal(creator, 1_000 * ONE);
         vm.deal(challenger, 1_000 * ONE);
         vm.deal(address(this), 1_000 * ONE);
@@ -300,7 +300,7 @@ contract MimirV3Test {
         uint16 platformBps = uint16(rawPlatformBps % 501); // 0-500
         uint16 agentBps = uint16(rawAgentBps % 501); // together at most 1000
 
-        MimirV3 m = new MimirV3(oracle, platformBps, agentBps, platform);
+        MimirV3 m = new MimirV3(oracle, platformBps, agentBps, platform, address(0));
         vm.deal(creator, creatorStake);
         vm.deal(challenger, challengerStake);
 

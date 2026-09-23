@@ -1,11 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+interface IERC20Like {
+    function transfer(address to, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
+    function decimals() external view returns (uint8);
+}
+
 /**
- * MimirV3 — AI-settled prediction market on Arc (Circle L1), with fees.
+ * MimirV3 — AI-settled prediction market, with fees. Runs on any EVM chain.
  *
- * USDC is the native currency on Arc, so stakes move through msg.value and
- * payable transfers; there is no ERC-20 approval step.
+ * Two stake modes, fixed at deploy:
+ *   - Native (usdc == address(0)): Arc, where USDC is the gas token. Stakes
+ *     move through msg.value; there is no approval step.
+ *   - ERC-20 (usdc != address(0)): Base, Arbitrum and anything else where
+ *     USDC is a token. Stakes are pulled with transferFrom after an approve,
+ *     and msg.value must be zero.
  *
  * What v3 adds over v2:
  *   - Fees charged on profit only, never on the gross payout. Staking 10 and
@@ -36,7 +47,10 @@ contract MimirV3 {
 
     // ── Limits ────────────────────────────────────────────────────────────────
     uint256 public constant MAX_CHALLENGERS        = 100;
-    uint256 public constant MIN_STAKE              = 2 * 10**18; // 2 USDC (18 decimals on Arc)
+    /// 2 USDC in the stake asset's units: 2e18 native on Arc, 2e6 for ERC-20 USDC.
+    uint256 public immutable MIN_STAKE;
+    /// Stake asset. address(0) means the chain's native currency (Arc USDC).
+    address public immutable usdc;
     uint256 public constant DEFAULT_PAYOUT_BPS     = 20_000;    // 2x
 
     // Anti-sniping: no new challenges accepted in the final N seconds before
@@ -154,9 +168,19 @@ contract MimirV3 {
     }
 
     // ── Constructor ───────────────────────────────────────────────────────────
-    constructor(address _oracle, uint16 _platformFeeBps, uint16 _agentOwnerFeeBps, address _platformRecipient) {
+    constructor(
+        address _oracle,
+        uint16 _platformFeeBps,
+        uint16 _agentOwnerFeeBps,
+        address _platformRecipient,
+        address _usdc
+    ) {
         owner  = msg.sender;
         oracle = _oracle;
+        usdc   = _usdc;
+        MIN_STAKE = _usdc == address(0)
+            ? 2 * 10**18
+            : 2 * 10**uint256(IERC20Like(_usdc).decimals());
         _validateFeePolicy(_platformFeeBps, _agentOwnerFeeBps, _platformRecipient);
         feePolicy = FeePolicy({
             platformFeeBps:    _platformFeeBps,
@@ -215,10 +239,40 @@ contract MimirV3 {
         return claimId * MAX_CHALLENGERS + index;
     }
 
+    /// Take a stake from msg.sender in whichever asset this deployment uses.
+    function _pullStake(uint256 amount) internal {
+        if (usdc == address(0)) {
+            require(msg.value == amount, "Mimir: wrong USDC value");
+            return;
+        }
+        require(msg.value == 0, "Mimir: native value not accepted");
+        uint256 before = IERC20Like(usdc).balanceOf(address(this));
+        require(
+            IERC20Like(usdc).transferFrom(msg.sender, address(this), amount),
+            "Mimir: transferFrom failed"
+        );
+        // Exact accounting: a fee-on-transfer token would silently under-fund payouts.
+        require(
+            IERC20Like(usdc).balanceOf(address(this)) == before + amount,
+            "Mimir: unsupported token"
+        );
+    }
+
+    /// Send that reports failure instead of reverting. A blacklisted USDC
+    /// recipient reverts rather than returning false, so both are caught.
+    function _trySend(address to, uint256 amount) internal returns (bool ok) {
+        if (usdc == address(0)) {
+            (ok,) = payable(to).call{value: amount}("");
+        } else {
+            bytes memory ret;
+            (ok, ret) = usdc.call(abi.encodeWithSelector(IERC20Like.transfer.selector, to, amount));
+            ok = ok && (ret.length == 0 || abi.decode(ret, (bool)));
+        }
+    }
+
     function _transfer(address to, uint256 amount) internal {
         if (amount == 0) return;
-        (bool ok,) = payable(to).call{value: amount}("");
-        if (!ok) {
+        if (!_trySend(to, amount)) {
             // Failed push (recipient rejected funds) → park for pull-withdrawal
             // so a single uncooperative recipient can't revert the settlement.
             pendingWithdrawals[to] += amount;
@@ -276,8 +330,7 @@ contract MimirV3 {
         uint256 amount = pendingWithdrawals[msg.sender];
         require(amount > 0, "Mimir: nothing to withdraw");
         pendingWithdrawals[msg.sender] = 0; // effects before interaction (reentrancy-safe)
-        (bool ok,) = payable(msg.sender).call{value: amount}("");
-        require(ok, "Mimir: withdraw failed");
+        require(_trySend(msg.sender, amount), "Mimir: withdraw failed");
         emit Withdrawal(msg.sender, amount);
     }
 
@@ -287,8 +340,7 @@ contract MimirV3 {
         require(amount > 0, "Mimir: no fees");
         accruedFees[msg.sender] = 0;
         lifetimeFeesClaimed += amount;
-        (bool ok,) = payable(msg.sender).call{value: amount}("");
-        require(ok, "Mimir: fee claim failed");
+        require(_trySend(msg.sender, amount), "Mimir: fee claim failed");
         emit FeeClaimed(msg.sender, amount);
     }
 
@@ -297,6 +349,26 @@ contract MimirV3 {
     }
 
     // ── Write: create ─────────────────────────────────────────────────────────
+    struct CreateArgs {
+        string  question;
+        string  creatorPosition;
+        string  counterPosition;
+        string  resolutionUrl;
+        uint256 deadline;
+        uint256 stakeAmount;
+        string  category;
+        uint256 parentId;
+        string  marketType;
+        string  oddsMode;
+        uint256 challengerPayoutBps;
+        string  handicapLine;
+        string  settlementRule;
+        uint256 maxChallengers;
+        bool    isPrivate;
+        string  inviteKey;
+        address agentOwnerRecipient;
+    }
+
     function createClaim(
         string  calldata question,
         string  calldata creatorPosition,
@@ -316,51 +388,73 @@ contract MimirV3 {
         string  calldata inviteKey,
         address          agentOwnerRecipient
     ) external payable returns (uint256 id) {
-        require(stakeAmount >= MIN_STAKE, "Mimir: stake too small");
-        require(msg.value == stakeAmount, "Mimir: wrong USDC value");
-        require(deadline > block.timestamp, "Mimir: deadline in past");
-        require(bytes(question).length > 0, "Mimir: empty question");
+        return _createClaim(CreateArgs({
+            question:            question,
+            creatorPosition:     creatorPosition,
+            counterPosition:     counterPosition,
+            resolutionUrl:       resolutionUrl,
+            deadline:            deadline,
+            stakeAmount:         stakeAmount,
+            category:            category,
+            parentId:            parentId,
+            marketType:          marketType,
+            oddsMode:            oddsMode,
+            challengerPayoutBps: challengerPayoutBps,
+            handicapLine:        handicapLine,
+            settlementRule:      settlementRule,
+            maxChallengers:      maxChallengers,
+            isPrivate:           isPrivate,
+            inviteKey:           inviteKey,
+            agentOwnerRecipient: agentOwnerRecipient
+        }));
+    }
+
+    function _createClaim(CreateArgs memory a) internal returns (uint256 id) {
+        require(a.stakeAmount >= MIN_STAKE, "Mimir: stake too small");
+        require(a.deadline > block.timestamp, "Mimir: deadline in past");
+        require(bytes(a.question).length > 0, "Mimir: empty question");
+        _pullStake(a.stakeAmount);
 
         // Normalise odds params
-        bool isFixed = _strEq(oddsMode, "fixed");
+        bool isFixed = _strEq(a.oddsMode, "fixed");
         uint256 payoutBps = isFixed
-            ? (challengerPayoutBps >= 10_000 ? challengerPayoutBps : DEFAULT_PAYOUT_BPS)
+            ? (a.challengerPayoutBps >= 10_000 ? a.challengerPayoutBps : DEFAULT_PAYOUT_BPS)
             : 0;
 
-        uint256 maxCh = (maxChallengers == 0 || maxChallengers > MAX_CHALLENGERS)
+        uint256 maxCh = (a.maxChallengers == 0 || a.maxChallengers > MAX_CHALLENGERS)
             ? MAX_CHALLENGERS
-            : maxChallengers;
+            : a.maxChallengers;
 
         claimCount++;
         id = claimCount;
 
         claims[id] = Claim({
             creator:                  msg.sender,
-            question:                 question,
-            creatorPosition:          creatorPosition,
-            counterPosition:          counterPosition,
-            resolutionUrl:            resolutionUrl,
-            creatorStake:             stakeAmount,
+            question:                 a.question,
+            creatorPosition:          a.creatorPosition,
+            counterPosition:          a.counterPosition,
+            resolutionUrl:            a.resolutionUrl,
+            creatorStake:             a.stakeAmount,
             totalChallengerStake:     0,
             reservedCreatorLiability: 0,
-            deadline:                 deadline,
+            deadline:                 a.deadline,
             state:                    ST_OPEN,
             winnerSide:               SIDE_NONE,
             resolutionSummary:        "",
             confidence:               0,
-            category:                 bytes(category).length > 0 ? category : "custom",
-            parentId:                 parentId,
+            category:                 bytes(a.category).length > 0 ? a.category : "custom",
+            parentId:                 a.parentId,
             challengerCount:          0,
             createdAt:                block.timestamp,
-            marketType:               bytes(marketType).length > 0 ? marketType : "binary",
+            marketType:               bytes(a.marketType).length > 0 ? a.marketType : "binary",
             oddsMode:                 isFixed ? "fixed" : "pool",
             challengerPayoutBps:      payoutBps,
-            handicapLine:             handicapLine,
-            settlementRule:           settlementRule,
+            handicapLine:             a.handicapLine,
+            settlementRule:           a.settlementRule,
             maxChallengers:           maxCh,
-            isPrivate:                isPrivate,
-            inviteKeyHash:            bytes(inviteKey).length > 0
-                                          ? keccak256(bytes(inviteKey))
+            isPrivate:                a.isPrivate,
+            inviteKeyHash:            bytes(a.inviteKey).length > 0
+                                          ? keccak256(bytes(a.inviteKey))
                                           : bytes32(0),
             evidenceHash:             bytes32(0)
         });
@@ -369,15 +463,16 @@ contract MimirV3 {
         // settles on the terms its participants agreed to.
         claimFeePolicy[id] = feePolicy;
 
-        if (agentOwnerRecipient != address(0)) {
-            claimAgentOwner[id] = agentOwnerRecipient;
-            emit AgentAttributed(id, msg.sender, agentOwnerRecipient);
+        if (a.agentOwnerRecipient != address(0)) {
+            claimAgentOwner[id] = a.agentOwnerRecipient;
+            emit AgentAttributed(id, msg.sender, a.agentOwnerRecipient);
         }
 
-        emit ClaimCreated(id, msg.sender, category);
+        emit ClaimCreated(id, msg.sender, a.category);
     }
 
-    // Rematch: create a new claim inheriting fields from a parent
+    // Rematch: a new claim inheriting fields from a parent. An internal call,
+    // so the caller (not this contract) is the creator and pays the stake.
     function createRematch(
         uint256 parentId,
         uint256 deadline,
@@ -387,25 +482,25 @@ contract MimirV3 {
         Claim storage parent = claims[parentId];
         require(parent.creator != address(0), "Mimir: parent not found");
 
-        return this.createClaim{value: msg.value}(
-            parent.question,
-            parent.creatorPosition,
-            parent.counterPosition,
-            parent.resolutionUrl,
-            deadline,
-            stakeAmount,
-            parent.category,
-            parentId,
-            parent.marketType,
-            parent.oddsMode,
-            parent.challengerPayoutBps,
-            parent.handicapLine,
-            parent.settlementRule,
-            parent.maxChallengers,
-            parent.isPrivate,
-            inviteKey,
-            claimAgentOwner[parentId]
-        );
+        return _createClaim(CreateArgs({
+            question:            parent.question,
+            creatorPosition:     parent.creatorPosition,
+            counterPosition:     parent.counterPosition,
+            resolutionUrl:       parent.resolutionUrl,
+            deadline:            deadline,
+            stakeAmount:         stakeAmount,
+            category:            parent.category,
+            parentId:            parentId,
+            marketType:          parent.marketType,
+            oddsMode:            parent.oddsMode,
+            challengerPayoutBps: parent.challengerPayoutBps,
+            handicapLine:        parent.handicapLine,
+            settlementRule:      parent.settlementRule,
+            maxChallengers:      parent.maxChallengers,
+            isPrivate:           parent.isPrivate,
+            inviteKey:           inviteKey,
+            agentOwnerRecipient: claimAgentOwner[parentId]
+        }));
     }
 
     // ── Write: challenge ──────────────────────────────────────────────────────
@@ -422,13 +517,13 @@ contract MimirV3 {
         require(!hasChallenged[claimId][msg.sender], "Mimir: already challenged");
         require(claim.challengerCount < claim.maxChallengers, "Mimir: full");
         require(stakeAmount >= MIN_STAKE, "Mimir: stake too small");
-        require(msg.value == stakeAmount, "Mimir: wrong USDC value");
         // Anti-sniping: challenges must arrive at least CHALLENGE_LOCK_SECONDS
         // before the deadline so the outcome isn't observable yet.
         require(
             block.timestamp + CHALLENGE_LOCK_SECONDS <= claim.deadline,
             "Mimir: challenge window closed"
         );
+        _pullStake(stakeAmount);
 
         // Private claim: verify invite key
         if (claim.isPrivate && claim.inviteKeyHash != bytes32(0)) {
@@ -667,7 +762,10 @@ contract MimirV3 {
         uint256 resolved,
         uint256 balance
     ) {
-        return (claimCount, totalResolved, address(this).balance);
+        uint256 held = usdc == address(0)
+            ? address(this).balance
+            : IERC20Like(usdc).balanceOf(address(this));
+        return (claimCount, totalResolved, held);
     }
 
     /// Accrued minus claimed must always be covered by the contract balance.

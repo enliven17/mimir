@@ -29,6 +29,11 @@ export const MIMIR_V3_ABI = [
         "internalType": "address",
         "name": "_platformRecipient",
         "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_usdc",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -1599,6 +1604,19 @@ export const MIMIR_V3_ABI = [
     "name": "transferOwnership",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "usdc",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
