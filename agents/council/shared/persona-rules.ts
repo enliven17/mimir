@@ -9,11 +9,11 @@
  * the creator side because personas can't join the creator pool.
  */
 
-import { weiToUsdc } from "../../../lib/arc";
+import { stakeUnitsToUsdc } from "../../../lib/chains";
 import { MIMIR_ABI } from "../../../lib/mimir-abi";
 import type { PublicClient } from "viem";
 import type { PersonaSpec } from "../personas";
-import type { ClaimOnChain, PersonaDecision } from "./types";
+import { claimChainOf, type ClaimOnChain, type PersonaDecision } from "./types";
 
 /**
  * Contrarian: stake against whichever side currently holds the larger pool.
@@ -119,18 +119,19 @@ export async function evaluateWhaleWatcher(
 
   const biggestChallenger = stakes.reduce((m, s) => (s > m ? s : m), 0n);
 
+  const usdc = (units: bigint) => stakeUnitsToUsdc(claimChainOf(claim), units).toFixed(2);
   if (biggestChallenger > claim.creatorStake) {
     return {
       shouldStake: true,
       stakeUsdc,
-      rationale: `Whale-Watcher: largest individual stake is on the challenger side (${weiToUsdc(biggestChallenger).toFixed(2)} USDC vs creator's ${weiToUsdc(claim.creatorStake).toFixed(2)}). I follow the whale.`,
+      rationale: `Whale-Watcher: largest individual stake is on the challenger side (${usdc(biggestChallenger)} USDC vs creator's ${usdc(claim.creatorStake)}). I follow the whale.`,
     };
   }
 
   return {
     shouldStake: false,
     stakeUsdc:   0,
-    rationale: `Whale-Watcher abstains: the biggest single staker is the creator (${weiToUsdc(claim.creatorStake).toFixed(2)} USDC). I can't join the creator side, so I sit out.`,
+    rationale: `Whale-Watcher abstains: the biggest single staker is the creator (${usdc(claim.creatorStake)} USDC). I can't join the creator side, so I sit out.`,
     skipReason:  "abstain-agrees-with-creator",
   };
 }

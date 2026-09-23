@@ -8,10 +8,10 @@
  */
 
 import { callLLM, pickGeminiModel, extractJson } from "../../../lib/llm";
-import { weiToUsdc } from "../../../lib/arc";
+import { getChain, stakeUnitsToUsdc } from "../../../lib/chains";
 import { isVerdict, type Verdict } from "../../../lib/verdict";
 import type { PersonaSpec } from "../personas";
-import type { ClaimOnChain } from "./types";
+import { claimChainOf, type ClaimOnChain } from "./types";
 
 export interface PersonaVerdict {
   /**
@@ -33,7 +33,8 @@ export async function evaluateClaimAsPersona(
 ): Promise<PersonaVerdict> {
   const deadlineDate = new Date(Number(claim.deadline) * 1000).toISOString();
   const nowDate      = new Date().toISOString();
-  const potUsdc      = weiToUsdc(claim.creatorStake + claim.totalChallengerStake);
+  const chain        = claimChainOf(claim);
+  const potUsdc      = stakeUnitsToUsdc(chain, claim.creatorStake + claim.totalChallengerStake);
 
   const biasSection = persona.promptBias
     ? `\n## Your character\n${persona.promptBias}\n`
@@ -42,7 +43,7 @@ export async function evaluateClaimAsPersona(
     ? `\n## Paid peer reads you bought over x402\n${peerReasoning.map((read, i) => `${i + 1}. ${read}`).join("\n")}\n\nUse these as other council members' opinions, not as primary evidence. You may agree, dissent, or discount them.\n`
     : "";
 
-  const prompt = `You are ${persona.displayName}, one of ten AI personas on the Mimir Council — a USDC prediction-market jury on Arc blockchain.
+  const prompt = `You are ${persona.displayName}, one of ten AI personas on the Mimir Council — a USDC prediction-market jury on ${getChain(chain).name}.
 ${biasSection}
 ## Time context (TRUST THIS, ignore your training cutoff)
 - Current UTC time: ${nowDate}

@@ -19,12 +19,13 @@ import type { EvidenceCacheEntry } from "./types";
 
 const MAX_CONTENT_CHARS = 8_000;
 
+/** `key` is claimKey(chain, id): claim ids collide across chains. */
 export async function getOrFetchEvidence(
-  claimId: number,
+  key: string,
   resolutionUrl: string,
-  cache: Map<number, EvidenceCacheEntry>,
+  cache: Map<string, EvidenceCacheEntry>,
 ): Promise<EvidenceCacheEntry> {
-  const hit = cache.get(claimId);
+  const hit = cache.get(key);
   if (hit) return hit;
 
   if (!resolutionUrl?.startsWith("http")) {
@@ -33,7 +34,7 @@ export async function getOrFetchEvidence(
       fetcher: "none",
       hash:    keccak256(toBytes("(No resolution URL provided)")),
     };
-    cache.set(claimId, empty);
+    cache.set(key, empty);
     return empty;
   }
 
@@ -47,7 +48,7 @@ export async function getOrFetchEvidence(
       fetcher: snap.fetcher,
       hash:    keccak256(toBytes(snap.text)),
     };
-    cache.set(claimId, entry);
+    cache.set(key, entry);
     return entry;
   } catch (err: unknown) {
     const msg =
@@ -61,7 +62,7 @@ export async function getOrFetchEvidence(
       fetcher: "none",
       hash:    keccak256(toBytes(`(Failed to fetch: ${msg})`)),
     };
-    cache.set(claimId, failed);
+    cache.set(key, failed);
     return failed;
   }
 }

@@ -6,12 +6,11 @@
  * ten isolated voters.
  */
 
+import type { ChainKey } from "../../../lib/chains";
 import { fetchWithBudget, usdcToAtomic, type PayingAgent } from "../../../lib/x402";
-import {
-  type PersonaSpec,
-  personaAddressEnv,
-  personaWalletIdEnv,
-} from "../personas";
+import { chainQuery, payingAgentFor as payerFromEnv } from "../../shared/chains";
+import { type PersonaSpec, personaWalletIdEnv } from "../personas";
+import { personaAddressOf } from "./wallets";
 
 export interface PeerReasoningRead {
   sellerSlug: string;
@@ -28,14 +27,10 @@ interface ReasoningResponse {
   };
 }
 
-function payingAgentFor(persona: PersonaSpec): PayingAgent | null {
-  const walletId = process.env[personaWalletIdEnv(persona)];
-  const address = process.env[personaAddressEnv(persona)];
-  if (!walletId || !address?.startsWith("0x")) return null;
-  return {
-    walletId,
-    address: address as `0x${string}`,
-  };
+/** Pays on the claim's chain first, signing with that chain's persona wallet. */
+function payingAgentFor(persona: PersonaSpec, chain: ChainKey): PayingAgent | null {
+  const address = personaAddressOf(persona);
+  return address ? payerFromEnv(personaWalletIdEnv(persona), address, chain) : null;
 }
 
 function selectPeerSellers(
@@ -56,6 +51,8 @@ function selectPeerSellers(
 export async function buyPeerReasoning(args: {
   buyer: PersonaSpec;
   activePersonas: PersonaSpec[];
+  /** Chain the claim lives on; ids restart per chain. */
+  chain: ChainKey;
   claimId: number;
   baseUrl: string;
   readsPerPersona: number;
@@ -64,7 +61,7 @@ export async function buyPeerReasoning(args: {
 }): Promise<PeerReasoningRead[]> {
   if (args.readsPerPersona <= 0) return [];
 
-  const payer = payingAgentFor(args.buyer);
+  const payer = payingAgentFor(args.buyer, args.chain);
   if (!payer) return [];
 
   const capAtomic = usdcToAtomic(args.capUsdc);
@@ -80,7 +77,8 @@ export async function buyPeerReasoning(args: {
     const url =
       `${args.baseUrl.replace(/\/$/, "")}/api/council/reasoning` +
       `?claimId=${encodeURIComponent(String(args.claimId))}` +
-      `&persona=${encodeURIComponent(seller.slug)}`;
+      `&persona=${encodeURIComponent(seller.slug)}` +
+      chainQuery(args.chain);
 
     try {
       const result = await fetchWithBudget(url, payer, capAtomic, {
@@ -101,7 +99,7 @@ export async function buyPeerReasoning(args: {
       });
     } catch (err) {
       console.warn(
-        `[council:${args.buyer.slug}] peer read failed from ${seller.slug}:`,
+        `[council:${args.buyer.slug}][${args.chain}] peer read failed from ${seller.slug}:`,
         err instanceof Error ? err.message : err,
       );
     }

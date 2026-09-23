@@ -10,26 +10,16 @@
  *   4. Submits challengeClaim through the persona's W3S wallet.
  */
 
-import { formatEther } from "viem";
-import {
-  weiToUsdc,
-  usdcToWei,
-  getExplorerTxUrl,
-} from "../../../lib/arc";
-import {
-  executeContract,
-  buildAbiFunctionSignature,
-  toCircleAbiParameters,
-} from "../../../lib/circle-w3s";
+import { getExplorerTxUrl } from "../../../lib/arc";
+import { claimKey, usdcToStakeUnits, type ChainKey } from "../../../lib/chains";
+import { w3sEscrowWrite } from "../../../lib/w3s-escrow";
 import { MIMIR_ABI } from "../../../lib/mimir-abi";
 import { kellyFraction } from "../../../lib/kelly";
 import { createThrottle } from "../../../lib/agent-bootstrap";
-import {
-  type PersonaSpec,
-  personaWalletIdEnv,
-  personaAddressEnv,
-} from "../personas";
+import { stakeBalanceUsdc } from "../../shared/chains";
+import { type PersonaSpec, personaWalletIdEnv } from "../personas";
 import { getOrFetchEvidence } from "./evidence-cache";
+import { personaAddressOf, personaWalletIdOn } from "./wallets";
 import { evaluateClaimAsPersona, type PersonaVerdict } from "./persona-llm";
 import {
   evaluateContrarian,
@@ -41,8 +31,6 @@ import type {
   PersonaRunnerContext,
   PersonaStakeReceipt,
 } from "./types";
-
-const SIG_CHALLENGE_CLAIM = buildAbiFunctionSignature("challengeClaim", MIMIR_ABI);
 
 const DEFAULT_MIN_CONFIDENCE = 75;
 const DEFAULT_STAKE_USDC     = 2;
@@ -58,8 +46,9 @@ const throttleLlm = createThrottle(LLM_THROTTLE_MS);
 // Conservative Kelly cap: personas play across many markets (oracle uses 0.25).
 const KELLY_CAP = 0.15;
 
-function peerReasoningKey(claimId: number, personaSlug: string): string {
-  return `${claimId}:${personaSlug}`;
+/** Key into PersonaRunnerContext.peerReasoning. Chain-scoped: ids collide across chains. */
+export function peerReasoningKey(chain: ChainKey, claimId: number, personaSlug: string): string {
+  return `${claimKey(chain, claimId)}:${personaSlug}`;
 }
 
 function categoryMatches(persona: PersonaSpec, claim: ClaimOnChain): boolean {
@@ -106,7 +95,7 @@ export async function evaluatePersonaForClaim(
   }
 
   // LLM-based path (llm-biased, specialist, micro).
-  const evidence = await getOrFetchEvidence(claim.id, claim.resolutionUrl, ctx.evidenceCache);
+  const evidence = await getOrFetchEvidence(claimKey(ctx.chain, claim.id), claim.resolutionUrl, ctx.evidenceCache);
   if (evidence.fetcher === "none") {
     return {
       shouldStake: false,
@@ -123,7 +112,7 @@ export async function evaluatePersonaForClaim(
       persona,
       claim,
       evidence.text,
-      ctx.peerReasoning?.get(peerReasoningKey(claim.id, persona.slug)) ?? [],
+      ctx.peerReasoning?.get(peerReasoningKey(ctx.chain, claim.id, persona.slug)) ?? [],
     );
   } catch (err) {
     return {
@@ -179,11 +168,12 @@ export async function runPersonaForClaim(
   claim: ClaimOnChain,
   ctx: PersonaRunnerContext,
 ): Promise<PersonaStakeReceipt | null> {
-  const walletId = process.env[personaWalletIdEnv(persona)];
-  const addressRaw = process.env[personaAddressEnv(persona)];
+  const tag = `[council:${persona.slug}][${ctx.chain}]`;
+  const walletId = personaWalletIdOn(persona, ctx.chain);
+  const addressRaw = personaAddressOf(persona);
   if (!walletId || !addressRaw) {
     console.warn(
-      `[council:${persona.slug}] missing wallet env — run "npm run council:create-wallets" first.`,
+      `${tag} missing wallet env (${personaWalletIdEnv(persona)} on ${ctx.chain}) — run "npm run council:create-wallets" first.`,
     );
     return null;
   }
@@ -209,13 +199,13 @@ export async function runPersonaForClaim(
   }
   if (alreadyIn) return null;
 
-  // Wallet balance — keep a 2x stake buffer so we never drain.
-  const balance = await ctx.publicClient.getBalance({ address: address as `0x${string}` });
+  // Stakeable USDC on this chain (native on Arc, ERC-20 elsewhere) — keep a
+  // 2x stake buffer so we never drain.
+  const bankrollUsdc = await stakeBalanceUsdc(ctx.chain, address);
   const baseStakeUsdc = persona.stakeUsdc ?? DEFAULT_STAKE_USDC;
-  const minRequired = usdcToWei(baseStakeUsdc * 2);
-  if (balance < minRequired) {
+  if (bankrollUsdc < baseStakeUsdc * 2) {
     console.log(
-      `[council:${persona.slug}] insufficient balance (${weiToUsdc(balance).toFixed(2)} USDC), skipping`,
+      `${tag} insufficient balance (${bankrollUsdc.toFixed(2)} USDC), skipping`,
     );
     return null;
   }
@@ -231,7 +221,6 @@ export async function runPersonaForClaim(
   let stakeUsdc = decision.stakeUsdc;
   if (decision.confidence && decision.confidence >= (persona.minConfidence ?? DEFAULT_MIN_CONFIDENCE)) {
     const kelly = kellyFraction(decision.confidence, KELLY_CAP);
-    const bankrollUsdc = weiToUsdc(balance);
     const kellyStake = Math.max(
       baseStakeUsdc,
       Math.min(bankrollUsdc * kelly, bankrollUsdc * 0.10),
@@ -239,24 +228,25 @@ export async function runPersonaForClaim(
     stakeUsdc = Math.round(kellyStake * 100) / 100;
   }
 
-  // Submit.
-  const stakeWei = usdcToWei(stakeUsdc);
-  const txHash = await executeContract({
+  // Submit. msg.value on Arc, exact ERC-20 approve + pull elsewhere.
+  const txHash = await w3sEscrowWrite({
+    chain:        ctx.chain,
     walletId,
-    contractAddress:      ctx.contractAddress,
-    abiFunctionSignature: SIG_CHALLENGE_CLAIM,
-    abiParameters:        toCircleAbiParameters([BigInt(claim.id), stakeWei, ""]),
-    amount:               formatEther(stakeWei),
-    refId:                `council-${persona.slug}-${claim.id}`,
+    owner:        address,
+    functionName: "challengeClaim",
+    args:         [BigInt(claim.id), usdcToStakeUnits(ctx.chain, stakeUsdc), ""],
+    stakeUsdc,
+    refId:        `council-${persona.slug}-${ctx.chain}-${claim.id}`,
   });
 
   console.log(
-    `[council:${persona.slug}] ✓ Staked ${stakeUsdc} USDC on claim #${claim.id} — ${getExplorerTxUrl(txHash)}`,
+    `${tag} ✓ Staked ${stakeUsdc} USDC on claim #${claim.id} — ${getExplorerTxUrl(txHash, ctx.chain)}`,
   );
-  console.log(`[council:${persona.slug}]   ${decision.rationale.slice(0, 160)}`);
+  console.log(`${tag}   ${decision.rationale.slice(0, 160)}`);
 
   return {
     persona,
+    chain:     ctx.chain,
     claimId:   claim.id,
     stakeUsdc,
     txHash,

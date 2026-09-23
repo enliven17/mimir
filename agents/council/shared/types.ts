@@ -3,6 +3,7 @@
  */
 
 import type { PublicClient } from "viem";
+import type { ChainKey } from "../../../lib/chains";
 import type { PersonaSpec } from "../personas";
 
 /**
@@ -11,6 +12,8 @@ import type { PersonaSpec } from "../personas";
  */
 export interface ClaimOnChain {
   id:                   number;
+  /** Chain the claim lives on. Absent = Arc (API routes pass a bare decode). */
+  chain?:               ChainKey;
   creator:              string;
   question:             string;
   creatorPosition:      string;
@@ -60,10 +63,17 @@ export interface PersonaDecision {
 }
 
 export interface PersonaRunnerContext {
+  chain:            ChainKey;
   publicClient:     PublicClient;
   contractAddress:  `0x${string}`;
-  evidenceCache:    Map<number, EvidenceCacheEntry>;
+  /** Keyed by claimKey(chain, id): ids restart per chain. */
+  evidenceCache:    Map<string, EvidenceCacheEntry>;
   peerReasoning?:   Map<string, string[]>;
+}
+
+/** The claim's chain, Arc when the caller did not say. */
+export function claimChainOf(claim: Pick<ClaimOnChain, "chain">): ChainKey {
+  return claim.chain ?? "arc";
 }
 
 export interface EvidenceCacheEntry {
@@ -74,6 +84,7 @@ export interface EvidenceCacheEntry {
 
 export interface PersonaStakeReceipt {
   persona:   PersonaSpec;
+  chain:     ChainKey;
   claimId:   number;
   stakeUsdc: number;
   txHash:    string;
