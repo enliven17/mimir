@@ -166,7 +166,7 @@ function ChainBalances({
   pick,
 }: {
   rows: ChainAgents[];
-  pick: (r: ChainAgents) => { address: string; usdc: number; gas: number | null };
+  pick: (r: ChainAgents) => { usdc: number; gas: number | null };
 }) {
   return (
     <ul className="mt-0.5 space-y-0.5">
@@ -390,7 +390,7 @@ export default async function AgentsPage({
             <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald/80">Balance</div>
-                <ChainBalances rows={agentRows} pick={(r) => ({ address: r.oracle, usdc: r.oracleUsdc, gas: r.oracleGas })} />
+                <ChainBalances rows={agentRows} pick={(r) => ({ usdc: r.oracleUsdc, gas: r.oracleGas })} />
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald/80">Settled</div>
@@ -422,7 +422,7 @@ export default async function AgentsPage({
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-text/60">Balance</div>
-                <ChainBalances rows={agentRows} pick={(r) => ({ address: r.owner, usdc: r.ownerUsdc, gas: r.ownerGas })} />
+                <ChainBalances rows={agentRows} pick={(r) => ({ usdc: r.ownerUsdc, gas: r.ownerGas })} />
               </div>
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-text/60">Markets opened</div>
