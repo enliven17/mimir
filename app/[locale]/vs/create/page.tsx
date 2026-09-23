@@ -22,6 +22,8 @@ import {
   type VSData,
 } from "@/lib/contract";
 import { removePendingVS, savePendingVS, type PendingVS } from "@/lib/pending-vs";
+import { chainFromQuery, getChain, type ChainKey } from "@/lib/chains";
+import NetworkNotice from "@/components/vs/NetworkNotice";
 import { acquireTxLock } from "@/lib/tx-lock";
 import {
   CATEGORIES,
@@ -156,8 +158,9 @@ const CREATED_SYNC_INTERVAL_MS = 8000;
 export default function CreatePage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { address, isConnected, connect } = useWallet();
+  const { address, isConnected, connect, selectedChain, isOnChain, switchNetwork } = useWallet();
   const t = useTranslations("create");
+  const tNet = useTranslations("network");
   const tc = useTranslations("common");
   const tQuality = useTranslations("quality");
   const tCat = useTranslations("categories");
@@ -232,12 +235,22 @@ export default function CreatePage() {
   const [rematchSource, setRematchSource] = useState<VSData | null>(null);
   const [hydratedFromRematch, setHydratedFromRematch] = useState(false);
   const [rematchId, setRematchId] = useState<number | null>(null);
+  /** `?chain=` next to `?rematch=`: the parent's network (absent = Arc). */
+  const [rematchChain, setRematchChain] = useState<ChainKey>("arc");
+  /** Network the last claim was opened on, frozen at submit so a header change can't move it. */
+  const [createdChain, setCreatedChain] = useState<ChainKey>("arc");
+  const [switchingNetwork, setSwitchingNetwork] = useState(false);
   const [isCreateDemoUrl, setIsCreateDemoUrl] = useState(false);
   const [mockOverlayPhase, setMockOverlayPhase] =
     useState<CreateMockOverlayPhase>("closed");
   const mockFlowTimersRef = useRef<number[]>([]);
   /** `/vs/create?demo=1`: flujo sin wallet ni contrato (no compatible con rematch). */
   const isCreateDemoSession = isCreateDemoUrl && rematchId === null;
+  // A rematch must live on its parent's chain (parent ids mean nothing
+  // elsewhere); a fresh claim opens on the network picked in the header.
+  const createChain: ChainKey = rematchId ? rematchChain : selectedChain;
+  const needsNetworkSwitch =
+    !isCreateDemoSession && isConnected && !isOnChain(createChain);
   const ticketWalletAddress =
     isCreateDemoSession && !address ? MOCK_DEMO_CREATOR_ADDRESS : address;
   /** Evita mismatch de hidratación: fechas relativas y `min` del input dependen de zona horaria y del reloj del cliente. */
@@ -520,6 +533,7 @@ export default function CreatePage() {
     const rawRematchId = Number(searchParams.get("rematch") ?? "");
     const rawSourceUrl = searchParams.get("source") ?? "";
     setRematchId(Number.isInteger(rawRematchId) && rawRematchId > 0 ? rawRematchId : null);
+    setRematchChain(chainFromQuery(searchParams.get("chain")));
     const normalizedSourceSeed = normalizeResolutionSource(rawSourceUrl);
     if (normalizedSourceSeed) {
       setUrl(normalizedSourceSeed);
@@ -538,7 +552,7 @@ export default function CreatePage() {
 
     async function loadRematchSource() {
       setLoadingParent(true);
-      const source = await getVS(currentRematchId);
+      const source = await getVS(currentRematchId, { chain: rematchChain });
       if (cancelled) {
         return;
       }
@@ -591,7 +605,7 @@ export default function CreatePage() {
     return () => {
       cancelled = true;
     };
-  }, [hydratedFromRematch, rematchId, t]);
+  }, [hydratedFromRematch, rematchId, rematchChain, t]);
 
   useEffect(() => {
     if (!created || !createdPending || created < 0) {
@@ -605,13 +619,14 @@ export default function CreatePage() {
       const liveClaim = await getVS(createdId, {
         inviteKey: createdInviteKey,
         viewerAddress: address ?? undefined,
+        chain: createdChain,
       }).catch(() => null);
 
       if (cancelled || !liveClaim) {
         return;
       }
 
-      removePendingVS(createdId);
+      removePendingVS(createdId, createdChain);
       setCreatedPending(false);
       setShowSealStamp(true);
       toast.success(rematchId ? t("rematchCreatedAndFunded") : t("vsCreatedAndFunded"));
@@ -625,7 +640,7 @@ export default function CreatePage() {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [address, created, createdInviteKey, createdPending, rematchId, t]);
+  }, [address, created, createdChain, createdInviteKey, createdPending, rematchId, t]);
 
   function prefill(catId: string) {
     const normalizedCategory = normalizeCategoryId(catId);
@@ -882,6 +897,17 @@ export default function CreatePage() {
     tQuality,
   ]);
 
+  async function handleSwitchNetwork() {
+    setSwitchingNetwork(true);
+    try {
+      await switchNetwork(createChain);
+    } catch {
+      toast.error(tNet("switchFailed", { name: getChain(createChain).name }));
+    } finally {
+      setSwitchingNetwork(false);
+    }
+  }
+
   async function handleSubmit() {
     if (!question || !creatorPos || !opponentPos) {
       toast.error(t("fillAllFields"));
@@ -943,6 +969,7 @@ export default function CreatePage() {
       max_challengers: normalizedMaxChallengers,
       visibility,
       invite_key: inviteKey,
+      chain: createChain,
     };
 
     if (CLAIM_MODERATION_ENABLED) {
@@ -997,6 +1024,7 @@ export default function CreatePage() {
           },
         });
         setCreated(MOCK_CREATED_VS_ID);
+        setCreatedChain("arc");
         setCreatedPending(false);
         setCreatedTxHash(MOCK_WALLET_TX_HASH);
         setCreatedExplorerTxHash(MOCK_CONSENSUS_TX_HASH);
@@ -1031,18 +1059,20 @@ export default function CreatePage() {
             : t("createSuccessHeadline"),
       );
       if (result.claimId) {
+        setCreatedChain(createChain);
         setCreated(result.claimId);
         setCreatedPending(Boolean(result.pending));
         setCreatedTxHash(result.txHash || "");
         setCreatedExplorerTxHash(result.explorerTxHash || "");
         setCreatedInviteKey(inviteKey);
         if (inviteKey) {
-          rememberPrivateInviteKey(result.claimId, inviteKey);
+          rememberPrivateInviteKey(result.claimId, inviteKey, createChain);
         }
 
         // Store optimistic VS so it appears in lists before consensus
         savePendingVS({
           id: result.claimId,
+          chain: createChain,
           creator: address!,
           opponent: ZERO_ADDRESS,
           question,
@@ -1084,6 +1114,7 @@ export default function CreatePage() {
         txHash={createdTxHash}
         explorerTxHash={createdExplorerTxHash}
         isRematch={Boolean(rematchId)}
+        chain={createdChain}
         onReset={() => {
           clearCreateMockSnapshot();
           setCreated(null);
@@ -2036,7 +2067,25 @@ export default function CreatePage() {
                     </div>
                   </div>
                 ) : null}
-                {isConnected || isCreateDemoSession ? (
+                {!isCreateDemoSession ? (
+                  <NetworkNotice
+                    chain={createChain}
+                    note={rematchId ? tNet("rematchSameNetwork") : undefined}
+                  />
+                ) : null}
+                {needsNetworkSwitch ? (
+                  <Button
+                    variant="primary"
+                    onClick={handleSwitchNetwork}
+                    loading={switchingNetwork}
+                    disabled={switchingNetwork}
+                    className="rounded-2xl py-5 font-display text-sm font-bold uppercase tracking-widest"
+                  >
+                    {switchingNetwork
+                      ? tNet("switching")
+                      : tNet("switchTo", { name: getChain(createChain).name })}
+                  </Button>
+                ) : isConnected || isCreateDemoSession ? (
                   <Button
                     variant="primary"
                     onClick={handleSubmit}

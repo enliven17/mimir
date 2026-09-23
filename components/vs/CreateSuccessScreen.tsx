@@ -17,7 +17,8 @@ import PageTransition, { AnimatedItem } from "@/components/PageTransition";
 import { GlassCard, Button } from "@/components/ui";
 import { sealStamp } from "@/lib/animations/rituals";
 import { getShareUrl } from "@/lib/constants";
-import { getExplorerTxUrl, ARC_EXPLORER_URL } from "@/lib/arc";
+import { explorerTxUrl, getChain, vsPath, type ChainKey } from "@/lib/chains";
+import ChainBadge from "@/components/ui/ChainBadge";
 
 export default function CreateSuccessScreen({
   createdId,
@@ -26,6 +27,7 @@ export default function CreateSuccessScreen({
   txHash,
   explorerTxHash,
   isRematch,
+  chain,
   onReset,
 }: {
   createdId: number;
@@ -34,13 +36,16 @@ export default function CreateSuccessScreen({
   txHash: string;
   explorerTxHash: string;
   isRematch: boolean;
+  /** Network the claim was opened on: share link, receipts and explorer follow it. */
+  chain: ChainKey;
   onReset: () => void;
 }) {
   const t = useTranslations("create");
   const tc = useTranslations("common");
   const [copied, setCopied] = useState(false);
 
-  const shareUrl = getShareUrl(createdId, inviteKey);
+  const shareUrl = getShareUrl(createdId, inviteKey, chain);
+  const network = getChain(chain);
   const isMockSuccess = createdId < 0;
 
   async function copyLink() {
@@ -66,6 +71,11 @@ export default function CreateSuccessScreen({
                 >
                   ISSUED
                 </motion.div>
+                {!isMockSuccess ? (
+                  <div className="mb-2 flex justify-center">
+                    <ChainBadge chain={chain} />
+                  </div>
+                ) : null}
                 <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-emerald/90">
                   {isMockSuccess
                     ? t("mockSuccessBadge")
@@ -168,7 +178,7 @@ export default function CreateSuccessScreen({
                         </span>
                       ) : (
                         <a
-                          href={getExplorerTxUrl(txHash)}
+                          href={explorerTxUrl(chain, txHash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-pv-emerald underline-offset-2 transition-colors hover:underline"
@@ -190,7 +200,7 @@ export default function CreateSuccessScreen({
                           </span>
                         ) : (
                           <a
-                            href={getExplorerTxUrl(explorerTxHash)}
+                            href={explorerTxUrl(chain, explorerTxHash)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-pv-emerald underline-offset-2 transition-colors hover:underline"
@@ -208,7 +218,7 @@ export default function CreateSuccessScreen({
                   ) : (
                     <p>
                       <a
-                        href={ARC_EXPLORER_URL}
+                        href={network.explorerUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-medium text-pv-emerald underline-offset-2 transition-colors hover:underline"
@@ -229,7 +239,7 @@ export default function CreateSuccessScreen({
                 >
                   {t("createAnother")}
                 </Button>
-                <Link href={`/vs/${createdId}`} className="block sm:inline-block">
+                <Link href={vsPath(createdId, chain, inviteKey)} className="block sm:inline-block">
                   <Button
                     variant="primary"
                     fullWidth

@@ -1,4 +1,14 @@
+import { claimKey, type ChainKey } from "./chains";
+
 const STORAGE_KEY = "proven.privateInviteKeys";
+
+/**
+ * Arc entries keep the bare id they were always stored under; other chains
+ * use claimKey (`base:12`) because ids repeat across chains.
+ */
+function entryKey(vsId: number, chain: ChainKey): string {
+  return chain === "arc" ? String(vsId) : claimKey(chain, vsId);
+}
 
 type PrivateInviteMap = Record<string, string>;
 
@@ -33,19 +43,19 @@ function writeInviteMap(value: PrivateInviteMap) {
   }
 }
 
-export function rememberPrivateInviteKey(vsId: number, inviteKey: string) {
+export function rememberPrivateInviteKey(vsId: number, inviteKey: string, chain: ChainKey = "arc") {
   if (!inviteKey) {
     return;
   }
 
   const current = readInviteMap();
-  current[String(vsId)] = inviteKey;
+  current[entryKey(vsId, chain)] = inviteKey;
   writeInviteMap(current);
 }
 
-export function getStoredPrivateInviteKey(vsId: number) {
+export function getStoredPrivateInviteKey(vsId: number, chain: ChainKey = "arc") {
   const current = readInviteMap();
-  return current[String(vsId)] ?? "";
+  return current[entryKey(vsId, chain)] ?? "";
 }
 
 export function generatePrivateInviteKey() {
