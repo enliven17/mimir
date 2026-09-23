@@ -12,68 +12,50 @@ import {
   custom,
   type PublicClient,
   type WalletClient,
-  type Chain,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-// Pulled out so the rest of the file can read the URL without optional-chain noise.
-export const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
+import {
+  CHAINS,
+  arcTestnet,
+  getChain,
+  requireContractAddress,
+  explorerTxUrl,
+  explorerAddressUrl,
+  type ChainKey,
+} from "./chains";
 
-/** Circle's Gateway Wallet on Arc — where batched x402 nanopayments settle on-chain. */
+export { arcTestnet };
+
+export const ARC_EXPLORER_URL = CHAINS.arc.explorerUrl;
+
+/** Circle's Gateway Wallet — same address on every Gateway testnet (Arc, Base, Arbitrum). */
 export const GATEWAY_WALLET_ADDRESS = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
 
-// ── Chain definition ──────────────────────────────────────────────────────────
-export const arcTestnet: Chain = {
-  id: 5042002,
-  name: "Arc Testnet",
-  nativeCurrency: {
-    name: "USD Coin",
-    symbol: "USDC",
-    decimals: 18,
-  },
-  rpcUrls: {
-    default: {
-      http: ["https://rpc.testnet.arc.network"],
-    },
-    canteen: {
-      http: ["https://arc-node.thecanteenapp.com"],
-    },
-  },
-  blockExplorers: {
-    default: {
-      name: "ArcScan",
-      url: ARC_EXPLORER_URL,
-    },
-  },
-  testnet: true,
-};
-
 // ── RPC endpoint ──────────────────────────────────────────────────────────────
-export function getArcRpcUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_ARC_RPC ||
-    (typeof window === "undefined" ? process.env.ARC_RPC : undefined) ||
-    arcTestnet.rpcUrls.default.http[0]
-  );
+export function getRpcUrl(key: ChainKey = "arc"): string {
+  return getChain(key).rpcUrl;
 }
 
-export function getContractAddress(): `0x${string}` {
-  const addr =
-    process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
-    "0x0000000000000000000000000000000000000000";
-  return addr as `0x${string}`;
+export function getArcRpcUrl(): string {
+  return getRpcUrl("arc");
+}
+
+/** Escrow address on `key`. Arc returns the zero address when unset, as before. */
+export function getContractAddress(key: ChainKey = "arc"): `0x${string}` {
+  if (key === "arc") {
+    return CHAINS.arc.contractAddress ?? "0x0000000000000000000000000000000000000000";
+  }
+  return requireContractAddress(key);
 }
 
 // Arc public RPC enforces `eth_getLogs` ≤ 10,000 blocks per call. We start
 // scans from the contract's deploy block and chunk in 10k batches.
-export const ARC_LOG_CHUNK = 9_999n;
+export const ARC_LOG_CHUNK = CHAINS.arc.logChunk;
+const CHAINS_BY_ID = new Map(Object.values(CHAINS).map((c) => [c.chain.id, c]));
 
-export function getDeployBlock(): bigint {
-  const raw = process.env.NEXT_PUBLIC_DEPLOY_BLOCK;
-  if (raw && raw.trim().length > 0) {
-    try { return BigInt(raw); } catch { /* fall through */ }
-  }
-  return 42_719_056n;
+export function getDeployBlock(key: ChainKey = "arc"): bigint {
+  return getChain(key).deployBlock;
 }
 
 /**
@@ -104,7 +86,8 @@ function isPrunedError(error: unknown): boolean {
  * failed on every render — wasted round trips that pushed /stats to 31s. The
  * boundary only moves forward, so bisect for it once and reuse it per instance.
  */
-let earliestReadableIndex: { deployBlock: bigint; index: number; at: number } | null = null;
+// Keyed by chain id: every chain prunes on its own schedule.
+const earliestReadableIndex = new Map<number, { deployBlock: bigint; index: number; at: number }>();
 const EARLIEST_TTL_MS = 10 * 60 * 1000;
 
 async function findFirstReadableRange(
@@ -113,7 +96,8 @@ async function findFirstReadableRange(
   ranges: Array<{ from: bigint; to: bigint }>,
   deployBlock: bigint,
 ): Promise<number> {
-  const cached = earliestReadableIndex;
+  const chainId = client.chain?.id ?? 0;
+  const cached = earliestReadableIndex.get(chainId);
   if (
     cached &&
     cached.deployBlock === deployBlock &&
@@ -138,7 +122,7 @@ async function findFirstReadableRange(
   let lo = 0;
   let hi = ranges.length - 1;
   if (await readable(lo)) {
-    earliestReadableIndex = { deployBlock, index: 0, at: Date.now() };
+    earliestReadableIndex.set(chainId, { deployBlock, index: 0, at: Date.now() });
     return 0;
   }
   // Lower bound: smallest index whose start block the RPC still serves. A boundary
@@ -150,7 +134,7 @@ async function findFirstReadableRange(
     else lo = mid + 1;
   }
 
-  earliestReadableIndex = { deployBlock, index: lo, at: Date.now() };
+  earliestReadableIndex.set(chainId, { deployBlock, index: lo, at: Date.now() });
   return lo;
 }
 
@@ -161,10 +145,12 @@ export async function paginatedGetLogs(
   toBlock?: bigint,
 ): Promise<any[]> {
   const end = toBlock ?? (await client.getBlockNumber());
+  const chunkSize =
+    CHAINS_BY_ID.get(client.chain?.id ?? 0)?.logChunk ?? ARC_LOG_CHUNK;
 
   const allRanges: Array<{ from: bigint; to: bigint }> = [];
   for (let start = fromBlock; start <= end; ) {
-    const stop = start + ARC_LOG_CHUNK > end ? end : start + ARC_LOG_CHUNK;
+    const stop = start + chunkSize > end ? end : start + chunkSize;
     allRanges.push({ from: start, to: stop });
     start = stop + 1n;
   }
@@ -229,12 +215,12 @@ export async function paginatedGetLogs(
   return pages.flat();
 }
 
-export function getExplorerTxUrl(txHash: string): string {
-  return `${ARC_EXPLORER_URL}/tx/${txHash}`;
+export function getExplorerTxUrl(txHash: string, key: ChainKey = "arc"): string {
+  return explorerTxUrl(key, txHash);
 }
 
-export function getExplorerAddressUrl(address: string): string {
-  return `${ARC_EXPLORER_URL}/address/${address}`;
+export function getExplorerAddressUrl(address: string, key: ChainKey = "arc"): string {
+  return explorerAddressUrl(key, address);
 }
 
 // ── viem clients ──────────────────────────────────────────────────────────────
@@ -266,15 +252,31 @@ const ARC_HTTP_OPTS = {
   timeout: 10_000,
 };
 
+const publicClients = new Map<ChainKey, PublicClient>();
+
+/** Batched, retrying read client for `key`, one per process per chain. */
+export function createChainPublicClient(key: ChainKey = "arc"): PublicClient {
+  let c = publicClients.get(key);
+  if (!c) {
+    c = createPublicClient({
+      chain: getChain(key).chain,
+      transport: http(getRpcUrl(key), ARC_HTTP_OPTS),
+    }) as PublicClient;
+    publicClients.set(key, c);
+  }
+  return c;
+}
+
 export function createArcPublicClient(): PublicClient {
-  return createPublicClient({
-    chain: arcTestnet,
-    transport: http(getArcRpcUrl(), ARC_HTTP_OPTS),
-  }) as PublicClient;
+  return createChainPublicClient("arc");
+}
+
+export function createChainHttpTransport(key: ChainKey = "arc") {
+  return http(getRpcUrl(key), ARC_HTTP_OPTS);
 }
 
 export function createArcHttpTransport() {
-  return http(getArcRpcUrl(), ARC_HTTP_OPTS);
+  return createChainHttpTransport("arc");
 }
 
 export function createArcWalletClient(provider: unknown): WalletClient {
@@ -284,20 +286,21 @@ export function createArcWalletClient(provider: unknown): WalletClient {
   });
 }
 
-export function createArcWalletClientWithKey(privateKey: string): WalletClient {
+export function createArcWalletClientWithKey(privateKey: string, key: ChainKey = "arc"): WalletClient {
   const account = privateKeyToAccount(privateKey as `0x${string}`);
   return createWalletClient({
-    chain: arcTestnet,
+    chain: getChain(key).chain,
     account,
-    transport: http(getArcRpcUrl(), ARC_HTTP_OPTS),
+    transport: http(getRpcUrl(key), ARC_HTTP_OPTS),
   });
 }
 
 // ── MetaMask chain-switch helper ──────────────────────────────────────────────
 export async function ensureArcChain(ethereum: {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-}): Promise<void> {
-  const chainIdHex = `0x${arcTestnet.id.toString(16)}`;
+}, key: ChainKey = "arc"): Promise<void> {
+  const target = getChain(key);
+  const chainIdHex = `0x${target.chain.id.toString(16)}`;
   const currentChainId = (await ethereum.request({ method: "eth_chainId" })) as string;
 
   if (currentChainId === chainIdHex) return;
@@ -314,17 +317,19 @@ export async function ensureArcChain(ethereum: {
       params: [
         {
           chainId: chainIdHex,
-          chainName: arcTestnet.name,
-          rpcUrls: arcTestnet.rpcUrls.default.http,
-          nativeCurrency: arcTestnet.nativeCurrency,
-          blockExplorerUrls: [ARC_EXPLORER_URL],
+          chainName: target.chain.name,
+          rpcUrls: target.chain.rpcUrls.default.http,
+          nativeCurrency: target.chain.nativeCurrency,
+          blockExplorerUrls: [target.explorerUrl],
         },
       ],
     });
   }
 }
 
-// ── Unit helpers ──────────────────────────────────────────────────────────────
+export const ensureChain = ensureArcChain;
+
+// ── Unit helpers (Arc only — use usdcToStakeUnits/stakeUnitsToUsdc in lib/chains for others) ──────────────────────────────────────────────────────────
 // Arc USDC: 18 decimals at EVM level (like ETH on Ethereum)
 // Display: 6 significant decimal places (standard USDC display)
 // 1 USDC = 1_000_000_000_000_000_000 wei
