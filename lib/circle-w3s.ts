@@ -60,7 +60,7 @@ async function encryptEntitySecret(): Promise<string> {
   return cipher.toString("base64");
 }
 
-async function circleFetch<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+async function circleFetch<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${CIRCLE_BASE}${path}`, {
     method,
     headers: {
@@ -330,4 +330,25 @@ export function getMarketCreatorAddress(): `0x${string}` {
   const addr = process.env.CIRCLE_CREATOR_ADDRESS;
   if (!addr) throw new Error("CIRCLE_CREATOR_ADDRESS missing");
   return addr as `0x${string}`;
+}
+
+// ── Derive: the same EOA on another EVM chain ─────────────────────────────────
+
+interface DeriveWalletResponse {
+  data: { wallet: { id: string; address: string; blockchain: string } };
+}
+
+/**
+ * Derive an existing EOA wallet onto another EVM blockchain. Circle returns a
+ * new wallet id for that chain with the SAME address, which is what lets an
+ * agent be one identity across Arc, Base and Arbitrum. Idempotent on Circle's
+ * side: deriving twice returns the existing wallet.
+ */
+export async function deriveWallet(walletId: string, blockchain: string) {
+  const resp = await circleFetch<DeriveWalletResponse>(
+    "PUT",
+    `/developer/wallets/${encodeURIComponent(walletId)}/blockchains/${encodeURIComponent(blockchain)}`,
+    {},
+  );
+  return resp.data.wallet;
 }

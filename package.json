@@ -22,6 +22,7 @@
     "oracle:challenge": "AUTO_CHALLENGE=1 tsx --env-file-if-exists=.env.local agents/oracle/index.ts",
     "market-creator": "tsx --env-file-if-exists=.env.local agents/market-creator/index.ts",
     "council": "tsx --env-file-if-exists=.env.local agents/council/index.ts",
+    "circle:derive-wallets": "tsx --env-file-if-exists=.env.local scripts/circle-derive-wallets.ts",
     "council:create-wallets": "tsx --env-file-if-exists=.env.local scripts/circle-create-council-wallets.ts",
     "workers": "tsx --env-file-if-exists=.env.local agents/all.ts",
     "x402:demo": "tsx --env-file-if-exists=.env.local scripts/x402-demo.ts",
