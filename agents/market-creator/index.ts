@@ -744,7 +744,12 @@ async function createClaim(candidate: ClaimCandidate): Promise<{ chain: ChainKey
       createTurn += i + 1;
       return { chain, txHash };
     } catch (err) {
-      console.error(`${chainTag("market-creator", chain)} Failed to create claim:`, err);
+      // A thrown write may still land (W3S gives up after 90s while the tx is
+      // pending), so trying the next chain could open the same market twice.
+      // Only a refusal before submitting (the balance check above) falls through.
+      console.error(`${chainTag("market-creator", chain)} Failed to create claim, not retrying elsewhere:`, err);
+      createTurn += i + 1;
+      return null;
     }
   }
   return null;
