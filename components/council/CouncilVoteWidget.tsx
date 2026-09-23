@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { getExplorerTxUrl } from "@/lib/arc";
+import { explorerTxUrl, type ChainKey } from "@/lib/chains";
 import { openPeepsAvatar } from "@/lib/avatars";
 
 interface PersonaVote {
@@ -40,7 +40,14 @@ interface CouncilResponse {
   votes:       PersonaVote[];
 }
 
-export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
+export default function CouncilVoteWidget({
+  claimId,
+  chain = "arc",
+}: {
+  claimId: number;
+  /** Network the claim lives on; council stakes are read there. */
+  chain?: ChainKey;
+}) {
   const [data, setData] = useState<CouncilResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +56,7 @@ export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/vs/${claimId}/council`)
+    fetch(`/api/vs/${claimId}/council${chain === "arc" ? "" : `?chain=${chain}`}`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<CouncilResponse>;
@@ -69,7 +76,7 @@ export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
     return () => {
       cancelled = true;
     };
-  }, [claimId]);
+  }, [claimId, chain]);
 
   if (loading) {
     return (
@@ -131,7 +138,7 @@ export default function CouncilVoteWidget({ claimId }: { claimId: number }) {
                   ✓ {v.stakeUsdc.toFixed(2)} USDC
                 </span>
                 <a
-                  href={getExplorerTxUrl(v.txHash)}
+                  href={explorerTxUrl(chain, v.txHash)}
                   target="_blank"
                   rel="noreferrer"
                   className="font-mono text-[10px] text-pv-muted hover:text-pv-emerald"

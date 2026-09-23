@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, ExternalLink, ShieldCheck } from "lucide-react";
-import type { VSData } from "@/lib/contract";
+import { vsChain, type VSData } from "@/lib/contract";
+import { explorerAddressUrl, getChain } from "@/lib/chains";
 
 interface EvidenceInspectorProps {
   vs: VSData;
@@ -28,6 +29,7 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
   const hasEvidence  = evidenceHash && evidenceHash !== "0x" + "0".repeat(64);
   const confidence   = vs.confidence ?? 0;
   const winnerSide   = vs.winner_side ?? "";
+  const chain        = getChain(vsChain(vs));
 
   // Only show for resolved claims
   if (vs.state !== "resolved") return null;
@@ -124,7 +126,7 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
                 </code>
               </div>
               <p className="mt-1 text-[11px] text-pv-muted">
-                The oracle fetched the evidence URL, hashed it with keccak256, and stored this hash on Arc.
+                The oracle fetched the evidence URL, hashed it with keccak256, and stored this hash on {chain.name}.
                 You can verify the evidence by fetching the URL and computing keccak256 of the text content.
               </p>
             </div>
@@ -139,16 +141,18 @@ export function EvidenceInspector({ vs }: EvidenceInspectorProps) {
               <li>Fetch the evidence URL above</li>
               <li>Strip HTML and compute keccak256 of the text</li>
               <li>Compare to the on-chain hash</li>
-              <li>
-                <a
-                  href={`https://testnet.arcscan.app/address/${vs.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-pv-cyan hover:text-pv-text"
-                >
-                  View settlement transaction on ArcScan ↗
-                </a>
-              </li>
+              {chain.contractAddress ? (
+                <li>
+                  <a
+                    href={explorerAddressUrl(chain.key, chain.contractAddress)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-pv-cyan hover:text-pv-text"
+                  >
+                    View the escrow&apos;s settlement activity on {chain.shortName}&apos;s explorer ↗
+                  </a>
+                </li>
+              ) : null}
             </ol>
           </div>
         </div>
