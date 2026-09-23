@@ -28,7 +28,16 @@ import {
   type ClaimChallenger,
   type VSData,
 } from "@/lib/contract";
-import { getExplorerTxUrl, createArcPublicClient } from "@/lib/arc";
+import { createChainPublicClient } from "@/lib/arc";
+import {
+  chainFromQuery,
+  explorerTxUrl,
+  getChain,
+  vsPath,
+  type ChainKey,
+} from "@/lib/chains";
+import ChainBadge from "@/components/ui/ChainBadge";
+import NetworkNotice from "@/components/vs/NetworkNotice";
 import { getPendingVS } from "@/lib/pending-vs";
 import { openPeepsAvatar } from "@/lib/avatars";
 import { formatUsdc } from "@/lib/money";
@@ -522,14 +531,23 @@ function formatChallengers(vs: VSData): ClaimChallenger[] {
 
 const CHALLENGERS_PAGE_SIZE = 4;
 
-/** Toast options linking to the tx hash, when the write returned one. */
-function txToastOptions(result: {
-  explorerTxHash?: string | null;
-  txHash?: string | null;
-}): { description: string } | undefined {
-  const hash = result.explorerTxHash || result.txHash;
+/** Toast options naming the tx hash, with a link to it on the claim's explorer. */
+function txToastOptions(
+  result: {
+    txHash?: string | null;
+  },
+  chain: ChainKey,
+): { description: string; action: { label: string; onClick: () => void } } | undefined {
+  // explorerTxHash is a full explorer URL now (lib/contract); only txHash is a hash.
+  const hash = result.txHash;
   return hash
-    ? { description: `Tx: ${hash.slice(0, 10)}...${hash.slice(-8)}` }
+    ? {
+        description: `Tx: ${hash.slice(0, 10)}...${hash.slice(-8)}`,
+        action: {
+          label: "Explorer",
+          onClick: () => window.open(explorerTxUrl(chain, hash), "_blank", "noopener,noreferrer"),
+        },
+      }
     : undefined;
 }
 
@@ -712,7 +730,12 @@ export default function VSDetailPage() {
   const vsId = Number(params.id);
   const isSampleVS = vsId < 0 && !!SAMPLE_VS[vsId];
   const inviteFromUrl = searchParams.get("invite")?.trim() ?? "";
-  const { address, isConnected, connect } = useWallet();
+  // A claim lives on one chain (absent ?chain= means Arc). It wins over the
+  // header selection for everything on this page.
+  const chain = chainFromQuery(searchParams.get("chain"));
+  const { address, isConnected, connect, isOnChain, switchNetwork } = useWallet();
+  const tNet = useTranslations("network");
+  const [switchingNetwork, setSwitchingNetwork] = useState(false);
   const t = useTranslations("vsDetail");
   const tc = useTranslations("common");
   const tStamp = useTranslations("stamp");
@@ -777,13 +800,13 @@ export default function VSDetailPage() {
     }
 
     if (inviteFromUrl) {
-      rememberPrivateInviteKey(vsId, inviteFromUrl);
+      rememberPrivateInviteKey(vsId, inviteFromUrl, chain);
       setStoredInviteKey(inviteFromUrl);
       return;
     }
 
-    setStoredInviteKey(getStoredPrivateInviteKey(vsId));
-  }, [inviteFromUrl, isSampleVS, vsId]);
+    setStoredInviteKey(getStoredPrivateInviteKey(vsId, chain));
+  }, [chain, inviteFromUrl, isSampleVS, vsId]);
 
   const fetchVS = useCallback(async () => {
     if (isSampleVS) {
@@ -802,6 +825,7 @@ export default function VSDetailPage() {
     const data = await getVS(vsId, {
       inviteKey,
       viewerAddress: address ?? undefined,
+      chain,
     });
     if (data) {
       setVS(data);
@@ -809,7 +833,7 @@ export default function VSDetailPage() {
       setFetchAttempts(0);
     } else {
       // Show optimistic data from localStorage while consensus is pending
-      const pending = getPendingVS(vsId);
+      const pending = getPendingVS(vsId, chain);
       if (pending) {
         setVS(pending);
         setLoading(false);
@@ -822,7 +846,7 @@ export default function VSDetailPage() {
         return next;
       });
     }
-  }, [address, inviteKey, isSampleVS, vsId]);
+  }, [address, chain, inviteKey, isSampleVS, vsId]);
 
   useEffect(() => {
     fetchVS();
@@ -858,8 +882,8 @@ export default function VSDetailPage() {
     const resolveTxHash = pendingResolveTxHash as `0x${string}`;
 
     async function watchResolveTransaction() {
-      // On Arc, transactions have sub-second finality — just wait for the EVM receipt.
-      const client = createArcPublicClient();
+      // Every supported chain finalises fast enough to just wait for the EVM receipt.
+      const client = createChainPublicClient(chain);
       try {
         const receipt = await client.waitForTransactionReceipt({ hash: resolveTxHash });
         if (cancelled) return;
@@ -886,7 +910,7 @@ export default function VSDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [address, fetchVS, isSampleVS, pendingResolveTxHash, t]);
+  }, [address, chain, fetchVS, isSampleVS, pendingResolveTxHash, t]);
 
   useEffect(() => {
     setChallengeStake("");
@@ -919,7 +943,7 @@ export default function VSDetailPage() {
       setRivalryLoading(true);
 
       try {
-        const ids = await getRivalryChain(currentVsId);
+        const ids = await getRivalryChain(currentVsId, chain);
         if (cancelled) return;
 
         if (ids.length === 0) {
@@ -927,7 +951,8 @@ export default function VSDetailPage() {
           return;
         }
 
-        const items = await Promise.all(ids.map((id) => getVS(id)));
+        // Rematches share their parent's chain, so every round lives on `chain`.
+        const items = await Promise.all(ids.map((id) => getVS(id, { chain })));
         if (cancelled) return;
 
         setRivalryChain(items.filter((item): item is VSData => item !== null));
@@ -948,7 +973,7 @@ export default function VSDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [isSampleVS, vs?.id, vs?.state]);
+  }, [chain, isSampleVS, vs?.id, vs?.state]);
 
   useEffect(() => {
     // Para mantener coherencia visual, colapsamos el rematch list cuando cambia la data.
@@ -1129,7 +1154,33 @@ export default function VSDetailPage() {
     : pool;
   const showRivalrySection =
     rivalryChain.length > 1 || display.state === "resolved";
-  const shareUrl = getShareUrl(vsId, inviteKey);
+  const shareUrl = getShareUrl(vsId, inviteKey, chain);
+  const claimNetwork = getChain(chain);
+  // Stake actions need the wallet on the claim's chain; the button switches first.
+  const needsNetworkSwitch = !isSampleVS && isConnected && !isOnChain(chain);
+
+  async function handleSwitchToClaimChain() {
+    setSwitchingNetwork(true);
+    try {
+      await switchNetwork(chain);
+    } catch {
+      toast.error(tNet("switchFailed", { name: claimNetwork.name }));
+    } finally {
+      setSwitchingNetwork(false);
+    }
+  }
+
+  const switchNetworkButton = (className = "") => (
+    <Button
+      variant="primary"
+      onClick={handleSwitchToClaimChain}
+      loading={switchingNetwork}
+      disabled={switchingNetwork}
+      className={className}
+    >
+      {switchingNetwork ? tNet("switching") : tNet("switchTo", { name: claimNetwork.name })}
+    </Button>
+  );
 
   /**
    * Shared guard for every on-chain action: wallet connected, one tx at a
@@ -1171,6 +1222,7 @@ export default function VSDetailPage() {
       const liveVS = await getVS(vsId, {
         inviteKey,
         viewerAddress: address,
+        chain,
       });
 
       if (!liveVS) {
@@ -1186,7 +1238,7 @@ export default function VSDetailPage() {
         return;
       }
 
-      const result = await acceptVS(address!, vsId, challengeStakeValue, inviteKey);
+      const result = await acceptVS(address!, vsId, challengeStakeValue, inviteKey, chain);
       const isPending = "pending" in result && Boolean(result.pending);
 
       toast.success(
@@ -1196,7 +1248,7 @@ export default function VSDetailPage() {
               amount: challengeStakeValue,
               total: getVSTotalPot(liveVS) + challengeStakeValue,
             }),
-        txToastOptions(result)
+        txToastOptions(result, chain)
       );
       fetchVS();
     } catch (err: any) {
@@ -1230,7 +1282,7 @@ export default function VSDetailPage() {
             ? t("submittedPending")
             : t("requestResolveTriggered")
           : t("requestResolveStored"),
-        txToastOptions(result)
+        txToastOptions(result, chain)
       );
 
       if (willTriggerResolution && isPending) {
@@ -1238,7 +1290,7 @@ export default function VSDetailPage() {
         // A useEffect watches vs.state and will auto-reveal once the
         // data transitions to "resolved" (with a winner).
         pendingResolveRef.current = true;
-        setPendingResolveTxHash(result.explorerTxHash || result.txHash || null);
+        setPendingResolveTxHash(result.txHash || null);
       } else if (willTriggerResolution) {
         setPendingResolveTxHash(null);
         setShowVerdict(true);
@@ -1270,7 +1322,7 @@ export default function VSDetailPage() {
     setActionLoading("resetResolve");
     try {
       const result = await resetVSResolveRequest(address!, vsId, inviteKey);
-      toast.success(t("resetResolveRequestSuccess"), txToastOptions(result));
+      toast.success(t("resetResolveRequestSuccess"), txToastOptions(result, chain));
       void fetchVS();
     } catch (err: any) {
       toast.error(err.message || t("resetResolveRequestError"));
@@ -1282,11 +1334,11 @@ export default function VSDetailPage() {
     await withTxLock(async () => {
     setActionLoading("cancel");
     try {
-      const result = await cancelVS(address!, vsId, inviteKey);
+      const result = await cancelVS(address!, vsId, inviteKey, chain);
       const isPending = "pending" in result && Boolean(result.pending);
       toast.success(
         isPending ? t("submittedPending") : t("cancelledToast"),
-        txToastOptions(result)
+        txToastOptions(result, chain)
       );
       fetchVS();
     } catch (err: any) {
@@ -1404,7 +1456,7 @@ export default function VSDetailPage() {
         {vsId > 0 && (
           <AnimatedItem>
             <div className="mb-6 sm:mb-8">
-              <CouncilVoteWidget claimId={vsId} />
+              <CouncilVoteWidget claimId={vsId} chain={chain} />
             </div>
           </AnimatedItem>
         )}
@@ -1438,7 +1490,10 @@ export default function VSDetailPage() {
                   ) : (
                     <Badge status={display.state} large />
                   )}
-                  <span className="font-mono text-[11px] text-pv-muted">#{vs.id}</span>
+                  <span className="inline-flex items-center gap-2">
+                    {!isSampleVS ? <ChainBadge chain={chain} /> : null}
+                    <span className="font-mono text-[11px] text-pv-muted">#{vs.id}</span>
+                  </span>
                 </div>
 
                 <h2 className="mb-6 font-display text-[clamp(28px,8.5vw,46px)] font-bold leading-[0.92] tracking-tight sm:mb-7">
@@ -1780,20 +1835,29 @@ export default function VSDetailPage() {
                         onChange={(event) => setChallengeStake(event.target.value)}
                         className="h-[3.25rem]"
                       />
-                      <Button
-                        variant="fuch"
-                        onClick={handleAccept}
-                        loading={actionLoading === "accept"}
-                        disabled={!hasValidChallengeStake}
-                        className="h-[3.25rem] w-full"
-                      >
-                        {actionLoading === "accept"
-                          ? t("accepting")
-                          : t("acceptAndStake", {
-                              amount: hasValidChallengeStake ? challengeStakeValue : vs.stake_amount,
-                            })}
-                      </Button>
+                      {needsNetworkSwitch ? (
+                        switchNetworkButton("h-[3.25rem] w-full")
+                      ) : (
+                        <Button
+                          variant="fuch"
+                          onClick={handleAccept}
+                          loading={actionLoading === "accept"}
+                          disabled={!hasValidChallengeStake}
+                          className="h-[3.25rem] w-full"
+                        >
+                          {actionLoading === "accept"
+                            ? t("accepting")
+                            : t("acceptAndStake", {
+                                amount: hasValidChallengeStake ? challengeStakeValue : vs.stake_amount,
+                              })}
+                        </Button>
+                      )}
                     </div>
+                    <NetworkNotice
+                      chain={chain}
+                      note={tNet("claimOnNetwork", { name: claimNetwork.name })}
+                      className="mt-4"
+                    />
                     {challengePayoutPreview !== null && challengeProfitPreview !== null && (
                       <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.1] bg-pv-bg/35">
                         <div className="grid grid-cols-1 gap-px bg-white/[0.07] p-px sm:grid-cols-3">
@@ -2036,15 +2100,18 @@ export default function VSDetailPage() {
                 </GlassCard>
               )}
 
-              {canCancel && (
-                <Button
-                  variant="danger"
-                  onClick={handleCancel}
-                  loading={actionLoading === "cancel"}
-                >
-                  {actionLoading === "cancel" ? t("cancelling") : t("cancelVS")}
-                </Button>
-              )}
+              {canCancel &&
+                (needsNetworkSwitch ? (
+                  switchNetworkButton()
+                ) : (
+                  <Button
+                    variant="danger"
+                    onClick={handleCancel}
+                    loading={actionLoading === "cancel"}
+                  >
+                    {actionLoading === "cancel" ? t("cancelling") : t("cancelVS")}
+                  </Button>
+                ))}
             </div>
           </AnimatedItem>
         ) : (
@@ -2180,7 +2247,9 @@ export default function VSDetailPage() {
                           {!isSampleVS &&
                             (vs.state === "resolved" || vs.state === "cancelled") && (
                               <div className="w-full flex justify-center">
-                                <Link href={`/vs/create?rematch=${vs.id}`}>
+                                <Link
+                                  href={`/vs/create?rematch=${vs.id}${chain === "arc" ? "" : `&chain=${chain}`}`}
+                                >
                                   <Button
                                     variant="emerald"
                                     fullWidth={false}
@@ -2234,7 +2303,7 @@ export default function VSDetailPage() {
                                 ) : (
                                   <Link
                                     key={entry.id}
-                                    href={`/vs/${entry.id}`}
+                                    href={vsPath(entry.id, chain)}
                                     className="block"
                                   >
                                     {inner}
