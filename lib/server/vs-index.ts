@@ -9,6 +9,7 @@ import {
   type ClaimData,
   type VSData,
 } from "@/lib/contract";
+import { claimKey, enabledChainKeys, type ChainKey } from "@/lib/chains";
 import {
   getAllVSFast as getVsFeedFromCache,
   getUserVSFast as getUserVsFromCache,
@@ -28,6 +29,14 @@ import {
   type ChallengerRow,
   type ClaimRow,
 } from "@/lib/db";
+
+/**
+ * sync_meta keys are per chain. Arc keeps the bare names it has always had,
+ * so an index built before multichain carries on from its checkpoint.
+ */
+function syncKey(base: string, chain: ChainKey): string {
+  return chain === "arc" ? base : `${base}:${chain}`;
+}
 import {
   buildVSCacheFreshness,
   makeContractFreshness,
@@ -65,7 +74,7 @@ type BackgroundTaskEntry = {
 type VsIndexBackgroundState = {
   feedRefresh?: BackgroundTaskEntry;
   userRefreshes: Map<string, BackgroundTaskEntry>;
-  detailRefreshes: Map<number, BackgroundTaskEntry>;
+  detailRefreshes: Map<string, BackgroundTaskEntry>;
 };
 
 declare global {
@@ -80,7 +89,7 @@ function getBackgroundState(): VsIndexBackgroundState {
   if (!globalThis.__provenVsIndexBackgroundState) {
     globalThis.__provenVsIndexBackgroundState = {
       userRefreshes: new Map<string, BackgroundTaskEntry>(),
-      detailRefreshes: new Map<number, BackgroundTaskEntry>(),
+      detailRefreshes: new Map<string, BackgroundTaskEntry>(),
     };
   }
 
@@ -155,10 +164,12 @@ function hydrateUserClaimsInBackground(address: string) {
 
 function refreshIndexedClaimInBackground(options: {
   claimId: number;
+  chain: ChainKey;
   inviteKey?: string | null;
 }) {
+  const key = claimKey(options.chain, options.claimId);
   const state = getBackgroundState();
-  const entry = state.detailRefreshes.get(options.claimId);
+  const entry = state.detailRefreshes.get(key);
   if (entry?.promise || isBackgroundTaskCoolingDown(entry?.startedAt)) {
     return;
   }
@@ -169,6 +180,7 @@ function refreshIndexedClaimInBackground(options: {
 
   nextEntry.promise = refreshIndexedClaim({
     claimId: options.claimId,
+    chain: options.chain,
     inviteKey: options.inviteKey,
   })
     .then(() => {})
@@ -177,15 +189,15 @@ function refreshIndexedClaimInBackground(options: {
     })
     .finally(() => {
       const currentState = getBackgroundState();
-      const currentEntry = currentState.detailRefreshes.get(options.claimId);
+      const currentEntry = currentState.detailRefreshes.get(key);
       if (currentEntry?.promise === nextEntry.promise) {
-        currentState.detailRefreshes.set(options.claimId, {
+        currentState.detailRefreshes.set(key, {
           startedAt: nextEntry.startedAt,
         });
       }
     });
 
-  state.detailRefreshes.set(options.claimId, nextEntry);
+  state.detailRefreshes.set(key, nextEntry);
 }
 
 function isPrivateClaim(claim: Pick<ClaimData, "visibility" | "is_private">) {
@@ -245,7 +257,7 @@ function getReferenceUpdatedAt(
 }
 
 async function buildListCacheFreshness(rows: ClaimRow[]) {
-  const lastSyncAt = Number((await getSyncMeta("last_sync_at")) ?? "0");
+  const lastSyncAt = await getOldestSyncAt();
   return buildVSCacheFreshness({
     updatedAtMs: getReferenceUpdatedAt(rows, lastSyncAt > 0 ? lastSyncAt : null),
     freshnessWindowMs: LIST_FRESHNESS_MS,
@@ -283,6 +295,7 @@ function claimRowToClaimData(
 
   return {
     id: row.id,
+    chain: row.chain,
     creator: row.creator,
     question: row.question ?? "",
     creator_position: row.creator_position ?? "",
@@ -318,6 +331,7 @@ function claimRowToClaimData(
     first_challenger: row.first_challenger,
     challenger_addresses: challengerAddresses,
     total_pot: row.total_pot,
+    created_at: row.created_at || undefined,
   };
 }
 
@@ -329,12 +343,12 @@ async function persistIndexedClaim(claim: ClaimData) {
   await upsertClaim(claim);
 
   if (Array.isArray(claim.challengers)) {
-    await upsertChallengers(claim.id, claim.challengers);
+    await upsertChallengers(claim.id, claim.challengers, claim.chain);
     return;
   }
 
   if (claim.challenger_count === 0) {
-    await upsertChallengers(claim.id, []);
+    await upsertChallengers(claim.id, [], claim.chain);
   }
 }
 
@@ -347,20 +361,20 @@ async function persistIndexedClaims(claims: ClaimData[]) {
   await Promise.all(
     claims.map((claim) => {
       if (Array.isArray(claim.challengers)) {
-        return upsertChallengers(claim.id, claim.challengers);
+        return upsertChallengers(claim.id, claim.challengers, claim.chain);
       }
       if (claim.challenger_count === 0) {
-        return upsertChallengers(claim.id, []);
+        return upsertChallengers(claim.id, [], claim.chain);
       }
       return undefined;
     })
   );
 }
 
-async function loadStoredVsById(vsId: number) {
+async function loadStoredVsById(vsId: number, chain: ChainKey) {
   const [row, challengerRows] = await Promise.all([
-    getClaimById(vsId),
-    getChallengersByClaimId(vsId),
+    getClaimById(vsId, chain),
+    getChallengersByClaimId(vsId, chain),
   ]);
 
   return { row, challengerRows };
@@ -370,24 +384,24 @@ async function loadStoredUserVs(address: string) {
   const normalized = address.toLowerCase();
   const creatorRows = await getClaimsByFilter({
     creator: normalized,
-    orderBy: "id_desc",
+    orderBy: "created_desc",
   });
 
-  const challengerClaimIds = await getClaimsByChallenger(normalized);
-  const creatorIds = new Set(creatorRows.map((row) => row.id));
-  const otherIds = challengerClaimIds.filter((id) => !creatorIds.has(id));
+  const challenged = await getClaimsByChallenger(normalized);
+  const creatorKeys = new Set(creatorRows.map((row) => claimKey(row.chain, row.id)));
+  const otherRefs = challenged.filter((ref) => !creatorKeys.has(claimKey(ref.chain, ref.id)));
   const otherRows =
-    otherIds.length > 0
+    otherRefs.length > 0
       ? await getClaimsByFilter({
-          ids: otherIds,
-          orderBy: "id_desc",
+          refs: otherRefs,
+          orderBy: "created_desc",
         })
       : [];
 
-  const rows = [...creatorRows, ...otherRows].sort((a, b) => b.id - a.id);
+  const rows = [...creatorRows, ...otherRows].sort(byNewestRow);
   const withChallengers = await Promise.all(
     rows.map(async (row) => {
-      const challengerRows = await getChallengersByClaimId(row.id);
+      const challengerRows = await getChallengersByClaimId(row.id, row.chain);
       return {
         row,
         challengerRows,
@@ -399,15 +413,24 @@ async function loadStoredUserVs(address: string) {
   return withChallengers;
 }
 
+function byNewestRow(a: Pick<ClaimRow, "created_at" | "id">, b: Pick<ClaimRow, "created_at" | "id">) {
+  return b.created_at - a.created_at || b.id - a.id;
+}
+
+function byNewestVs(a: VSData, b: VSData) {
+  return (b.created_at ?? 0) - (a.created_at ?? 0) || b.id - a.id;
+}
+
 async function fetchClaimForIndex(
   claimId: number,
+  chain: ChainKey,
   inviteKey?: string | null
 ): Promise<ClaimData | null> {
   if (inviteKey) {
-    return getClaimWithAccess(claimId, inviteKey);
+    return getClaimWithAccess(claimId, inviteKey, chain);
   }
 
-  return getClaim(claimId);
+  return getClaim(claimId, chain);
 }
 
 async function hydrateUserClaimsFromContract(address: string) {
@@ -424,7 +447,7 @@ async function hydrateUserClaimsFromContract(address: string) {
 
   if (publicClaimsNeedingDetails.length > 0) {
     const fullClaims = await Promise.all(
-      publicClaimsNeedingDetails.map((claim) => getClaim(claim.id))
+      publicClaimsNeedingDetails.map((claim) => getClaim(claim.id, claim.chain))
     );
 
     await Promise.all(
@@ -437,11 +460,12 @@ async function hydrateUserClaimsFromContract(address: string) {
   return claims
     .map(sanitizeClaimForPublicRead)
     .map(mapClaimToVS)
-    .sort((a, b) => b.id - a.id);
+    .sort(byNewestVs);
 }
 
 export async function refreshIndexedClaim(options: {
   claimId: number;
+  chain?: ChainKey;
   inviteKey?: string | null;
   attempts?: number;
   attemptDelayMs?: number;
@@ -450,7 +474,7 @@ export async function refreshIndexedClaim(options: {
   const attemptDelayMs = options.attemptDelayMs ?? 0;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const claim = await fetchClaimForIndex(options.claimId, options.inviteKey);
+    const claim = await fetchClaimForIndex(options.claimId, options.chain ?? "arc", options.inviteKey);
     if (claim) {
       await persistIndexedClaim(claim);
       return claim;
@@ -466,9 +490,10 @@ export async function refreshIndexedClaim(options: {
 
 export async function getVsWithInvite(
   claimId: number,
-  inviteKey: string
+  inviteKey: string,
+  chain: ChainKey = "arc",
 ): Promise<VSData | null> {
-  const claim = await getClaimWithAccess(claimId, inviteKey);
+  const claim = await getClaimWithAccess(claimId, inviteKey, chain);
   if (!claim) {
     return null;
   }
@@ -488,12 +513,38 @@ export async function getVsWithInvite(
 const RECONCILE_MAX_NEW_PAGES = 2;
 const RECONCILE_MAX_ACTIVE_REFRESHES = 25;
 
+/** Oldest per-chain sync time: the feed is only as fresh as its stalest chain. */
+async function getOldestSyncAt(): Promise<number> {
+  const values = await Promise.all(
+    enabledChainKeys().map(async (chain) => Number((await getSyncMeta(syncKey("last_sync_at", chain))) ?? "0")),
+  );
+  return values.length > 0 ? Math.min(...values) : 0;
+}
+
+/** Reconcile every deployed chain. One chain's RPC failing never stalls the others. */
 export async function reconcileVsIndex(): Promise<ReconcileResult> {
+  const results = await Promise.all(
+    enabledChainKeys().map((chain) =>
+      reconcileChain(chain).catch((err) => {
+        console.error(`[vs-index] reconcile ${chain} failed:`, err instanceof Error ? err.message : err);
+        return { synced: 0, new: 0, stateChanges: 0 };
+      }),
+    ),
+  );
+  return results.reduce(
+    (t, r) => ({ synced: t.synced + r.synced, new: t.new + r.new, stateChanges: t.stateChanges + r.stateChanges }),
+    { synced: 0, new: 0, stateChanges: 0 },
+  );
+}
+
+async function reconcileChain(chain: ChainKey): Promise<ReconcileResult> {
   const now = Date.now();
+  const countKey = syncKey("last_claim_count", chain);
   const [lastClaimCountValue, totalClaimCount, activeRows] = await Promise.all([
-    getSyncMeta("last_claim_count"),
-    getClaimCount(),
+    getSyncMeta(countKey),
+    getClaimCount(chain),
     getClaimsByFilter({
+      chain,
       states: ["open", "active"],
       orderBy: "id_desc",
     }),
@@ -515,7 +566,7 @@ export async function reconcileVsIndex(): Promise<ReconcileResult> {
   ) {
     const pageEnd = Math.min(startId + CLAIM_SYNC_PAGE_SIZE - 1, totalClaimCount);
     const expected = pageEnd - startId + 1;
-    const pageClaims = await getClaimSummaries(startId, expected);
+    const pageClaims = await getClaimSummaries(startId, expected, chain);
     if (pageClaims.length > 0) {
       await persistIndexedClaims(pageClaims);
       synced += pageClaims.length;
@@ -530,19 +581,19 @@ export async function reconcileVsIndex(): Promise<ReconcileResult> {
       let checkpoint = startId - 1;
       while (got.has(checkpoint + 1)) checkpoint += 1;
       if (checkpoint >= startId) {
-        await setSyncMeta("last_claim_count", String(checkpoint));
+        await setSyncMeta(countKey, String(checkpoint));
       }
       break;
     }
 
-    await setSyncMeta("last_claim_count", String(pageEnd));
+    await setSyncMeta(countKey, String(pageEnd));
   }
 
   // 2. Refresh claims the index believes are open/active by reading only
   //    those ids, instead of re-scanning the entire chain to find them.
   const rowsToRefresh = activeRows.slice(0, RECONCILE_MAX_ACTIVE_REFRESHES);
   for (const row of rowsToRefresh) {
-    const fresh = await refreshIndexedClaim({ claimId: row.id });
+    const fresh = await refreshIndexedClaim({ claimId: row.id, chain });
     if (!fresh) continue;
     synced += 1;
     if (
@@ -554,7 +605,7 @@ export async function reconcileVsIndex(): Promise<ReconcileResult> {
     }
   }
 
-  await setSyncMeta("last_sync_at", String(now));
+  await setSyncMeta(syncKey("last_sync_at", chain), String(now));
 
   return {
     synced,
@@ -569,9 +620,9 @@ export async function getVsFeedSnapshot(
   try {
     const rows = await getClaimsByFilter({
       visibility: "public",
-      orderBy: "id_desc",
+      orderBy: "created_desc",
     });
-    const lastSyncAt = Number((await getSyncMeta("last_sync_at")) ?? "0");
+    const lastSyncAt = await getOldestSyncAt();
     const shouldRefresh =
       options.forceRefresh ||
       rows.length === 0 ||
@@ -582,7 +633,7 @@ export async function getVsFeedSnapshot(
       await reconcileVsIndex();
       const refreshedRows = await getClaimsByFilter({
         visibility: "public",
-        orderBy: "id_desc",
+        orderBy: "created_desc",
       });
       return {
         items: refreshedRows.map((row) => claimRowToVSData(row)),
@@ -639,9 +690,12 @@ function withDeadline<T>(promise: Promise<T>, ms: number, fallback: T): Promise<
   ]);
 }
 
-export async function getVsDetailSnapshot(vsId: number): Promise<VSDetailSnapshot> {
+export async function getVsDetailSnapshot(
+  vsId: number,
+  chain: ChainKey = "arc",
+): Promise<VSDetailSnapshot> {
   try {
-    const { row, challengerRows } = await loadStoredVsById(vsId);
+    const { row, challengerRows } = await loadStoredVsById(vsId, chain);
     if (row?.visibility === "private") {
       return {
         item: null,
@@ -667,8 +721,8 @@ export async function getVsDetailSnapshot(vsId: number): Promise<VSDetailSnapsho
     }
 
     const freshClaim = row
-      ? await withDeadline(refreshIndexedClaim({ claimId: vsId }), DETAIL_REFRESH_BUDGET_MS, null)
-      : await refreshIndexedClaim({ claimId: vsId });
+      ? await withDeadline(refreshIndexedClaim({ claimId: vsId, chain }), DETAIL_REFRESH_BUDGET_MS, null)
+      : await refreshIndexedClaim({ claimId: vsId, chain });
     if (freshClaim) {
       return {
         item: mapClaimToVS(freshClaim),
@@ -685,8 +739,8 @@ export async function getVsDetailSnapshot(vsId: number): Promise<VSDetailSnapsho
 
     if (!row) {
       const [lastSyncAtValue, lastClaimCountValue] = await Promise.all([
-        getSyncMeta("last_sync_at"),
-        getSyncMeta("last_claim_count"),
+        getSyncMeta(syncKey("last_sync_at", chain)),
+        getSyncMeta(syncKey("last_claim_count", chain)),
       ]);
 
       const lastSyncAt = Number(lastSyncAtValue ?? "0");
@@ -709,7 +763,7 @@ export async function getVsDetailSnapshot(vsId: number): Promise<VSDetailSnapsho
     // Fall through to the existing cache-backed path below.
   }
 
-  const fallbackItem = await getVsByIdFromCache(vsId);
+  const fallbackItem = await getVsByIdFromCache(vsId, chain);
   return {
     item: fallbackItem,
     cache: buildVSCacheFreshness({
@@ -720,8 +774,8 @@ export async function getVsDetailSnapshot(vsId: number): Promise<VSDetailSnapsho
   };
 }
 
-export async function getVsDetail(vsId: number) {
-  return (await getVsDetailSnapshot(vsId)).item;
+export async function getVsDetail(vsId: number, chain: ChainKey = "arc") {
+  return (await getVsDetailSnapshot(vsId, chain)).item;
 }
 
 export async function getUserVsSnapshot(
@@ -824,10 +878,12 @@ export async function getUserVs(address: string) {
 
 export async function triggerPostWriteRefresh(options: {
   claimId: number;
+  chain?: ChainKey;
   inviteKey?: string | null;
 }) {
   return refreshIndexedClaim({
     claimId: options.claimId,
+    chain: options.chain,
     inviteKey: options.inviteKey,
     attempts: POST_WRITE_REFRESH_ATTEMPTS,
     attemptDelayMs: POST_WRITE_REFRESH_DELAY_MS,

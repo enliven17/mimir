@@ -3,6 +3,7 @@ import ws from "ws";
 
 import type { ChallengeOpportunity } from "@/lib/claimDrafts";
 import type { ClaimChallenger, ClaimData } from "@/lib/contract";
+import type { ChainKey } from "@/lib/chains";
 
 // Neon's @neondatabase/serverless uses WebSockets in Node — wire up the ws
 // implementation. In edge/serverless runtimes that don't ship a global
@@ -13,6 +14,8 @@ if (typeof globalThis.WebSocket === "undefined") {
 
 export interface ClaimRow {
   id: number;
+  /** Claim ids restart per chain; (chain, id) is the identity. */
+  chain: ChainKey;
   creator: string;
   question: string | null;
   creator_position: string | null;
@@ -38,20 +41,32 @@ export interface ClaimRow {
   challenger_count: number;
   total_pot: number;
   first_challenger: string;
+  /** On-chain creation time (s). 0 on rows indexed before it was stored. */
+  created_at: number;
   first_indexed_at: number;
   updated_at: number;
   is_final: number;
 }
 
 export interface ChallengerRow {
+  chain: ChainKey;
   claim_id: number;
   address: string;
   stake: number;
   potential_payout: number;
 }
 
+/** A claim's identity across chains. */
+export interface ClaimRef {
+  chain: ChainKey;
+  id: number;
+}
+
 export interface ClaimFilters {
+  /** Ids on `chain` (Arc when unset). Use `refs` to span chains. */
   ids?: number[];
+  refs?: ClaimRef[];
+  chain?: ChainKey;
   creator?: string;
   categories?: string[];
   states?: string[];
@@ -59,7 +74,7 @@ export interface ClaimFilters {
   visibility?: string;
   isFinal?: boolean;
   limit?: number;
-  orderBy?: "id_desc" | "updated_desc" | "deadline_asc" | "deadline_desc";
+  orderBy?: "id_desc" | "created_desc" | "updated_desc" | "deadline_asc" | "deadline_desc";
 }
 
 export interface ChallengeOpportunityRow {
@@ -112,7 +127,8 @@ interface SqlStatement {
  */
 const SCHEMA_STATEMENTS: SqlStatement[] = [
   { sql: `CREATE TABLE IF NOT EXISTS claims (
-    id BIGINT PRIMARY KEY,
+    chain TEXT NOT NULL DEFAULT 'arc',
+    id BIGINT NOT NULL,
     creator TEXT NOT NULL,
     question TEXT,
     creator_position TEXT,
@@ -140,7 +156,9 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     first_challenger TEXT NOT NULL DEFAULT '',
     first_indexed_at BIGINT NOT NULL DEFAULT 0,
     updated_at BIGINT NOT NULL DEFAULT 0,
-    is_final INTEGER NOT NULL DEFAULT 0
+    is_final INTEGER NOT NULL DEFAULT 0,
+    created_at BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (chain, id)
   )` },
   { sql: "CREATE INDEX IF NOT EXISTS idx_claims_state ON claims(state)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_claims_category ON claims(category)" },
@@ -150,12 +168,39 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
   { sql: "CREATE INDEX IF NOT EXISTS idx_claims_visibility ON claims(visibility)" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_claims_active ON claims(state, is_final)" },
   { sql: `CREATE TABLE IF NOT EXISTS challengers (
+    chain TEXT NOT NULL DEFAULT 'arc',
     claim_id BIGINT NOT NULL,
     address TEXT NOT NULL,
     stake NUMERIC NOT NULL DEFAULT 0,
     potential_payout NUMERIC NOT NULL DEFAULT 0,
-    PRIMARY KEY (claim_id, address)
+    PRIMARY KEY (chain, claim_id, address)
   )` },
+  // ── Multichain migration ───────────────────────────────────────────────────
+  // Indexes built before Base/Arbitrum hold Arc rows keyed by id alone. Tag
+  // them 'arc' and widen the primary keys to (chain, id); every existing row
+  // keeps its meaning. Guarded so it runs once and is a no-op afterwards.
+  { sql: "ALTER TABLE claims ADD COLUMN IF NOT EXISTS chain TEXT NOT NULL DEFAULT 'arc'" },
+  { sql: "ALTER TABLE challengers ADD COLUMN IF NOT EXISTS chain TEXT NOT NULL DEFAULT 'arc'" },
+  { sql: `DO $$ BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_index i
+      JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+      WHERE i.indrelid = 'claims'::regclass AND i.indisprimary AND a.attname = 'chain'
+    ) THEN
+      ALTER TABLE claims DROP CONSTRAINT IF EXISTS claims_pkey;
+      ALTER TABLE claims ADD PRIMARY KEY (chain, id);
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_index i
+      JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+      WHERE i.indrelid = 'challengers'::regclass AND i.indisprimary AND a.attname = 'chain'
+    ) THEN
+      ALTER TABLE challengers DROP CONSTRAINT IF EXISTS challengers_pkey;
+      ALTER TABLE challengers ADD PRIMARY KEY (chain, claim_id, address);
+    END IF;
+  END $$` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_claims_chain ON claims(chain)" },
+  { sql: "ALTER TABLE claims ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT 0" },
   { sql: "CREATE INDEX IF NOT EXISTS idx_challengers_address ON challengers(address)" },
   // Stakes/payouts are USDC floats (e.g. 5.53), not whole numbers — BIGINT
   // columns rejected every fractional write, silently dropping challenger
@@ -210,6 +255,9 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
   )` },
   { sql: "ALTER TABLE x402_payments ADD COLUMN IF NOT EXISTS seller TEXT" },
   { sql: "ALTER TABLE x402_payments ADD COLUMN IF NOT EXISTS payment_id TEXT" },
+  // CAIP-2 network the nanopayment settled on. NULL on rows from before
+  // multichain, which were all Arc.
+  { sql: "ALTER TABLE x402_payments ADD COLUMN IF NOT EXISTS network TEXT" },
   // A settlement retried by the facilitator must not be counted twice. The index
   // is partial so rows predating the column (payment_id NULL) stay valid.
   { sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_x402_payments_payment_id
@@ -245,6 +293,7 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     at BIGINT NOT NULL DEFAULT 0
   )` },
   { sql: "CREATE INDEX IF NOT EXISTS idx_copy_executions_permission ON copy_executions(permission_id, at DESC)" },
+  { sql: "ALTER TABLE copy_executions ADD COLUMN IF NOT EXISTS chain TEXT NOT NULL DEFAULT 'arc'" },
 
   // ── Baskets ────────────────────────────────────────────────────────────────
   // A basket holds nothing: these rows are a definition and a set of signed
@@ -409,9 +458,14 @@ function getNullableString(value: unknown): string | null {
   return String(value);
 }
 
+function getChainKey(value: unknown): ChainKey {
+  return value === "base" || value === "arbitrum" ? value : "arc";
+}
+
 function normalizeClaimRow(row: Record<string, unknown>): ClaimRow {
   return {
     id: getNumber(row.id),
+    chain: getChainKey(row.chain),
     creator: getString(row.creator),
     question: getNullableString(row.question),
     creator_position: getNullableString(row.creator_position),
@@ -437,6 +491,7 @@ function normalizeClaimRow(row: Record<string, unknown>): ClaimRow {
     challenger_count: getNumber(row.challenger_count),
     total_pot: getNumber(row.total_pot),
     first_challenger: getString(row.first_challenger),
+    created_at: getNumber(row.created_at),
     first_indexed_at: getNumber(row.first_indexed_at),
     updated_at: getNumber(row.updated_at),
     is_final: getNumber(row.is_final),
@@ -445,6 +500,7 @@ function normalizeClaimRow(row: Record<string, unknown>): ClaimRow {
 
 function normalizeChallengerRow(row: Record<string, unknown>): ChallengerRow {
   return {
+    chain: getChainKey(row.chain),
     claim_id: getNumber(row.claim_id),
     address: getString(row.address),
     stake: getNumber(row.stake),
@@ -503,6 +559,7 @@ function buildIndexedClaimRecord(claim: ClaimData): IndexedClaimRecord {
 
   return {
     id: claim.id,
+    chain: claim.chain ?? "arc",
     creator: claim.creator.toLowerCase(),
     question: content.question,
     creator_position: content.creator_position,
@@ -529,6 +586,7 @@ function buildIndexedClaimRecord(claim: ClaimData): IndexedClaimRecord {
     total_pot: claim.total_pot,
     first_challenger:
       (claim.first_challenger ?? claim.challenger_addresses?.[0] ?? "").toLowerCase(),
+    created_at: claim.created_at ?? 0,
   };
 }
 
@@ -536,14 +594,14 @@ function buildClaimUpsertStatement(claim: ClaimData, timestamp: number): SqlStat
   const record = buildIndexedClaimRecord(claim);
   return {
     sql: `INSERT INTO claims (
-      id, creator, question, creator_position, counter_position, resolution_url,
+      chain, id, creator, question, creator_position, counter_position, resolution_url,
       creator_stake, total_challenger_stake, reserved_creator_liability,
       deadline, state, winner_side, resolution_summary, confidence, category,
       parent_id, market_type, odds_mode, challenger_payout_bps, handicap_line,
       settlement_rule, max_challengers, visibility, challenger_count, total_pot,
-      first_challenger, first_indexed_at, updated_at, is_final
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
+      first_challenger, first_indexed_at, updated_at, is_final, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(chain, id) DO UPDATE SET
       creator = excluded.creator,
       question = excluded.question,
       creator_position = excluded.creator_position,
@@ -574,8 +632,13 @@ function buildClaimUpsertStatement(claim: ClaimData, timestamp: number): SqlStat
         ELSE excluded.first_indexed_at
       END,
       updated_at = excluded.updated_at,
-      is_final = excluded.is_final`,
+      is_final = excluded.is_final,
+      created_at = CASE
+        WHEN excluded.created_at > 0 THEN excluded.created_at
+        ELSE claims.created_at
+      END`,
     args: [
+      record.chain,
       record.id,
       record.creator,
       record.question,
@@ -605,6 +668,7 @@ function buildClaimUpsertStatement(claim: ClaimData, timestamp: number): SqlStat
       timestamp,
       timestamp,
       record.state === "resolved" || record.state === "cancelled" ? 1 : 0,
+      record.created_at,
     ],
   };
 }
@@ -660,11 +724,11 @@ export async function upsertClaimsBatch(claims: ClaimData[]): Promise<void> {
   await batchWrite(pool, claims.map((claim) => buildClaimUpsertStatement(claim, now)));
 }
 
-export async function getClaimById(id: number): Promise<ClaimRow | null> {
+export async function getClaimById(id: number, chain: ChainKey = "arc"): Promise<ClaimRow | null> {
   const pool = await getDb();
   const result = await execute(pool, {
-    sql:  "SELECT * FROM claims WHERE id = ? LIMIT 1",
-    args: [id],
+    sql:  "SELECT * FROM claims WHERE chain = ? AND id = ? LIMIT 1",
+    args: [chain, id],
   });
   const row = result.rows[0];
   return row ? normalizeClaimRow(row as Record<string, unknown>) : null;
@@ -676,8 +740,15 @@ export async function getClaimsByFilter(filters: ClaimFilters = {}): Promise<Cla
   const args: Array<string | number> = [];
 
   if (filters.ids && filters.ids.length > 0) {
-    clauses.push(`id IN (${makeListPlaceholders(filters.ids)})`);
-    args.push(...filters.ids);
+    clauses.push(`chain = ? AND id IN (${makeListPlaceholders(filters.ids)})`);
+    args.push(filters.chain ?? "arc", ...filters.ids);
+  } else if (filters.chain) {
+    clauses.push("chain = ?");
+    args.push(filters.chain);
+  }
+  if (filters.refs && filters.refs.length > 0) {
+    clauses.push(`(chain, id) IN (${filters.refs.map(() => "(?, ?)").join(", ")})`);
+    for (const ref of filters.refs) args.push(ref.chain, ref.id);
   }
   if (filters.creator) {
     clauses.push("creator = ?");
@@ -706,6 +777,10 @@ export async function getClaimsByFilter(filters: ClaimFilters = {}): Promise<Cla
 
   let orderBy = "ORDER BY id DESC";
   switch (filters.orderBy) {
+    case "created_desc":
+      // Pre-multichain rows carry created_at 0 and are all older Arc claims.
+      orderBy = "ORDER BY created_at DESC, id DESC";
+      break;
     case "updated_desc":
       orderBy = "ORDER BY updated_at DESC, id DESC";
       break;
@@ -768,18 +843,22 @@ export async function getExpiringClaims(withinSeconds: number): Promise<ClaimRow
   return result.rows.map((row) => normalizeClaimRow(row as Record<string, unknown>));
 }
 
-export async function getClaimsByParent(parentId: number): Promise<ClaimRow[]> {
+export async function getClaimsByParent(parentId: number, chain: ChainKey = "arc"): Promise<ClaimRow[]> {
   return getClaimsByFilter({
     parentId,
+    chain,
     orderBy: "id_desc",
   });
 }
 
-export async function getClaimFreshness(id: number): Promise<{ updated_at: number; is_final: number } | null> {
+export async function getClaimFreshness(
+  id: number,
+  chain: ChainKey = "arc",
+): Promise<{ updated_at: number; is_final: number } | null> {
   const pool = await getDb();
   const result = await execute(pool, {
-    sql:  "SELECT updated_at, is_final FROM claims WHERE id = ? LIMIT 1",
-    args: [id],
+    sql:  "SELECT updated_at, is_final FROM claims WHERE chain = ? AND id = ? LIMIT 1",
+    args: [chain, id],
   });
   const row = result.rows[0];
   if (!row) return null;
@@ -792,20 +871,22 @@ export async function getClaimFreshness(id: number): Promise<{ updated_at: numbe
 export async function upsertChallengers(
   claimId: number,
   challengers: ClaimChallenger[],
+  chain: ChainKey = "arc",
 ): Promise<void> {
   const pool = await getDb();
   const statements: SqlStatement[] = [
     {
-      sql:  "DELETE FROM challengers WHERE claim_id = ?",
-      args: [claimId],
+      sql:  "DELETE FROM challengers WHERE chain = ? AND claim_id = ?",
+      args: [chain, claimId],
     },
     ...challengers.map((challenger) => ({
-      sql: `INSERT INTO challengers(claim_id, address, stake, potential_payout)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(claim_id, address) DO UPDATE SET
+      sql: `INSERT INTO challengers(chain, claim_id, address, stake, potential_payout)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(chain, claim_id, address) DO UPDATE SET
           stake = excluded.stake,
           potential_payout = excluded.potential_payout`,
       args: [
+        chain,
         claimId,
         challenger.address.toLowerCase(),
         challenger.stake,
@@ -816,22 +897,29 @@ export async function upsertChallengers(
   await batchWrite(pool, statements);
 }
 
-export async function getChallengersByClaimId(claimId: number): Promise<ChallengerRow[]> {
+export async function getChallengersByClaimId(
+  claimId: number,
+  chain: ChainKey = "arc",
+): Promise<ChallengerRow[]> {
   const pool = await getDb();
   const result = await execute(pool, {
-    sql:  "SELECT * FROM challengers WHERE claim_id = ? ORDER BY address ASC",
-    args: [claimId],
+    sql:  "SELECT * FROM challengers WHERE chain = ? AND claim_id = ? ORDER BY address ASC",
+    args: [chain, claimId],
   });
   return result.rows.map((row) => normalizeChallengerRow(row as Record<string, unknown>));
 }
 
-export async function getClaimsByChallenger(address: string): Promise<number[]> {
+/** Every claim `address` challenged, on any chain. */
+export async function getClaimsByChallenger(address: string): Promise<ClaimRef[]> {
   const pool = await getDb();
   const result = await execute(pool, {
-    sql:  "SELECT claim_id FROM challengers WHERE address = ? ORDER BY claim_id DESC",
+    sql:  "SELECT chain, claim_id FROM challengers WHERE address = ? ORDER BY claim_id DESC",
     args: [address],
   });
-  return result.rows.map((row) => getNumber((row as Record<string, unknown>).claim_id));
+  return result.rows.map((row) => ({
+    chain: getChainKey((row as Record<string, unknown>).chain),
+    id: getNumber((row as Record<string, unknown>).claim_id),
+  }));
 }
 
 export async function getSyncMeta(key: string): Promise<string | null> {

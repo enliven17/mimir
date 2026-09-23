@@ -1,20 +1,20 @@
-import { CONTRACT_ADDRESS } from "../lib/contract";
 import { refreshVSIndex } from "../lib/server/vs-cache";
-import { ZERO_ADDRESS } from "../lib/constants";
+import { enabledChains } from "../lib/chains";
 
 async function main() {
-  if (CONTRACT_ADDRESS === ZERO_ADDRESS) {
+  const chains = enabledChains();
+  if (chains.length === 0) {
     throw new Error(
-      "Set NEXT_PUBLIC_CONTRACT_ADDRESS before warming the VS index"
+      "Set NEXT_PUBLIC_CONTRACT_ADDRESS (and/or the Base/Arbitrum ones) before warming the VS index"
     );
   }
 
   const snapshot = await refreshVSIndex();
 
   console.log(
-    `Warmed VS index for ${snapshot.items.length} items from ${snapshot.contractAddress}`
+    `Warmed VS index for ${snapshot.items.length} items across ${chains.map((c) => c.name).join(", ")}`
   );
-  console.log(`Snapshot time: ${new Date(snapshot.syncedAt).toISOString()}`);
+  console.log(`Snapshot time: ${new Date().toISOString()}`);
 }
 
 main().catch((error) => {

@@ -3,13 +3,17 @@ import { tmpdir } from "os";
 import path from "path";
 
 import {
-  CONTRACT_ADDRESS,
   getClaimCount,
-  getOpenVSSummaries,
   getVS,
   getVSSummaries,
+  vsChain,
   type VSData,
 } from "@/lib/contract";
+import { getContractAddress } from "@/lib/arc";
+import { enabledChainKeys, type ChainKey } from "@/lib/chains";
+
+// Fallback read path for when the Neon index is down: one snapshot per chain,
+// each keyed to its own contract address so a redeploy invalidates only it.
 
 const ACTIVE_STATES = new Set<VSData["state"]>(["open", "accepted"]);
 const VS_PAGE_SIZE = 50;
@@ -21,6 +25,7 @@ export const VS_CACHE_HEADERS = {
 };
 
 type VSSnapshot = {
+  chain?: ChainKey;
   contractAddress: string;
   syncedAt: number;
   totalCount: number;
@@ -28,8 +33,8 @@ type VSSnapshot = {
 };
 
 type VSCacheState = {
-  snapshot?: VSSnapshot | null;
-  syncPromise?: Promise<VSSnapshot>;
+  snapshots: Map<ChainKey, VSSnapshot>;
+  syncPromises: Map<ChainKey, Promise<VSSnapshot>>;
 };
 
 declare global {
@@ -37,25 +42,25 @@ declare global {
 }
 
 function getCacheState(): VSCacheState {
-  if (!globalThis.__provenVSCache) {
-    globalThis.__provenVSCache = {};
+  if (!globalThis.__provenVSCache?.snapshots) {
+    globalThis.__provenVSCache = { snapshots: new Map(), syncPromises: new Map() };
   }
   return globalThis.__provenVSCache;
 }
 
-function getSnapshotPath() {
+function getSnapshotPath(chain: ChainKey) {
   const baseDir =
     process.env.PROVEN_CACHE_DIR ||
     (process.env.VERCEL ? path.join(tmpdir(), "proven-cache") : path.join(process.cwd(), ".cache"));
 
   return path.join(
     baseDir,
-    `vs-index-${String(CONTRACT_ADDRESS).toLowerCase()}.json`
+    `vs-index-${chain}-${String(getContractAddress(chain)).toLowerCase()}.json`
   );
 }
 
 function sortVS(items: VSData[]) {
-  return [...items].sort((a, b) => b.id - a.id);
+  return [...items].sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0) || b.id - a.id);
 }
 
 function upsertVS(items: VSData[], updates: VSData[]) {
@@ -74,22 +79,22 @@ function upsertVS(items: VSData[], updates: VSData[]) {
   return sortVS(Array.from(byId.values()));
 }
 
-function snapshotIsFresh(snapshot: VSSnapshot | null | undefined) {
+function snapshotIsFresh(snapshot: VSSnapshot | null | undefined, chain: ChainKey) {
   if (!snapshot) {
     return false;
   }
-  if (snapshot.contractAddress !== CONTRACT_ADDRESS) {
+  if (snapshot.contractAddress !== getContractAddress(chain)) {
     return false;
   }
 
   return Date.now() - snapshot.syncedAt <= VS_REVALIDATE_SECONDS * 1000;
 }
 
-function shouldRebuildFromScratch(snapshot: VSSnapshot | null, count: number) {
+function shouldRebuildFromScratch(snapshot: VSSnapshot | null, count: number, chain: ChainKey) {
   if (!snapshot) {
     return true;
   }
-  if (snapshot.contractAddress !== CONTRACT_ADDRESS) {
+  if (snapshot.contractAddress !== getContractAddress(chain)) {
     return true;
   }
   if (count < snapshot.totalCount) {
@@ -113,17 +118,17 @@ function matchesUser(vs: VSData, address: string) {
   );
 }
 
-async function readSnapshotFromDisk(): Promise<VSSnapshot | null> {
+async function readSnapshotFromDisk(chain: ChainKey): Promise<VSSnapshot | null> {
   try {
-    const raw = await readFile(getSnapshotPath(), "utf8");
+    const raw = await readFile(getSnapshotPath(chain), "utf8");
     return JSON.parse(raw) as VSSnapshot;
   } catch {
     return null;
   }
 }
 
-async function writeSnapshotToDisk(snapshot: VSSnapshot) {
-  const snapshotPath = getSnapshotPath();
+async function writeSnapshotToDisk(snapshot: VSSnapshot, chain: ChainKey) {
+  const snapshotPath = getSnapshotPath(chain);
 
   try {
     await mkdir(path.dirname(snapshotPath), { recursive: true });
@@ -134,49 +139,50 @@ async function writeSnapshotToDisk(snapshot: VSSnapshot) {
   }
 }
 
-async function fetchAllVSSummaries(count: number) {
+async function fetchAllVSSummaries(count: number, chain: ChainKey) {
   if (count <= 0) {
     return [];
   }
 
   const pages = await Promise.all(
     Array.from({ length: Math.ceil(count / VS_PAGE_SIZE) }, (_, index) =>
-      getVSSummaries(index * VS_PAGE_SIZE + 1, VS_PAGE_SIZE)
+      getVSSummaries(index * VS_PAGE_SIZE + 1, VS_PAGE_SIZE, chain)
     )
   );
 
   return sortVS(pages.flat());
 }
 
-function makeSnapshot(items: VSData[], totalCount: number): VSSnapshot {
+function makeSnapshot(items: VSData[], totalCount: number, chain: ChainKey): VSSnapshot {
   return {
-    contractAddress: CONTRACT_ADDRESS,
+    chain,
+    contractAddress: getContractAddress(chain),
     syncedAt: Date.now(),
     totalCount,
     items: sortVS(items),
   };
 }
 
-async function rebuildSnapshot(totalCount: number) {
-  const items = await fetchAllVSSummaries(totalCount);
-  const snapshot = makeSnapshot(items, totalCount);
-  await writeSnapshotToDisk(snapshot);
+async function rebuildSnapshot(totalCount: number, chain: ChainKey) {
+  const items = await fetchAllVSSummaries(totalCount, chain);
+  const snapshot = makeSnapshot(items, totalCount, chain);
+  await writeSnapshotToDisk(snapshot, chain);
   return snapshot;
 }
 
-async function refreshSnapshot(force = false): Promise<VSSnapshot> {
+async function refreshSnapshot(chain: ChainKey, force = false): Promise<VSSnapshot> {
   const state = getCacheState();
-  const cached = state.snapshot ?? (await readSnapshotFromDisk());
+  const cached = state.snapshots.get(chain) ?? (await readSnapshotFromDisk(chain));
 
-  if (!force && cached && snapshotIsFresh(cached)) {
-    state.snapshot = cached;
+  if (!force && cached && snapshotIsFresh(cached, chain)) {
+    state.snapshots.set(chain, cached);
     return cached;
   }
 
-  const totalCount = await getClaimCount();
-  if (force || shouldRebuildFromScratch(cached ?? null, totalCount)) {
-    const rebuilt = await rebuildSnapshot(totalCount);
-    state.snapshot = rebuilt;
+  const totalCount = await getClaimCount(chain);
+  if (force || shouldRebuildFromScratch(cached ?? null, totalCount, chain)) {
+    const rebuilt = await rebuildSnapshot(totalCount, chain);
+    state.snapshots.set(chain, rebuilt);
     return rebuilt;
   }
 
@@ -188,84 +194,83 @@ async function refreshSnapshot(force = false): Promise<VSSnapshot> {
       startId <= totalCount;
       startId += VS_PAGE_SIZE
     ) {
-      const freshPage = await getVSSummaries(startId, VS_PAGE_SIZE);
+      const freshPage = await getVSSummaries(startId, VS_PAGE_SIZE, chain);
       items = upsertVS(items, freshPage);
     }
   }
 
+  // Re-read only what can still change: open and accepted claims.
   const liveIds = items
     .filter((item) => ACTIVE_STATES.has(item.state))
     .map((item) => item.id);
-
   if (liveIds.length > 0) {
-    const liveItems = await getOpenVSSummaries();
-    const liveSet = new Set(liveItems.map((item) => item.id));
-    items = upsertVS(items, liveItems);
-
-    const recentlyClosedIds = liveIds.filter((id) => !liveSet.has(id));
-    if (recentlyClosedIds.length > 0) {
-      const closedUpdates = await Promise.all(
-        recentlyClosedIds.map((id) => getVS(id))
-      );
-      items = upsertVS(
-        items,
-        closedUpdates.filter((item): item is VSData => item !== null)
-      );
-    }
+    const updates = await Promise.all(liveIds.map((id) => getVS(id, { chain })));
+    items = upsertVS(items, updates.filter((item): item is VSData => item !== null));
   }
 
-  const snapshot = makeSnapshot(items, totalCount);
-  await writeSnapshotToDisk(snapshot);
-  state.snapshot = snapshot;
+  const snapshot = makeSnapshot(items, totalCount, chain);
+  await writeSnapshotToDisk(snapshot, chain);
+  state.snapshots.set(chain, snapshot);
   return snapshot;
 }
 
-async function ensureSnapshot(force = false) {
+async function ensureSnapshot(chain: ChainKey, force = false) {
   const state = getCacheState();
-  const cached = state.snapshot ?? (await readSnapshotFromDisk());
-  if (!force && cached && snapshotIsFresh(cached)) {
-    state.snapshot = cached;
+  const cached = state.snapshots.get(chain) ?? (await readSnapshotFromDisk(chain));
+  if (!force && cached && snapshotIsFresh(cached, chain)) {
+    state.snapshots.set(chain, cached);
     return cached;
   }
 
-  if (!state.syncPromise || force) {
-    state.syncPromise = refreshSnapshot(force).finally(() => {
-      const currentState = getCacheState();
-      currentState.syncPromise = undefined;
+  let pending = state.syncPromises.get(chain);
+  if (!pending || force) {
+    pending = refreshSnapshot(chain, force).finally(() => {
+      getCacheState().syncPromises.delete(chain);
     });
+    state.syncPromises.set(chain, pending);
   }
+  return pending;
+}
 
-  return state.syncPromise;
+/** Items from every chain; a chain whose RPC is down contributes nothing. */
+async function allItems(force = false): Promise<VSData[]> {
+  const perChain = await Promise.all(
+    enabledChainKeys().map((chain) =>
+      ensureSnapshot(chain, force)
+        .then((snap) => snap.items.map((vs) => ({ ...vs, chain: vs.chain ?? chain })))
+        .catch(() => [] as VSData[]),
+    ),
+  );
+  return sortVS(perChain.flat());
 }
 
 export async function refreshVSIndex() {
-  return ensureSnapshot(true);
+  return { items: await allItems(true) };
 }
 
 export async function getAllVSFast(): Promise<VSData[]> {
-  const snapshot = await ensureSnapshot();
-  return snapshot.items;
+  return allItems();
 }
 
-export async function getVSByIdFast(vsId: number): Promise<VSData | null> {
-  const snapshot = await ensureSnapshot();
-  const found = snapshot.items.find((vs) => vs.id === vsId);
-  const live = await getVS(vsId);
+export async function getVSByIdFast(vsId: number, chain: ChainKey = "arc"): Promise<VSData | null> {
+  const snapshot = await ensureSnapshot(chain);
+  const found = snapshot.items.find((vs) => vs.id === vsId && vsChain(vs) === chain);
+  const live = await getVS(vsId, { chain });
   if (!live) {
     return found ?? null;
   }
 
   const updatedSnapshot = makeSnapshot(
     upsertVS(snapshot.items, [live]),
-    Math.max(snapshot.totalCount, live.id)
+    Math.max(snapshot.totalCount, live.id),
+    chain,
   );
-  await writeSnapshotToDisk(updatedSnapshot);
-  getCacheState().snapshot = updatedSnapshot;
+  await writeSnapshotToDisk(updatedSnapshot, chain);
+  getCacheState().snapshots.set(chain, updatedSnapshot);
 
   return live;
 }
 
 export async function getUserVSFast(address: string): Promise<VSData[]> {
-  const snapshot = await ensureSnapshot();
-  return snapshot.items.filter((vs) => matchesUser(vs, address));
+  return (await allItems()).filter((vs) => matchesUser(vs, address));
 }

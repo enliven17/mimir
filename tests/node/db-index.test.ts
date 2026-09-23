@@ -12,6 +12,7 @@ const describeDb = HAS_DB ? test : test.skip;
 function makeClaim(overrides: Partial<ClaimData> = {}): ClaimData {
   return {
     id: 101,
+    chain: "arc",
     creator: "0x0000000000000000000000000000000000000abc",
     question: "Will the private claim stay private?",
     creator_position: "Yes",
@@ -86,7 +87,7 @@ describeDb("upsertClaim scrubs private content before storage", async () => {
   const claimIdsByChallenger = await db.getClaimsByChallenger(
     "0x0000000000000000000000000000000000000def"
   );
-  assert.deepEqual(claimIdsByChallenger, [claim.id]);
+  assert.deepEqual(claimIdsByChallenger, [{ chain: "arc", id: claim.id }]);
 });
 
 describeDb("sync_meta persists seeded and updated values", async () => {
