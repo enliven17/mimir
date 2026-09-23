@@ -1,5 +1,5 @@
 /**
- * Mimir Oracle Agent — AI economic actor on Arc
+ * Mimir Oracle Agent — AI economic actor on every chain Mimir is deployed on
  *
  * Two roles:
  *   1. SETTLER: resolves expired active claims (pays out winners)
@@ -12,9 +12,14 @@
  * private key. The agent's wallet is held in Circle's custody and authorized
  * by CIRCLE_API_KEY + CIRCLE_ENTITY_SECRET.
  *
+ * Multichain: every poll walks each enabled chain (a deployed escrow) where the
+ * oracle has a W3S wallet — CIRCLE_ORACLE_WALLET_ID on Arc, _BASE / _ARBITRUM
+ * on the others. A chain without a wallet is skipped with one startup warning;
+ * a chain whose RPC fails is skipped for that poll only.
+ *
  * Run: npx tsx agents/oracle/index.ts
- * Env: CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_ORACLE_WALLET_ID,
- *      CIRCLE_ORACLE_ADDRESS, NEXT_PUBLIC_CONTRACT_ADDRESS
+ * Env: CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_ORACLE_ADDRESS,
+ *      CIRCLE_ORACLE_WALLET_ID[_BASE|_ARBITRUM], NEXT_PUBLIC_*CONTRACT_ADDRESS
  *      + one of: GEMINI_API_KEY (preferred) OR ANTHROPIC_API_KEY
  *      AUTO_CHALLENGE=1        (enable auto-challenger, default off)
  *      CHALLENGE_STAKE_USDC=2  (stake per challenge, default 2 USDC)
@@ -31,27 +36,20 @@
 // the Authorization header and trigger API_KEY_INVALID.
 applyWorkerGeminiKey("ORACLE_GEMINI_API_KEY");
 
-import { keccak256, toBytes, formatEther } from "viem";
+import { keccak256, toBytes } from "viem";
 import { requireEnv, requireAnyLLMKey, applyWorkerGeminiKey, createThrottle } from "../../lib/agent-bootstrap";
 import { kellyFraction } from "../../lib/kelly";
 import { isVerdict, type Verdict } from "../../lib/verdict";
 import { INJECTION_GUARD, fenceUntrusted } from "../../lib/prompt-safety";
 import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson } from "../../lib/llm";
 import {
-  createArcPublicClient,
-  arcTestnet,
-  weiToUsdc,
-  usdcToWei,
+  createChainPublicClient,
   getContractAddress,
   getExplorerTxUrl,
 } from "../../lib/arc";
-import {
-  executeContract,
-  buildAbiFunctionSignature,
-  toCircleAbiParameters,
-  getOracleWalletId,
-  getOracleAddress,
-} from "../../lib/circle-w3s";
+import { claimKey, getChain, stakeUnitsToUsdc, usdcToStakeUnits, type ChainKey } from "../../lib/chains";
+import { getOracleAddress } from "../../lib/circle-w3s";
+import { requireWalletIdFor, w3sEscrowWrite } from "../../lib/w3s-escrow";
 import { MIMIR_ABI, WINNER_SIDE, STATE, BPS_DIVISOR } from "../../lib/mimir-abi";
 import { fetchDecodedClaim, type DecodedClaim } from "../../lib/claim-codec";
 import {
@@ -60,7 +58,8 @@ import {
   type EvidenceFetcherKind,
   type EvidencePayment,
 } from "../../lib/server/evidence-fetcher";
-import { fetchWithBudget, usdcToAtomic, atomicToUsdc } from "../../lib/x402";
+import { fetchWithBudget, usdcToAtomic, atomicToUsdc, type PayingAgent } from "../../lib/x402";
+import { chainTag, stakeBalanceUsdc, walletChains } from "../shared/chains";
 import {
   gatherCouncilVerdict,
   scoreCouncilVotes,
@@ -80,7 +79,6 @@ import { fetchPriceReadings, hasSecondPriceSource } from "../../lib/server/price
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = Number(process.env.ORACLE_POLL_INTERVAL_MS ?? "60000");
 const MAX_CONTENT_CHARS     = 8_000;
-const CONTRACT_ADDRESS      = getContractAddress();
 const AUTO_CHALLENGE        = process.env.AUTO_CHALLENGE === "1";
 const CHALLENGE_STAKE_USDC  = Number(process.env.CHALLENGE_STAKE_USDC ?? "2");
 const CHALLENGE_CONFIDENCE  = Number(process.env.CHALLENGE_CONFIDENCE ?? "80");
@@ -124,25 +122,36 @@ async function throttledLLM(
   return callLLM(...args);
 }
 
-// Track challenged claims so we don't double-challenge across polls
-const challengedClaimIds = new Set<number>();
+// Track challenged claims so we don't double-challenge across polls. Keyed by
+// claimKey(chain, id): ids restart at 1 on every chain.
+const challengedClaimIds = new Set<string>();
 // Track evaluated-but-not-challenged (to avoid repeated LLM calls)
-const evaluatedClaimIds = new Set<number>();
+const evaluatedClaimIds = new Set<string>();
 
-requireEnv(["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_WALLET_ID", "CIRCLE_ORACLE_ADDRESS"]);
+requireEnv(["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_ADDRESS"]);
 requireAnyLLMKey();
 
-// Pre-compute Circle ABI signatures (call once, reuse per claim)
-const SIG_RESOLVE_CLAIM    = buildAbiFunctionSignature("resolveClaim", MIMIR_ABI);
-const SIG_CHALLENGE_CLAIM  = buildAbiFunctionSignature("challengeClaim", MIMIR_ABI);
+// ── Wallets ───────────────────────────────────────────────────────────────────
+const ORACLE_WALLET_ENV = "CIRCLE_ORACLE_WALLET_ID";
+const ORACLE_ADDR       = getOracleAddress();
+const { chains: ORACLE_CHAINS, walletIds: ORACLE_WALLETS } = walletChains("oracle", ORACLE_WALLET_ENV);
+if (ORACLE_CHAINS.length === 0) {
+  console.error("[oracle] No enabled chain has an oracle W3S wallet. Exiting.");
+  process.exit(1);
+}
 
-// ── Clients ───────────────────────────────────────────────────────────────────
-const publicClient  = createArcPublicClient();
-const ORACLE_WALLET = getOracleWalletId();
-const ORACLE_ADDR   = getOracleAddress();
+/** x402 payer for work on a claim: pays on the claim's network first. */
+function oraclePayer(chain: ChainKey): PayingAgent {
+  return {
+    walletId:    requireWalletIdFor(ORACLE_WALLET_ENV, chain),
+    address:     ORACLE_ADDR,
+    walletIds:   ORACLE_WALLETS,
+    preferChain: chain,
+  };
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type ClaimOnChain = DecodedClaim;
+type ClaimOnChain = DecodedClaim & { chain: ChainKey };
 
 interface OracleVerdict {
   verdict:     Verdict;
@@ -164,12 +173,18 @@ const ORACLE_VERDICT_SCHEMA = {
 } as const;
 
 // ── Fetch claim from contract ─────────────────────────────────────────────────
-async function fetchClaim(claimId: number): Promise<ClaimOnChain | null> {
+async function fetchClaim(chain: ChainKey, claimId: number): Promise<ClaimOnChain | null> {
   try {
-    return await fetchDecodedClaim(publicClient, CONTRACT_ADDRESS, claimId);
+    const decoded = await fetchDecodedClaim(createChainPublicClient(chain), getContractAddress(chain), claimId);
+    return decoded ? { ...decoded, chain } : null;
   } catch {
     return null;
   }
+}
+
+/** Creator + challenger stakes in whole USDC, in the claim chain's units. */
+function potUsdcOf(claim: ClaimOnChain): number {
+  return stakeUnitsToUsdc(claim.chain, claim.creatorStake + claim.totalChallengerStake);
 }
 
 // ── Fetch web evidence ────────────────────────────────────────────────────────
@@ -186,7 +201,7 @@ interface EvidenceResult {
  * This is the agent's spending judgement, in code.
  */
 function evidenceBudgetUsdc(claim: ClaimOnChain): number {
-  const potUsdc = weiToUsdc(claim.creatorStake + claim.totalChallengerStake);
+  const potUsdc = potUsdcOf(claim);
   const fraction = (potUsdc * EVIDENCE_POOL_BPS) / BPS_DIVISOR;
   return Math.min(EVIDENCE_MAX_USDC, Math.max(EVIDENCE_MIN_USDC, fraction));
 }
@@ -203,12 +218,7 @@ async function fetchEvidence(claim: ClaimOnChain): Promise<EvidenceResult> {
   const maxAtomic = usdcToAtomic(budgetUsdc);
   const paidFetch = PAY_EVIDENCE
     ? async (u: string, init?: RequestInit) => {
-        const r = await fetchWithBudget(
-          u,
-          { walletId: ORACLE_WALLET, address: ORACLE_ADDR },
-          maxAtomic,
-          init,
-        );
+        const r = await fetchWithBudget(u, oraclePayer(claim.chain), maxAtomic, init);
         return {
           response: r.response,
           payment: r.payment
@@ -245,7 +255,7 @@ async function evaluateClaim(
 ): Promise<OracleVerdict> {
   const deadlineDate = new Date(Number(claim.deadline) * 1000).toISOString();
   const nowDate      = new Date().toISOString();
-  const potUsdc = weiToUsdc(claim.creatorStake + claim.totalChallengerStake);
+  const potUsdc = potUsdcOf(claim);
 
   // Terminal (reference) assessment for self-resolving settlement: the oracle
   // sees every juror's report on top of its own independent evidence.
@@ -264,7 +274,7 @@ async function evaluateClaim(
     `Resolution URL: ${claim.resolutionUrl}`,
   ].filter(Boolean).join("\n"));
 
-  const prompt = `You are Mimir, an impartial AI oracle for a USDC prediction market on Arc blockchain.
+  const prompt = `You are Mimir, an impartial AI oracle for a USDC prediction market on ${getChain(claim.chain).name}.
 
 ${INJECTION_GUARD}
 
@@ -467,7 +477,7 @@ async function applyPriceConsensus(
   const adjustment = settlementAdjustment(consensus);
 
   console.log(
-    `[settle] Price cross-check ${target.symbol} @ $${target.threshold.toLocaleString("en-US")}: ` +
+    `${chainTag("settle", claim.chain)} Price cross-check ${target.symbol} @ $${target.threshold.toLocaleString("en-US")}: ` +
     `${consensus.verdict} (${readings.map((r) => `${r.source}=${r.priceUsd.toFixed(2)}`).join(", ")})`,
   );
 
@@ -496,10 +506,10 @@ async function applyPriceConsensus(
 }
 
 async function settle(claim: ClaimOnChain): Promise<boolean> {
-  console.log(`\n[settle] Claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
+  console.log(`\n${chainTag("settle", claim.chain)} Claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
 
   const evidence     = await fetchEvidence(claim);
-  console.log(`[settle] Evidence fetcher: ${evidence.fetcher}`);
+  console.log(`${chainTag("settle", claim.chain)} Evidence fetcher: ${evidence.fetcher}`);
 
   // Sports: betting closed at kickoff, so don't resolve until the match is final
   // (unless we're past the grace window, to avoid locking funds on a data outage).
@@ -507,13 +517,13 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
     const now = BigInt(Math.floor(Date.now() / 1000));
     const pastGrace = now > claim.deadline + BigInt(SPORTS_SETTLE_GRACE_SECS);
     if (!pastGrace && !(await isSportsEventFinal(claim, evidence.text))) {
-      console.log(`[settle] Claim #${claim.id}: match not final yet — deferring to a later poll.`);
+      console.log(`${chainTag("settle", claim.chain)} Claim #${claim.id}: match not final yet — deferring to a later poll.`);
       return false;
     }
   }
   if (evidence.payment) {
     const usdc = atomicToUsdc(evidence.payment.priceAtomic);
-    console.log(`[settle] 💸 Paid ${usdc} ${evidence.payment.asset} for evidence (x402 nanopayment)`);
+    console.log(`${chainTag("settle", claim.chain)} 💸 Paid ${usdc} ${evidence.payment.asset} for evidence (x402 nanopayment)`);
   }
 
   // Council-as-jury: buy each persona's verdict (x402 → persona wallet) and
@@ -528,37 +538,38 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
   if (COUNCIL_SETTLEMENT) {
     const council = await gatherCouncilVerdict({
       claimId:       claim.id,
+      chain:         claim.chain,
       category:      claim.category,
       baseUrl:       COUNCIL_BASE_URL,
-      payer:         { walletId: ORACLE_WALLET, address: ORACLE_ADDR },
+      payer:         oraclePayer(claim.chain),
       capUsdc:       COUNCIL_VOTE_CAP,
       quorum:        COUNCIL_QUORUM,
       ...(COUNCIL_SELF_RESOLVING
         ? { selfResolving: { alpha: COUNCIL_ALPHA, minVotes: COUNCIL_QUORUM } }
         : {}),
     }).catch((err) => {
-      console.warn(`[settle] council vote failed, falling back to solo:`, err instanceof Error ? err.message : err);
+      console.warn(`${chainTag("settle", claim.chain)} council vote failed, falling back to solo:`, err instanceof Error ? err.message : err);
       return null;
     });
     if (council && COUNCIL_SELF_RESOLVING) {
       const paidUsdc = atomicToUsdc(council.totalPaidAtomic);
-      console.log(`[settle] 🏛️  Self-resolving jury: q=[${(council.qHistory ?? []).map((q) => q.toFixed(2)).join(", ")}] · paid ${paidUsdc.toFixed(6)} USDC in vote fees`);
+      console.log(`${chainTag("settle", claim.chain)} 🏛️  Self-resolving jury: q=[${(council.qHistory ?? []).map((q) => q.toFixed(2)).join(", ")}] · paid ${paidUsdc.toFixed(6)} USDC in vote fees`);
       // Terminal (reference) report: full juror history + independent evidence.
       const reference  = await evaluateClaim(claim, evidence.text, council.reports ?? []);
       const referenceQ = verdictToProbability(reference.verdict, reference.confidence, Q_PRIOR);
       council.votes = scoreCouncilVotes(council.votes, referenceQ);
       const scores = council.votes.map((v) => Number((v.score ?? 0).toFixed(4)));
-      console.log(`[settle] 🏛️  Reference q_T=${referenceQ.toFixed(2)} · CE scores: ${council.votes.map((v) => `${v.slug}=${(v.score ?? 0).toFixed(3)}`).join(" ")}`);
+      console.log(`${chainTag("settle", claim.chain)} 🏛️  Reference q_T=${referenceQ.toFixed(2)} · CE scores: ${council.votes.map((v) => `${v.slug}=${(v.score ?? 0).toFixed(3)}`).join(" ")}`);
       rawVerdict = reference;
       commit = `${evidence.text}\n[council]${JSON.stringify({ tally: council.tally, q: council.qHistory, refQ: Number(referenceQ.toFixed(4)), scores })}`;
       bonusVotes = council.votes;
     } else if (council) {
       const paidUsdc = atomicToUsdc(council.totalPaidAtomic);
-      console.log(`[settle] 🏛️  Council ${council.tally.creator}–${council.tally.challengers} (${council.tally.draw + council.tally.unresolvable} abstain) · paid ${paidUsdc.toFixed(6)} USDC to jurors`);
+      console.log(`${chainTag("settle", claim.chain)} 🏛️  Council ${council.tally.creator}–${council.tally.challengers} (${council.tally.draw + council.tally.unresolvable} abstain) · paid ${paidUsdc.toFixed(6)} USDC to jurors`);
       rawVerdict = { verdict: council.verdict, confidence: council.confidence, explanation: council.explanation };
       commit = `${evidence.text}\n[council]${JSON.stringify(council.tally)}`;
     } else {
-      console.log(`[settle] Council below quorum — settling solo.`);
+      console.log(`${chainTag("settle", claim.chain)} Council below quorum — settling solo.`);
       rawVerdict = await evaluateClaim(claim, evidence.text);
     }
   } else {
@@ -580,36 +591,38 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
     verdict.explanation !== rawVerdict.explanation ? "CONTESTED" :
     "FIRM";
 
-  console.log(`[settle] Verdict: ${verdict.verdict} (${verdict.confidence}%) [${tierTag}]`);
-  console.log(`[settle] Evidence hash: ${evidenceHash}`);
-  console.log(`[settle] "${verdict.explanation.slice(0, 100)}..."`);
+  console.log(`${chainTag("settle", claim.chain)} Verdict: ${verdict.verdict} (${verdict.confidence}%) [${tierTag}]`);
+  console.log(`${chainTag("settle", claim.chain)} Evidence hash: ${evidenceHash}`);
+  console.log(`${chainTag("settle", claim.chain)} "${verdict.explanation.slice(0, 100)}..."`);
 
-  const txHash = await executeContract({
-    walletId:             ORACLE_WALLET,
-    contractAddress:      CONTRACT_ADDRESS,
-    abiFunctionSignature: SIG_RESOLVE_CLAIM,
-    abiParameters: toCircleAbiParameters([
+  const oracleWallet = requireWalletIdFor(ORACLE_WALLET_ENV, claim.chain);
+  const txHash = await w3sEscrowWrite({
+    chain:        claim.chain,
+    walletId:     oracleWallet,
+    owner:        ORACLE_ADDR,
+    functionName: "resolveClaim",
+    args: [
       BigInt(claim.id),
       verdictToSide(verdict.verdict),
       verdict.explanation,
       verdict.confidence,
       evidenceHash,
-    ]),
-    refId: `settle-${claim.id}`,
+    ],
+    refId: `settle-${claim.chain}-${claim.id}`,
   });
 
-  console.log(`[settle] ✓ Resolved — ${getExplorerTxUrl(txHash)}`);
+  console.log(`${chainTag("settle", claim.chain)} ✓ Resolved #${claim.id} — ${getExplorerTxUrl(txHash, claim.chain)}`);
 
   // Cross-entropy bonuses AFTER the on-chain settle: informative jurors split
   // the pool, parrots and dissenters-from-evidence get nothing. Best-effort —
   // a failed transfer never affects the already-final settlement.
   if (bonusVotes && COUNCIL_BONUS_USDC > 0) {
-    const receipts = await payCouncilBonuses(bonusVotes, COUNCIL_BONUS_USDC, ORACLE_WALLET);
+    const receipts = await payCouncilBonuses(bonusVotes, COUNCIL_BONUS_USDC, oracleWallet, claim.chain);
     for (const r of receipts) {
-      console.log(`[settle] 🏆 Bonus ${r.bonusUsdc.toFixed(6)} USDC → ${r.slug}${r.txHash ? ` — ${getExplorerTxUrl(r.txHash)}` : " (transfer failed)"}`);
+      console.log(`${chainTag("settle", claim.chain)} 🏆 Bonus ${r.bonusUsdc.toFixed(6)} USDC → ${r.slug}${r.txHash ? ` — ${getExplorerTxUrl(r.txHash, claim.chain)}` : " (transfer failed)"}`);
     }
     if (receipts.length === 0) {
-      console.log(`[settle] No positive-score jurors this round — bonus pool untouched.`);
+      console.log(`${chainTag("settle", claim.chain)} No positive-score jurors this round — bonus pool untouched.`);
     }
   }
   return true;
@@ -622,37 +635,38 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   const oracleAddress = ORACLE_ADDR.toLowerCase();
 
   // Skip: already challenged, already evaluated, private, oracle created it
-  if (challengedClaimIds.has(claim.id)) return;
-  if (evaluatedClaimIds.has(claim.id)) return;
+  const key = claimKey(claim.chain, claim.id);
+  if (challengedClaimIds.has(key)) return;
+  if (evaluatedClaimIds.has(key)) return;
   if (claim.isPrivate) return;
   if (claim.creator.toLowerCase() === oracleAddress) return;
 
   // Skip: oracle already challenged this claim
-  const alreadyIn = await publicClient.readContract({
-    address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
+  const alreadyIn = await createChainPublicClient(claim.chain).readContract({
+    address: getContractAddress(claim.chain), abi: MIMIR_ABI,
     functionName: "hasChallenged",
     args: [BigInt(claim.id), ORACLE_ADDR],
   }) as boolean;
-  if (alreadyIn) { evaluatedClaimIds.add(claim.id); return; }
+  if (alreadyIn) { evaluatedClaimIds.add(key); return; }
 
   // Skip: claim is full
   if (claim.challengerCount >= claim.maxChallengers) {
-    evaluatedClaimIds.add(claim.id);
+    evaluatedClaimIds.add(key);
     return;
   }
 
-  // Check oracle USDC balance (native on Arc)
-  const balance = await publicClient.getBalance({ address: ORACLE_ADDR });
-  const stakeNeeded = usdcToWei(CHALLENGE_STAKE_USDC);
-  const buffer      = usdcToWei(CHALLENGE_STAKE_USDC * 3); // keep 3x buffer for gas
-  if (balance < stakeNeeded + buffer) {
-    console.log(`[challenge] Insufficient balance (${weiToUsdc(balance).toFixed(2)} USDC), skipping`);
+  // Check the oracle's stakeable USDC on this chain (native on Arc, ERC-20
+  // elsewhere). The 3x buffer covers Arc gas; on the ERC-20 chains gas is ETH,
+  // but the same buffer keeps one market from draining the bankroll.
+  const bankroll = await stakeBalanceUsdc(claim.chain, ORACLE_ADDR);
+  if (bankroll < CHALLENGE_STAKE_USDC * 4) {
+    console.log(`${chainTag("challenge", claim.chain)} Insufficient balance (${bankroll.toFixed(2)} USDC), skipping`);
     return;
   }
 
   // Evaluate early
-  console.log(`\n[challenge] Evaluating claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
-  evaluatedClaimIds.add(claim.id);
+  console.log(`\n${chainTag("challenge", claim.chain)} Evaluating claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
+  evaluatedClaimIds.add(key);
 
   const evidence = await fetchEvidence(claim);
 
@@ -660,71 +674,71 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   // which never satisfies the CHALLENGERS_WIN/≥80% bar below. Skip the
   // wasted LLM call — saves a Gemini RPM slot per dead-evidence claim.
   if (evidence.fetcher === "none") {
-    console.log(`[challenge] Skipping LLM — no evidence available (fetcher=none)`);
+    console.log(`${chainTag("challenge", claim.chain)} Skipping LLM — no evidence available (fetcher=none)`);
     return;
   }
 
   const rawVerdict = await evaluateClaim(claim, evidence.text);
   const verdict = applyFetcherTrust(rawVerdict, evidence.fetcher);
 
-  console.log(`[challenge] Early verdict: ${verdict.verdict} (${verdict.confidence}%) [fetcher=${evidence.fetcher}]`);
+  console.log(`${chainTag("challenge", claim.chain)} Early verdict: ${verdict.verdict} (${verdict.confidence}%) [fetcher=${evidence.fetcher}]`);
 
   // Only challenge if highly confident challengers will win
   if (verdict.verdict !== "CHALLENGERS_WIN" || verdict.confidence < CHALLENGE_CONFIDENCE) {
-    console.log(`[challenge] Not confident enough to stake — skipping`);
+    console.log(`${chainTag("challenge", claim.chain)} Not confident enough to stake — skipping`);
     return;
   }
 
   // Kelly Criterion: size position based on confidence edge
   // Assume pool odds ≈ 1.0 (even) for conservative sizing
   const kelly = kellyFraction(verdict.confidence, KELLY_CAP);
-  const bankroll = weiToUsdc(balance);
   const kellyStake = Math.max(CHALLENGE_STAKE_USDC, Math.min(bankroll * kelly, bankroll * 0.1));
   const stakeUsdc = Math.round(kellyStake * 100) / 100; // round to 2dp
 
-  console.log(`[challenge] Kelly: ${(kelly * 100).toFixed(1)}% of bankroll → ${stakeUsdc} USDC stake`);
+  console.log(`${chainTag("challenge", claim.chain)} Kelly: ${(kelly * 100).toFixed(1)}% of bankroll → ${stakeUsdc} USDC stake`);
 
-  // Auto-challenge — Arc uses native USDC, so we pass `amount` to attach value
-  console.log(`[challenge] Staking ${stakeUsdc} USDC on challenger side...`);
-  const stakeWei = usdcToWei(stakeUsdc);
+  // Auto-challenge — w3sEscrowWrite attaches msg.value on Arc and approves the
+  // exact ERC-20 amount on the other chains.
+  console.log(`${chainTag("challenge", claim.chain)} Staking ${stakeUsdc} USDC on challenger side...`);
 
-  const txHash = await executeContract({
-    walletId:             ORACLE_WALLET,
-    contractAddress:      CONTRACT_ADDRESS,
-    abiFunctionSignature: SIG_CHALLENGE_CLAIM,
-    abiParameters:        toCircleAbiParameters([BigInt(claim.id), stakeWei, ""]),
-    amount:               formatEther(stakeWei), // Circle expects decimal USDC, not wei
-    refId:                `challenge-${claim.id}`,
+  const txHash = await w3sEscrowWrite({
+    chain:        claim.chain,
+    walletId:     requireWalletIdFor(ORACLE_WALLET_ENV, claim.chain),
+    owner:        ORACLE_ADDR,
+    functionName: "challengeClaim",
+    args:         [BigInt(claim.id), usdcToStakeUnits(claim.chain, stakeUsdc), ""],
+    stakeUsdc,
+    refId:        `challenge-${claim.chain}-${claim.id}`,
   });
 
-  challengedClaimIds.add(claim.id);
-  console.log(`[challenge] ✓ Staked ${stakeUsdc} USDC — ${getExplorerTxUrl(txHash)}`);
-  console.log(`[challenge] Oracle: "${verdict.explanation.slice(0, 120)}"`);
+  challengedClaimIds.add(key);
+  console.log(`${chainTag("challenge", claim.chain)} ✓ Staked ${stakeUsdc} USDC on #${claim.id} — ${getExplorerTxUrl(txHash, claim.chain)}`);
+  console.log(`${chainTag("challenge", claim.chain)} Oracle: "${verdict.explanation.slice(0, 120)}"`);
 }
 
 // ── Main poll loop ────────────────────────────────────────────────────────────
-async function poll(): Promise<void> {
-  const now = BigInt(Math.floor(Date.now() / 1000));
+interface ChainScan {
+  expiredActive: ClaimOnChain[];
+  challenged: number[];
+}
 
-  let total: bigint;
-  try {
-    total = await publicClient.readContract({
-      address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
-      functionName: "claimCount",
-    }) as bigint;
-  } catch (err) {
-    console.warn("[oracle] Failed to read claimCount:", err);
-    return;
-  }
+/**
+ * Walk one chain's claims: challenge the joinable ones inline, hand back the
+ * expired ACTIVE ones for settlement. Throws only when claimCount itself fails,
+ * so the caller can skip this chain and keep the others.
+ */
+async function scanChain(chain: ChainKey, now: bigint): Promise<ChainScan> {
+  const tag = chainTag("oracle", chain);
+  const total = await createChainPublicClient(chain).readContract({
+    address: getContractAddress(chain), abi: MIMIR_ABI,
+    functionName: "claimCount",
+  }) as bigint;
+  console.log(`${tag} ${total} claims`);
 
-  console.log(`\n[oracle] ── Poll at ${new Date().toISOString()} ── ${total} claims`);
-
-  const settled: number[]   = [];
-  const challenged: number[] = [];
   const expiredActive: ClaimOnChain[] = [];
-
+  const challenged: number[] = [];
   for (let id = 1; id <= Number(total); id++) {
-    const claim = await fetchClaim(id);
+    const claim = await fetchClaim(chain, id);
     if (!claim) continue;
     if (claim.state === STATE.ACTIVE && claim.deadline <= now) {
       expiredActive.push(claim);
@@ -744,23 +758,47 @@ async function poll(): Promise<void> {
         if (challengedClaimIds.size > before) challenged.push(id);
       }
     } catch (err) {
-      console.error(`[oracle] Error on claim ${id}:`, err);
+      console.error(`${tag} Error on claim ${id}:`, err);
+    }
+  }
+  return { expiredActive, challenged };
+}
+
+async function poll(): Promise<void> {
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  console.log(`\n[oracle] ── Poll at ${new Date().toISOString()} ── chains: ${ORACLE_CHAINS.join(", ")}`);
+
+  const settled: string[]    = [];
+  const challenged: string[] = [];
+  const expiredActive: ClaimOnChain[] = [];
+
+  for (const chain of ORACLE_CHAINS) {
+    try {
+      const scan = await scanChain(chain, now);
+      expiredActive.push(...scan.expiredActive);
+      challenged.push(...scan.challenged.map((id) => `${chain}#${id}`));
+    } catch (err) {
+      console.warn(`${chainTag("oracle", chain)} Scan failed, skipping this chain this poll:`, err instanceof Error ? err.message : err);
     }
   }
 
+  // One settlement queue across chains, oldest deadline first, so the cooldown
+  // paces the oracle as a whole rather than per network.
   expiredActive.sort((a, b) => Number(a.deadline - b.deadline));
   for (let i = 0; i < expiredActive.length; i++) {
     const claim = expiredActive[i];
+    const tag = chainTag("oracle", claim.chain);
     try {
       const resolved = await settle(claim);
       if (!resolved) continue; // deferred (e.g. sports match not final) — retry next poll
-      settled.push(claim.id);
+      settled.push(`${claim.chain}#${claim.id}`);
+      console.log(`${tag} settled #${claim.id}`);
       if (i < expiredActive.length - 1 && SETTLEMENT_DELAY_MS > 0) {
         console.log(`[oracle] Cooling down ${(SETTLEMENT_DELAY_MS / 60000).toFixed(1)} min before next settlement...`);
         await new Promise((resolve) => setTimeout(resolve, SETTLEMENT_DELAY_MS));
       }
     } catch (err) {
-      console.error(`[oracle] Error settling claim ${claim.id}:`, err);
+      console.error(`${tag} Error settling claim ${claim.id}:`, err);
     }
   }
 
@@ -773,16 +811,22 @@ async function poll(): Promise<void> {
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
-async function main(): Promise<void> {
-  const balance = await publicClient.getBalance({ address: ORACLE_ADDR });
+async function logChainBalances(): Promise<void> {
+  for (const chain of ORACLE_CHAINS) {
+    const cfg = getChain(chain);
+    const balance = await stakeBalanceUsdc(chain, ORACLE_ADDR)
+      .then((usdc) => `${usdc.toFixed(4)} USDC`)
+      .catch(() => "unavailable (RPC error)");
+    console.log(`  ${cfg.shortName.padEnd(10)} : ${balance} · wallet ${ORACLE_WALLETS[chain]} · ${getContractAddress(chain)}`);
+  }
+}
 
+async function main(): Promise<void> {
   console.log("═══════════════════════════════════════════════");
   console.log("  Mimir Oracle Agent (Circle W3S signer)");
-  console.log(`  Contract   : ${CONTRACT_ADDRESS}`);
   console.log(`  Oracle     : ${ORACLE_ADDR}`);
-  console.log(`  Wallet ID  : ${ORACLE_WALLET}`);
-  console.log(`  Balance    : ${weiToUsdc(balance).toFixed(4)} USDC`);
-  console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
+  console.log(`  Networks   : ${ORACLE_CHAINS.map((c) => `${getChain(c).name} (${getChain(c).chain.id})`).join(", ")}`);
+  await logChainBalances();
   console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Throttle   : ${LLM_THROTTLE_MS > 0 ? `${LLM_THROTTLE_MS}ms (${(60_000 / LLM_THROTTLE_MS).toFixed(1)} RPM cap)` : "OFF"}`);
   console.log(`  Settle gap : ${SETTLEMENT_DELAY_MS / 1000}s`);

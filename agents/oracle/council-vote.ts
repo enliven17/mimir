@@ -23,7 +23,9 @@
 
 import { COUNCIL_PERSONAS, type PersonaSpec } from "../council/personas";
 import { fetchWithBudget, usdcToAtomic, type PayingAgent } from "../../lib/x402";
-import { transferNative } from "../../lib/circle-w3s";
+import { executeContract, transferNative } from "../../lib/circle-w3s";
+import { getChain, type ChainKey } from "../../lib/chains";
+import { chainQuery } from "../shared/chains";
 import { isVerdict, type Verdict } from "../../lib/verdict";
 
 export type { Verdict };
@@ -169,6 +171,8 @@ function shuffled<T>(items: T[]): T[] {
 
 export async function gatherCouncilVerdict(args: {
   claimId: number;
+  /** Chain the claim lives on; ids restart per chain. Absent = Arc. */
+  chain?: ChainKey;
   category: string;
   baseUrl: string;
   payer: PayingAgent;
@@ -197,7 +201,7 @@ export async function gatherCouncilVerdict(args: {
   // Sequential: keeps within Gemini free-tier RPM and Gateway rate limits —
   // and in self-resolving mode, sequencing is the mechanism itself.
   for (const p of personas) {
-    let url = `${args.baseUrl.replace(/\/$/, "")}/api/council/vote?claimId=${args.claimId}&persona=${encodeURIComponent(p.slug)}`;
+    let url = `${args.baseUrl.replace(/\/$/, "")}/api/council/vote?claimId=${args.claimId}&persona=${encodeURIComponent(p.slug)}${chainQuery(args.chain ?? "arc")}`;
     if (sr && history.length > 0) {
       url += `&history=${encodeURIComponent(JSON.stringify(history.slice(-8)))}`;
     }
@@ -302,8 +306,38 @@ export interface BonusReceipt {
 }
 
 /**
- * Pays the cross-entropy bonuses to positive-scoring jurors via native USDC
- * transfers from the oracle wallet. Every transfer is individually best-effort:
+ * One bonus transfer on the claim's chain: native USDC on Arc, a USDC ERC-20
+ * transfer (6-decimal units) on the chains where USDC is a token.
+ */
+function transferBonus(
+  chain: ChainKey,
+  payerWalletId: string,
+  to: `0x${string}`,
+  bonusUsdc: number,
+  refId: string,
+): Promise<string> {
+  const cfg = getChain(chain);
+  if (cfg.stakeMode === "native") {
+    return transferNative({
+      walletId: payerWalletId,
+      destinationAddress: to,
+      blockchain: cfg.w3sBlockchain,
+      amount: bonusUsdc.toFixed(6),
+      refId,
+    });
+  }
+  return executeContract({
+    walletId: payerWalletId,
+    contractAddress: cfg.usdc,
+    abiFunctionSignature: "transfer(address,uint256)",
+    abiParameters: [to, String(Math.round(bonusUsdc * 1_000_000))],
+    refId,
+  });
+}
+
+/**
+ * Pays the cross-entropy bonuses to positive-scoring jurors via USDC
+ * transfers from the oracle wallet on the claim's chain. Every transfer is individually best-effort:
  * a failed payout is logged and skipped, never thrown — settlement must not
  * depend on payout success. Call AFTER the claim is settled on-chain.
  */
@@ -311,7 +345,7 @@ export async function payCouncilBonuses(
   votes: CouncilVote[],
   poolUsdc: number,
   payerWalletId: string,
-  blockchain = "ARC-TESTNET",
+  chain: ChainKey = "arc",
 ): Promise<BonusReceipt[]> {
   const bonuses = allocateBonus(votes.map((v) => v.score ?? 0), poolUsdc);
   const receipts: BonusReceipt[] = [];
@@ -321,21 +355,21 @@ export async function payCouncilBonuses(
     if (bonus <= 0) continue;
     vote.bonusUsdc = bonus;
     if (!vote.walletAddress?.startsWith("0x")) {
-      console.warn(`[council] no wallet address for ${vote.slug} — bonus ${bonus} USDC skipped`);
+      console.warn(`[council][${chain}] no wallet address for ${vote.slug} — bonus ${bonus} USDC skipped`);
       receipts.push({ slug: vote.slug, bonusUsdc: bonus, txHash: null });
       continue;
     }
     try {
-      const txHash = await transferNative({
-        walletId: payerWalletId,
-        destinationAddress: vote.walletAddress as `0x${string}`,
-        blockchain,
-        amount: bonus.toFixed(6),
-        refId: `council-bonus-${vote.slug}`,
-      });
+      const txHash = await transferBonus(
+        chain,
+        payerWalletId,
+        vote.walletAddress as `0x${string}`,
+        bonus,
+        `council-bonus-${chain}-${vote.slug}`,
+      );
       receipts.push({ slug: vote.slug, bonusUsdc: bonus, txHash });
     } catch (err) {
-      console.warn(`[council] bonus transfer to ${vote.slug} failed:`, err);
+      console.warn(`[council][${chain}] bonus transfer to ${vote.slug} failed:`, err);
       receipts.push({ slug: vote.slug, bonusUsdc: bonus, txHash: null });
     }
   }
