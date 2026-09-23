@@ -27,7 +27,10 @@ import {
   getVSTotalPot,
   hasVSWinner,
   isVSPrivate,
+  vsChain,
 } from "@/lib/contract";
+import { claimKey, vsPath } from "@/lib/chains";
+import ChainBadge from "@/components/ui/ChainBadge";
 import { isSampleVsIdForXmtp } from "@/lib/xmtp/vs-chat-eligibility";
 import {
   DASHBOARD_CARD_SURFACE,
@@ -587,9 +590,10 @@ function StakeHoldingVSRow({
   const returnMultipleDisplay =
     returnMultiple > 0 ? `${returnMultiple.toFixed(2)}×` : "—";
 
-  const panelId = `holding-vs-panel-${vs.id}`;
-  const buttonId = `holding-vs-trigger-${vs.id}`;
-  const detailHref = `/vs/${vs.id}`;
+  const chain = vsChain(vs);
+  const panelId = `holding-vs-panel-${chain}-${vs.id}`;
+  const buttonId = `holding-vs-trigger-${chain}-${vs.id}`;
+  const detailHref = vsPath(vs.id, chain);
 
   return (
     <div
@@ -744,6 +748,7 @@ function StakeHoldingVSRow({
             <span className="inline-flex items-center rounded border border-white/[0.1] bg-white/[0.03] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-text sm:text-[10px]">
               {visibilityLine}
             </span>
+            <ChainBadge chain={chain} compact />
             {isSampleVsIdForXmtp(vs.id) ? (
               <span className="inline-flex items-center rounded border border-white/[0.14] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
                 {t("holdings.demoVsBadge")}
@@ -762,7 +767,8 @@ function StakeHoldingVSRow({
   );
 }
 
-type StakeHoldingOpenKey = `mock:${DashboardStakeHoldingId}` | `vs:${number}`;
+/** Real rows are keyed by claimKey (`chain:id`): ids repeat across chains. */
+type StakeHoldingOpenKey = `mock:${DashboardStakeHoldingId}` | `vs:${string}`;
 
 function ExposureListSkeleton({ count }: { count: number }) {
   return (
@@ -1022,10 +1028,10 @@ function StakeHoldingsColumn({
 
         {!isInitialExposureLoad
           ? visibleVsSlice.map((vs) => {
-              const rowKey = `vs:${vs.id}` as const;
+              const rowKey = `vs:${claimKey(vsChain(vs), vs.id)}` as const;
               return (
                 <StakeHoldingVSRow
-                  key={vs.id}
+                  key={rowKey}
                   vs={vs}
                   isOpen={openKey === rowKey}
                   onToggle={() => setOpenKey(openKey === rowKey ? null : rowKey)}

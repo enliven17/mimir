@@ -5,7 +5,12 @@ import { motion } from "framer-motion";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { useWallet } from "@/lib/wallet";
-import { getUserVSFast, type VSData } from "@/lib/contract";
+import { getUserVSFast, vsChain, type VSData } from "@/lib/contract";
+import { claimKey, vsPath } from "@/lib/chains";
+import ChainBadge from "@/components/ui/ChainBadge";
+
+// Ids repeat across chains; selection and list keys use chain + id.
+const keyOf = (vs: VSData) => claimKey(vsChain(vs), vs.id);
 import { shortenAddress } from "@/lib/constants";
 import { isXmtpFeatureEnabled } from "@/lib/xmtp/config";
 import {
@@ -89,7 +94,10 @@ export default function MessagesHub() {
       try {
         const snapshot = await getUserVSFast(address);
         if (!cancelled) {
-          const results = (snapshot.items ?? []).sort((a, b) => b.id - a.id);
+          // Newest first by creation time: ids collide across chains.
+          const results = (snapshot.items ?? []).sort(
+            (a, b) => (b.created_at ?? 0) - (a.created_at ?? 0) || b.id - a.id
+          );
           setDuels(results);
         }
       } catch (e) {
@@ -131,17 +139,17 @@ export default function MessagesHub() {
     }
   }, [eligible.length, other.length]);
 
-  const [selectedVsId, setSelectedVsId] = useState<number | null>(null);
+  const [selectedVsId, setSelectedVsId] = useState<string | null>(null);
   const hubChatPanelRef = useRef<HTMLDivElement>(null);
 
   const selectedVs = useMemo(
-    () => duels.find((d) => d.id === selectedVsId) ?? null,
+    () => duels.find((d) => keyOf(d) === selectedVsId) ?? null,
     [duels, selectedVsId]
   );
 
   useEffect(() => {
     if (selectedVsId == null) return;
-    if (!duels.some((d) => d.id === selectedVsId)) {
+    if (!duels.some((d) => keyOf(d) === selectedVsId)) {
       setSelectedVsId(null);
     }
   }, [duels, selectedVsId]);
@@ -375,11 +383,11 @@ export default function MessagesHub() {
                       <ul className="divide-y divide-pv-border/25">
                         {eligible.map((vs, i) => {
                           const peer = getVsXmtpPeerAddress(vs, address);
-                          const vsPageHref = `/vs/${vs.id}#${VS_XMTP_CHAT_ANCHOR_ID}`;
+                          const vsPageHref = `${vsPath(vs.id, vsChain(vs))}#${VS_XMTP_CHAT_ANCHOR_ID}`;
                           const pot = getVSTotalPot(vs);
-                          const isSelected = selectedVsId === vs.id;
+                          const isSelected = selectedVsId === keyOf(vs);
                           return (
-                            <li key={vs.id}>
+                            <li key={keyOf(vs)}>
                               <motion.div
                                 initial={{ opacity: 0, y: 8 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -403,7 +411,7 @@ export default function MessagesHub() {
                                     aria-label={t("hubSelectThreadAria", {
                                       id: vs.id,
                                     })}
-                                    onClick={() => setSelectedVsId(vs.id)}
+                                    onClick={() => setSelectedVsId(keyOf(vs))}
                                     className={`focus-ring w-full px-5 pb-4 pt-5 text-left outline-none transition-colors sm:px-6 ${
                                       isSelected
                                         ? ""
@@ -411,8 +419,9 @@ export default function MessagesHub() {
                                     }`}
                                   >
                                     <div className="flex items-start justify-between gap-2">
-                                      <span className="font-display text-sm font-bold tabular-nums tracking-tight text-pv-emerald sm:text-[15px]">
+                                      <span className="inline-flex items-center gap-2 font-display text-sm font-bold tabular-nums tracking-tight text-pv-emerald sm:text-[15px]">
                                         VS #{vs.id}
+                                        <ChainBadge chain={vsChain(vs)} compact />
                                       </span>
                                       <span className="inline-flex shrink-0 items-center gap-1 rounded border border-pv-emerald/30 bg-pv-emerald/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-pv-emerald">
                                         <Zap size={10} aria-hidden />
@@ -465,9 +474,9 @@ export default function MessagesHub() {
                             getVsXmtpUnavailableReason(vs) ?? "not_accepted";
                           const isWaiting = reason === "not_accepted";
                           const StateIcon = isWaiting ? Clock : Ban;
-                          const isSelected = selectedVsId === vs.id;
+                          const isSelected = selectedVsId === keyOf(vs);
                           return (
-                            <li key={vs.id}>
+                            <li key={keyOf(vs)}>
                               <motion.div
                                 initial={{ opacity: 0, y: 8 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -495,7 +504,7 @@ export default function MessagesHub() {
                                     aria-label={t("hubSelectThreadAria", {
                                       id: vs.id,
                                     })}
-                                    onClick={() => setSelectedVsId(vs.id)}
+                                    onClick={() => setSelectedVsId(keyOf(vs))}
                                     className={`focus-ring w-full px-5 pb-4 pt-5 text-left outline-none transition-colors sm:px-6 ${
                                       isWaiting && !isSelected
                                         ? "hover:bg-amber-400/[0.06]"
@@ -547,7 +556,7 @@ export default function MessagesHub() {
                                   </button>
                                   <div className="flex justify-end border-t border-pv-border/25 px-5 py-3 sm:px-6">
                                     <Link
-                                      href={`/vs/${vs.id}`}
+                                      href={vsPath(vs.id, vsChain(vs))}
                                       aria-label={`${t("viewVs")} — VS ${vs.id}`}
                                       className="group focus-ring inline-flex min-h-[44px] items-center gap-1 font-display text-[10px] font-bold uppercase tracking-[0.14em] text-pv-muted transition-colors hover:text-pv-emerald"
                                     >
