@@ -1,13 +1,20 @@
 import Link from "next/link";
 import {
-  createArcPublicClient,
-  getContractAddress,
-  getDeployBlock,
-  getExplorerAddressUrl,
-  getExplorerTxUrl,
-  weiToUsdc,
-  paginatedGetLogs,
-} from "@/lib/arc";
+  enabledChainKeys,
+  explorerAddressUrl,
+  explorerTxUrl,
+  stakeUnitsToUsdc,
+  vsPath,
+  type ChainKey,
+} from "@/lib/chains";
+import ChainBadge from "@/components/ui/ChainBadge";
+import {
+  CLAIM_CHALLENGED_EVENT,
+  acrossChains,
+  blockClock,
+  scanEvent,
+  usdcBalance,
+} from "../_lib/chainScan";
 import {
   getActiveCouncilPersonas,
 } from "@/lib/council-resolver";
@@ -29,87 +36,88 @@ export const revalidate = 30;
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
+interface CouncilBet {
+  chain:        ChainKey;
+  claimId:      number;
+  stakeUsdc:    number;
+  txHash:       string;
+  blockNumber:  number;
+  /** Approximate unix seconds, for ordering bets across chains. */
+  ts:           number;
+}
+
 interface PersonaStats {
   persona:         PersonaSpec;
   address:         string;
+  /** USDC bankroll summed over every deployed chain. */
   balanceUsdc:     number;
+  /** Networks this persona holds USDC on, for the per-card labels. */
+  fundedChains:    ChainKey[];
   stakesPlaced:    number;
   totalStakedUsdc: number;
-  recentBets:      Array<{
-    claimId:      number;
-    stakeUsdc:    number;
-    txHash:       string;
-    blockNumber:  number;
-  }>;
+  recentBets:      CouncilBet[];
 }
 
 async function fetchCouncilStats(): Promise<PersonaStats[]> {
-  const client    = createArcPublicClient();
-  const address   = getContractAddress();
-  const fromBlock = getDeployBlock();
   const personas  = getActiveCouncilPersonas();
 
   if (personas.length === 0) return [];
 
-  let challengeLogs: any[] = [];
-  try {
-    challengeLogs = await paginatedGetLogs(client, {
-      address,
-      event: {
-        type: "event",
-        name: "ClaimChallenged",
-        inputs: [
-          { name: "id",         type: "uint256", indexed: true },
-          { name: "challenger", type: "address", indexed: true },
-          { name: "stake",      type: "uint256", indexed: false },
-        ],
-      } as any,
-    }, fromBlock);
-  } catch (err) {
-    console.error("[council] fetchCouncilStats: log fetch failed:", err);
-  }
+  // Each chain's challenge history, tagged with its chain and an approximate
+  // time. A chain that fails to scan only drops its own bets.
+  const perChain = await acrossChains("council", async (chain) => {
+    const [logs, clock] = await Promise.all([
+      scanEvent(chain, CLAIM_CHALLENGED_EVENT),
+      blockClock(chain),
+    ]);
+    return logs.map((log: any): CouncilBet & { actor: string } => {
+      const blockNumber = Number(log.blockNumber ?? 0);
+      return {
+        chain,
+        actor:       String(log.args.challenger ?? "").toLowerCase(),
+        claimId:     Number(log.args.id ?? 0),
+        stakeUsdc:   stakeUnitsToUsdc(chain, BigInt(log.args.stake ?? 0)),
+        txHash:      log.transactionHash,
+        blockNumber,
+        ts:          clock(blockNumber),
+      };
+    });
+  });
 
-  const byActor = new Map<string, Array<any>>();
-  for (const log of challengeLogs) {
-    const actor = String(log.args.challenger ?? "").toLowerCase();
-    if (!actor) continue;
-    const list = byActor.get(actor) ?? [];
-    list.push(log);
-    byActor.set(actor, list);
+  const byActor = new Map<string, CouncilBet[]>();
+  for (const bet of perChain.flatMap((r) => r.value)) {
+    if (!bet.actor) continue;
+    const list = byActor.get(bet.actor) ?? [];
+    list.push(bet);
+    byActor.set(bet.actor, list);
   }
 
   return Promise.all(
     personas.map(async ({ persona, address: addr }) => {
-      const lowerAddr = addr.toLowerCase();
-      const logs = byActor.get(lowerAddr) ?? [];
+      const bets = byActor.get(addr.toLowerCase()) ?? [];
 
-      let balance = 0n;
-      try {
-        balance = await client.getBalance({ address: addr as `0x${string}` });
-      } catch {
-        balance = 0n;
-      }
+      const balances = await Promise.all(
+        enabledChainKeys().map(async (chain) => {
+          try {
+            return { chain, usdc: await usdcBalance(chain, addr as `0x${string}`) };
+          } catch {
+            return { chain, usdc: 0 };
+          }
+        }),
+      );
 
-      const totalStakedWei = logs.reduce<bigint>(
-        (acc, log: any) => acc + BigInt(log.args.stake ?? 0),
-        0n,
-      );
-      const sortedLogs = logs.slice().sort(
-        (a: any, b: any) => Number(b.blockNumber ?? 0) - Number(a.blockNumber ?? 0),
-      );
+      const sortedBets = bets
+        .slice()
+        .sort((a, b) => b.ts - a.ts || b.blockNumber - a.blockNumber);
 
       return {
         persona,
         address: addr,
-        balanceUsdc:     weiToUsdc(balance),
-        stakesPlaced:    logs.length,
-        totalStakedUsdc: weiToUsdc(totalStakedWei),
-        recentBets:      sortedLogs.slice(0, 3).map((log: any) => ({
-          claimId:     Number(log.args.id ?? 0),
-          stakeUsdc:   weiToUsdc(BigInt(log.args.stake ?? 0)),
-          txHash:      log.transactionHash,
-          blockNumber: Number(log.blockNumber ?? 0),
-        })),
+        balanceUsdc:     balances.reduce((acc, b) => acc + b.usdc, 0),
+        fundedChains:    balances.filter((b) => b.usdc > 0).map((b) => b.chain),
+        stakesPlaced:    bets.length,
+        totalStakedUsdc: bets.reduce((acc, b) => acc + b.stakeUsdc, 0),
+        recentBets:      sortedBets.slice(0, 3),
       };
     }),
   );
@@ -125,7 +133,7 @@ const ARCHETYPE_LABEL: Record<PersonaSpec["archetype"], string> = {
 };
 
 function PersonaCard({ stats }: { stats: PersonaStats }) {
-  const { persona, address, balanceUsdc, stakesPlaced, totalStakedUsdc, recentBets } = stats;
+  const { persona, address, balanceUsdc, fundedChains, stakesPlaced, totalStakedUsdc, recentBets } = stats;
   const active = stakesPlaced > 0;
 
   return (
@@ -188,16 +196,25 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
         </div>
       </dl>
 
+      {fundedChains.length > 0 ? (
+        <div className="-mt-2 flex flex-wrap justify-center gap-1">
+          {fundedChains.map((c) => <ChainBadge key={c} chain={c} compact />)}
+        </div>
+      ) : null}
+
       {recentBets.length > 0 ? (
         <ul className="space-y-1.5 border-t border-pv-border/30 pt-3">
           {recentBets.map((b) => (
-            <li key={b.txHash} className="flex items-baseline justify-between gap-2 font-mono text-[10px]">
-              <Link href={`/vs/${b.claimId}`} className="text-pv-emerald hover:underline">
-                claim #{b.claimId}
-              </Link>
+            <li key={`${b.chain}-${b.txHash}`} className="flex items-baseline justify-between gap-2 font-mono text-[10px]">
+              <span className="inline-flex items-center gap-1.5">
+                <ChainBadge chain={b.chain} compact />
+                <Link href={vsPath(b.claimId, b.chain)} className="text-pv-emerald hover:underline">
+                  claim #{b.claimId}
+                </Link>
+              </span>
               <span className="tabular-nums text-pv-text/85">{b.stakeUsdc.toFixed(2)} USDC</span>
               <a
-                href={getExplorerTxUrl(b.txHash)}
+                href={explorerTxUrl(b.chain, b.txHash)}
                 target="_blank"
                 rel="noreferrer"
                 className="text-pv-muted hover:text-pv-emerald"
@@ -214,7 +231,7 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
       )}
 
       <a
-        href={getExplorerAddressUrl(address)}
+        href={explorerAddressUrl(fundedChains[0] ?? "arc", address)}
         target="_blank"
         rel="noreferrer"
         className="text-center font-mono text-[10px] text-pv-muted hover:text-pv-emerald"
