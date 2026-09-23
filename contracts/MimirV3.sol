@@ -327,10 +327,21 @@ contract MimirV3 {
 
     // ── Withdraw: pull a parked payout ────────────────────────────────────────
     function withdraw() external {
+        _withdrawTo(msg.sender);
+    }
+
+    /// Pull a parked payout to another address. A USDC-blacklisted recipient
+    /// can never receive at its own address, so without this it stays stuck.
+    function withdrawTo(address to) external {
+        require(to != address(0), "Mimir: zero recipient");
+        _withdrawTo(to);
+    }
+
+    function _withdrawTo(address to) internal {
         uint256 amount = pendingWithdrawals[msg.sender];
         require(amount > 0, "Mimir: nothing to withdraw");
         pendingWithdrawals[msg.sender] = 0; // effects before interaction (reentrancy-safe)
-        require(_trySend(msg.sender, amount), "Mimir: withdraw failed");
+        require(_trySend(to, amount), "Mimir: withdraw failed");
         emit Withdrawal(msg.sender, amount);
     }
 
@@ -499,7 +510,9 @@ contract MimirV3 {
             maxChallengers:      parent.maxChallengers,
             isPrivate:           parent.isPrivate,
             inviteKey:           inviteKey,
-            agentOwnerRecipient: claimAgentOwner[parentId]
+            // The parent's agent earned its attribution on the parent's creator;
+            // a stranger rematching the claim does not inherit it.
+            agentOwnerRecipient: msg.sender == parent.creator ? claimAgentOwner[parentId] : address(0)
         }));
     }
 

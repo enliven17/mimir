@@ -6,6 +6,7 @@ import {MimirV3} from "../MimirV3.sol";
 interface Vm {
     function warp(uint256) external;
     function prank(address) external;
+    function deal(address, uint256) external;
 }
 
 /// Minimal 6-decimal USDC stand-in with Circle's blacklist behaviour: a
@@ -108,12 +109,84 @@ contract MimirV3TokenTest {
     }
 
     function test_nativeValueIsRejected() public {
-        (bool ok,) = address(mimir).call{value: 1}(
+        uint256 id = _create(creator, STAKE);
+        vm.deal(challenger, 1 ether);
+
+        // Every payable entry point refuses native value in token mode.
+        vm.prank(challenger);
+        (bool challenged,) = address(mimir).call{value: 1}(
             abi.encodeWithSignature(
-                "challengeClaim(uint256,uint256,string,address)", 1, STAKE, "", address(0)
+                "challengeClaim(uint256,uint256,string,address)", id, STAKE, "", address(0)
             )
         );
-        assert(!ok);
+        assert(!challenged);
+
+        vm.prank(challenger);
+        (bool rematched,) = address(mimir).call{value: 1}(
+            abi.encodeWithSignature(
+                "createRematch(uint256,uint256,uint256,string)", id, block.timestamp + 1 days, STAKE, ""
+            )
+        );
+        assert(!rematched);
+
+        vm.prank(creator);
+        vm.deal(creator, 1 ether);
+        (bool created,) = address(mimir).call{value: 1}(
+            abi.encodeWithSignature(
+                "createClaim(string,string,string,string,uint256,uint256,string,uint256,string,string,uint256,string,string,uint256,bool,string,address)",
+                "q", "a", "b", "u", block.timestamp + 1 days, STAKE, "custom", 0, "binary", "pool",
+                0, "", "r", 0, false, "", address(0)
+            )
+        );
+        assert(!created);
+
+        // Nothing moved: the escrow holds exactly the one claim's stake.
+        assert(usdc.balanceOf(address(mimir)) == STAKE);
+        assert(address(mimir).balance == 0);
+    }
+
+    function test_aParkedPayoutCanBePulledElsewhere() public {
+        uint256 id = _create(creator, STAKE);
+        vm.prank(challenger);
+        mimir.challengeClaim(id, STAKE, "", address(0));
+        usdc.setBlacklisted(challenger, true);
+        _settle(id, mimir.SIDE_CHALLENGERS());
+
+        uint256 parked = mimir.pendingWithdrawals(challenger);
+        assert(parked > 0);
+
+        // Its own address still cannot receive...
+        vm.prank(challenger);
+        (bool self,) = address(mimir).call(abi.encodeWithSignature("withdraw()"));
+        assert(!self);
+        assert(mimir.pendingWithdrawals(challenger) == parked);
+
+        // ...but it can send the payout somewhere that can.
+        address rescue = address(0x5AFE);
+        vm.prank(challenger);
+        mimir.withdrawTo(rescue);
+        assert(usdc.balanceOf(rescue) == parked);
+        assert(mimir.pendingWithdrawals(challenger) == 0);
+    }
+
+    function test_aStrangersRematchDoesNotInheritTheAgentOwner() public {
+        address agent = address(0xA6E7);
+        vm.prank(creator);
+        uint256 parent = mimir.createClaim(
+            "Will it?", "yes", "no", "https://example.com",
+            block.timestamp + 1 days, STAKE, "custom", 0, "binary", "pool",
+            0, "", "rule", 0, false, "", agent
+        );
+
+        vm.prank(challenger);
+        uint256 strangers = mimir.createRematch(parent, block.timestamp + 1 days, STAKE, "");
+        (,,, address strangerAgent) = mimir.getClaimFees(strangers);
+        assert(strangerAgent == address(0));
+
+        vm.prank(creator);
+        uint256 own = mimir.createRematch(parent, block.timestamp + 1 days, STAKE, "");
+        (,,, address ownAgent) = mimir.getClaimFees(own);
+        assert(ownAgent == agent);
     }
 
     function test_aBlacklistedWinnerIsParkedNotFrozen() public {
