@@ -199,6 +199,15 @@ export function chainByCaip2(caip2: string): MimirChain | undefined {
   return CHAIN_KEYS.map((k) => CHAINS[k]).find((c) => c.caip2 === caip2);
 }
 
+/**
+ * createRematch is only safe on MimirV3. The legacy v2 escrow calls itself
+ * (`this.createClaim`), which makes the contract the new claim's creator and
+ * locks the caller's stake where nobody can cancel or withdraw it.
+ */
+export function supportsRematch(key: ChainKey): boolean {
+  return CHAINS[key].abiVersion === "v3";
+}
+
 export function requireContractAddress(key: ChainKey): `0x${string}` {
   const a = CHAINS[key].contractAddress;
   if (!a) throw new Error(`Mimir is not deployed on ${CHAINS[key].name} (contract address unset)`);

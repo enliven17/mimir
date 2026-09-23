@@ -19,6 +19,8 @@ import { getContractAddress, ensureChain, RPC_BATCH_SIZE } from "./arc";
 import {
   getChain,
   enabledChainKeys,
+  requireContractAddress,
+  supportsRematch,
   usdcToStakeUnits,
   stakeUnitsToUsdc,
   explorerTxUrl,
@@ -604,7 +606,7 @@ async function ensureAllowance(
   const cfg = getChain(chain);
   if (cfg.stakeMode !== "erc20" || valueUsdc <= 0) return;
   const need = usdcToStakeUnits(chain, valueUsdc);
-  const spender = getContractAddress(chain);
+  const spender = requireContractAddress(chain);
   const client = getPublicClient(chain);
   const [allowance, balance] = await Promise.all([
     client.readContract({ address: cfg.usdc, abi: erc20Abi, functionName: "allowance", args: [account, spender] }),
@@ -644,7 +646,7 @@ async function sendBrowserTx(
       address: cfg.usdc,
       abi: erc20Abi,
       functionName: "approve",
-      args: [getContractAddress(chain), amount],
+      args: [requireContractAddress(chain), amount],
       account,
       chain: cfg.chain,
     }),
@@ -652,7 +654,7 @@ async function sendBrowserTx(
 
   const call = writeCall(chain, functionName, args);
   const txHash = await wc.writeContract({
-    address:      getContractAddress(chain),
+    address:      requireContractAddress(chain),
     abi:          call.abi as any,
     functionName: functionName as any,
     args:         call.args as any,
@@ -695,7 +697,7 @@ async function sendServerTx(
       address: cfg.usdc,
       abi: erc20Abi,
       functionName: "approve",
-      args: [getContractAddress(chain), amount],
+      args: [requireContractAddress(chain), amount],
       account,
       chain: cfg.chain,
     }),
@@ -703,7 +705,7 @@ async function sendServerTx(
 
   const call = writeCall(chain, functionName, args);
   const txHash = await walletClient.writeContract({
-    address:      getContractAddress(chain),
+    address:      requireContractAddress(chain),
     abi:          call.abi as any,
     functionName: functionName as any,
     args:         call.args as any,
@@ -808,6 +810,7 @@ export async function createRematch(
 ): Promise<ClaimWriteResult> {
   // A rematch lives on its parent's chain: parentId means nothing elsewhere.
   const chain = params.chain ?? "arc";
+  assertRematchSupported(chain);
   if (isDemoMode()) {
     return sendDemoTx("create_rematch", { parentId, ...params });
   }
@@ -861,6 +864,7 @@ export async function executeDemoWrite(
   }
 
   if (action === "create_rematch") {
+    assertRematchSupported(chain);
     const { parentId, deadline, stake_amount, invite_key = "" } = params as any;
     const result = await sendServerTx(
       chain, privateKey, "createRematch",
@@ -872,6 +876,14 @@ export async function executeDemoWrite(
   }
 
   throw new Error(`Unknown demo action: ${action}`);
+}
+
+function assertRematchSupported(chain: ChainKey): void {
+  if (!supportsRematch(chain)) {
+    throw new Error(
+      `Rematches are unavailable on ${getChain(chain).name} until its escrow moves to MimirV3.`
+    );
+  }
 }
 
 // ── Helper: build createClaim args tuple ──────────────────────────────────────

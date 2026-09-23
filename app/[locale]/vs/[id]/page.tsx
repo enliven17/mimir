@@ -33,6 +33,7 @@ import {
   chainFromQuery,
   explorerTxUrl,
   getChain,
+  supportsRematch,
   vsPath,
   type ChainKey,
 } from "@/lib/chains";
@@ -2245,6 +2246,7 @@ export default function VSDetailPage() {
                           </div>
 
                           {!isSampleVS &&
+                            supportsRematch(chain) &&
                             (vs.state === "resolved" || vs.state === "cancelled") && (
                               <div className="w-full flex justify-center">
                                 <Link
