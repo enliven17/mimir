@@ -1051,5 +1051,20 @@
     "title": "EMERGING NARRATIVES",
     "lead": "Opportunities to generate new challenges from emerging signals and storylines.",
     "comingSoon": "COMMING SOON"
+  },
+  "network": {
+    "networkLabel": "Network",
+    "onNetwork": "On {name}",
+    "selectorLabel": "Select network",
+    "walletMismatch": "Your wallet is on a different network",
+    "gasToken": "{symbol} gas",
+    "switchTo": "Switch to {name}",
+    "switching": "Switching network…",
+    "switchFailed": "Network switch was declined. Switch your wallet to {name} to continue.",
+    "claimOnNetwork": "This claim lives on {name}. Every action here uses that network.",
+    "gasNative": "Stakes and gas are both USDC on {name}.",
+    "gasEth": "On {name} stakes are USDC and gas is paid in ETH. Staking takes two wallet prompts: approve the exact USDC amount, then confirm.",
+    "filterLabel": "Network",
+    "filterAll": "All networks"
   }
 }

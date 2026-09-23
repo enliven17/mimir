@@ -6,7 +6,8 @@ import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
 import { useWallet } from "@/lib/wallet";
 import { shortenAddress } from "@/lib/constants";
-import { getExplorerAddressUrl } from "@/lib/arc";
+import { explorerAddressUrl } from "@/lib/chains";
+import NetworkSelector from "@/components/NetworkSelector";
 import { Copy, ExternalLink, LogOut, Menu, X } from "lucide-react";
 import { isXmtpFeatureEnabled } from "@/lib/xmtp/config";
 
@@ -26,8 +27,10 @@ function WalletAccountMenu({
   buttonClassName: string;
 }) {
   const t = useTranslations("header");
+  const { walletChain, selectedChain } = useWallet();
   const [copied, setCopied] = useState(false);
-  const explorerHref = getExplorerAddressUrl(address);
+  // The address is the same everywhere; link it on the network the wallet is on.
+  const explorerHref = explorerAddressUrl(walletChain ?? selectedChain, address);
 
   const actionItemClass =
     "group flex w-full items-center gap-3 rounded-xl border border-transparent px-3.5 py-3 text-left text-[13px] font-medium text-pv-text/82 transition-[background-color,border-color,color,transform] hover:border-pv-emerald/20 hover:bg-pv-emerald/[0.07] hover:text-pv-text";
@@ -256,6 +259,7 @@ export default function Header() {
                 );
               })}
 
+              <NetworkSelector />
               {isConnected && address ? (
                 <WalletAccountMenu
                   address={address}
@@ -279,6 +283,7 @@ export default function Header() {
 
             {/* Mobile */}
             <div className="flex items-center gap-2 md:hidden">
+              <NetworkSelector />
               {isConnected && address ? (
                 <WalletAccountMenu
                   address={address}
