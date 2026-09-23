@@ -1072,6 +1072,8 @@ export interface X402PaymentRow {
   at: number;
   /** Facilitator settlement identifier; unique when present, used to dedupe retries. */
   payment_id?: string | null;
+  /** CAIP-2 network. NULL rows predate multichain and settled on Arc. */
+  network?: string | null;
 }
 
 export interface X402RevenueSummary {
@@ -1081,16 +1083,17 @@ export interface X402RevenueSummary {
   uniqueSellers: number;
   byResource: Array<{ resource: string; calls: number; usd: number }>;
   bySeller: Array<{ seller: string; calls: number; usd: number }>;
+  byNetwork: Array<{ network: string; calls: number; usd: number }>;
   recent: X402PaymentRow[];
 }
 
 export async function insertX402Payment(e: X402PaymentRow): Promise<void> {
   const pool = await getDb();
   await execute(pool, {
-    sql: `INSERT INTO x402_payments(resource, price_usd, payer, seller, tx_id, at, payment_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+    sql: `INSERT INTO x402_payments(resource, price_usd, payer, seller, tx_id, at, payment_id, network)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (payment_id) WHERE payment_id IS NOT NULL DO NOTHING`,
-    args: [e.resource, e.price_usd, e.payer, e.seller, e.tx_id, e.at, e.payment_id ?? null],
+    args: [e.resource, e.price_usd, e.payer, e.seller, e.tx_id, e.at, e.payment_id ?? null, e.network ?? null],
   });
 }
 
@@ -1108,7 +1111,7 @@ export async function getX402RevenueSummary(limit = 25): Promise<X402RevenueSumm
             FROM x402_payments GROUP BY resource ORDER BY usd DESC`,
     }),
     execute(pool, {
-      sql: "SELECT resource, price_usd, payer, seller, tx_id, at FROM x402_payments ORDER BY at DESC, id DESC LIMIT ?",
+      sql: "SELECT resource, price_usd, payer, seller, tx_id, at, network FROM x402_payments ORDER BY at DESC, id DESC LIMIT ?",
       args: [limit],
     }),
   ]);
@@ -1117,6 +1120,13 @@ export async function getX402RevenueSummary(limit = 25): Promise<X402RevenueSumm
           FROM x402_payments
           WHERE seller IS NOT NULL
           GROUP BY seller
+          ORDER BY usd DESC`,
+  });
+  const byNetwork = await execute(pool, {
+    sql: `SELECT COALESCE(network, 'eip155:5042002') AS network, COUNT(*) AS calls,
+            COALESCE(SUM(price_usd), 0) AS usd
+          FROM x402_payments
+          GROUP BY COALESCE(network, 'eip155:5042002')
           ORDER BY usd DESC`,
   });
   const t = totals.rows[0] ?? {};
@@ -1135,6 +1145,11 @@ export async function getX402RevenueSummary(limit = 25): Promise<X402RevenueSumm
       calls: getNumber(r.calls),
       usd: Math.round(getNumber(r.usd) * 1e6) / 1e6,
     })),
+    byNetwork: byNetwork.rows.map((r) => ({
+      network: getString(r.network),
+      calls: getNumber(r.calls),
+      usd: Math.round(getNumber(r.usd) * 1e6) / 1e6,
+    })),
     recent: recent.rows.map((r) => ({
       resource: getString(r.resource),
       price_usd: getNumber(r.price_usd),
@@ -1142,6 +1157,7 @@ export async function getX402RevenueSummary(limit = 25): Promise<X402RevenueSumm
       seller: getNullableString(r.seller),
       tx_id: getNullableString(r.tx_id),
       at: getNumber(r.at),
+      network: getNullableString(r.network),
     })),
   };
 }

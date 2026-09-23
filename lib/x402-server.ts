@@ -19,10 +19,20 @@ import {
   type GatewayMiddleware,
 } from "@circle-fin/x402-batching/server";
 import { decodePaymentResponseHeader } from "@x402/core/http";
-import { arcTestnet } from "./arc";
+import { enabledChains } from "./chains";
 import { recordPayment, parsePriceUsd } from "./x402-revenue";
 
-const ARC_CAIP2 = `eip155:${arcTestnet.id}`;
+/**
+ * Every network Mimir is deployed on. Buyers pay on whichever they hold a
+ * Gateway balance on; Arc is listed first so it stays the default.
+ * X402_NETWORKS (comma-separated CAIP-2) narrows it, e.g. to Arc only.
+ */
+function sellNetworks(): string[] {
+  const all = enabledChains().map((c) => c.caip2 as string);
+  const only = process.env.X402_NETWORKS?.split(",").map((s) => s.trim()).filter(Boolean);
+  const picked = only?.length ? all.filter((n) => only.includes(n)) : all;
+  return picked.length > 0 ? picked : ["eip155:5042002"];
+}
 const DEFAULT_FACILITATOR = "https://gateway-api-testnet.circle.com";
 
 // One middleware per seller address — lets each council persona earn into its
@@ -43,7 +53,7 @@ export function getGateway(payTo?: string): GatewayMiddleware {
   if (hit) return hit;
   const mw = createGatewayMiddleware({
     sellerAddress,
-    networks: [ARC_CAIP2],
+    networks: sellNetworks(),
     facilitatorUrl: process.env.X402_FACILITATOR_URL ?? DEFAULT_FACILITATOR,
     description: "Mimir paid resource",
   });
@@ -142,6 +152,7 @@ export async function requirePayment(
     // Record it for the revenue dashboard (best-effort; never blocks serving).
     let payer: string | null = null;
     let txId: string | null = null;
+    let network: string | null = null;
     const settleHeader =
       outHeaders.get("x-payment-response") ?? outHeaders.get("payment-response");
     if (settleHeader) {
@@ -149,9 +160,11 @@ export async function requirePayment(
         const s = decodePaymentResponseHeader(settleHeader) as {
           payer?: string;
           transaction?: string;
+          network?: string;
         };
         payer = s.payer ?? null;
         txId = s.transaction ?? null;
+        network = s.network ?? null;
       } catch {
         /* ignore decode errors */
       }
@@ -165,6 +178,7 @@ export async function requirePayment(
       payer,
       seller: (opts?.payTo ?? process.env.X402_SELLER_ADDRESS ?? null)?.toLowerCase() ?? null,
       txId,
+      network,
       at: Date.now(),
     });
     return {

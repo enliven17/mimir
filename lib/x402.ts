@@ -24,17 +24,41 @@ import { x402Client } from "@x402/core/client";
 import { wrapFetchWithPayment, decodePaymentResponseHeader } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm";
 import { registerBatchScheme } from "@circle-fin/x402-batching/client";
-import { createArcPublicClient, arcTestnet } from "./arc";
+import { createChainPublicClient } from "./arc";
+import { chainByEvmId, getChain, type ChainKey } from "./chains";
 import { signTypedDataW3S, type Eip712TypedData } from "./circle-w3s";
 
-// CAIP-2 network id for Arc Testnet (chain 5042002).
-const ARC_CAIP2 = `eip155:${arcTestnet.id}` as const;
-
 export interface PayingAgent {
-  /** W3S wallet id that signs (and funds) the payment. */
+  /** W3S wallet id that signs (and funds) the payment. The Arc wallet. */
   walletId: string;
-  /** The agent's on-chain address (payer / from). */
+  /** The agent's on-chain address (payer / from). Same on every chain. */
   address: `0x${string}`;
+  /**
+   * W3S wallet per chain. A payment settles on one network, and the signature
+   * comes from the wallet on that network; missing chains fall back to walletId.
+   */
+  walletIds?: Partial<Record<ChainKey, string>>;
+  /**
+   * Network to pay on when the seller accepts several. Usually the chain of the
+   * claim the agent is working on, so its spend follows its activity. Other
+   * networks the seller offers stay as fallbacks.
+   */
+  preferChain?: ChainKey;
+}
+
+/** Order a seller's `accepts` so the agent's preferred network is tried first. */
+export function orderByPreference<T extends { network?: string }>(
+  accepts: T[],
+  prefer?: ChainKey,
+): T[] {
+  if (!prefer) return accepts;
+  const want = getChain(prefer).caip2;
+  return [...accepts].sort((a, b) => Number(b.network === want) - Number(a.network === want));
+}
+
+function walletFor(agent: PayingAgent, chainId: unknown): string {
+  const chain = chainByEvmId(Number(chainId));
+  return (chain && agent.walletIds?.[chain.key]) || agent.walletId;
 }
 
 // A viem-LocalAccount-shaped signer backed by W3S. x402's ExactEvmScheme and the
@@ -42,7 +66,7 @@ export interface PayingAgent {
 // plus signTypedData. readContract is optional (used for EIP-2612 enrichment); we
 // wire Arc's public client so the standard fallback path can read nonces if needed.
 function makeW3SSigner(agent: PayingAgent) {
-  const pub = createArcPublicClient();
+  const pub = createChainPublicClient(agent.preferChain ?? "arc");
   return {
     address: agent.address,
     signTypedData: (msg: {
@@ -51,7 +75,11 @@ function makeW3SSigner(agent: PayingAgent) {
       primaryType: string;
       message: Record<string, unknown>;
     }) =>
-      signTypedDataW3S(agent.walletId, msg as unknown as Eip712TypedData, "Mimir x402 nanopayment"),
+      signTypedDataW3S(
+        walletFor(agent, msg.domain.chainId),
+        msg as unknown as Eip712TypedData,
+        "Mimir x402 nanopayment",
+      ),
     readContract: (args: {
       address: `0x${string}`;
       abi: readonly unknown[];
@@ -69,6 +97,8 @@ function makeW3SSigner(agent: PayingAgent) {
 export function createPayingFetch(agent: PayingAgent): typeof globalThis.fetch {
   const signer = makeW3SSigner(agent);
   const client = new x402Client();
+  // Pay on the preferred network when the seller offers it; keep the rest as fallbacks.
+  client.registerPolicy((_version, reqs) => orderByPreference(reqs, agent.preferChain));
   // Composite registration: handles BOTH Gateway-batched ("GatewayWalletBatched")
   // and standard exact-EVM payment requirements in one shot.
   registerBatchScheme(client, {
@@ -163,9 +193,10 @@ export async function fetchWithBudget(
       accepts = [];
     }
   }
-  // Only consider requirements we can actually settle (Arc / our network).
-  const usable = accepts.filter(
-    (r) => !r.network || r.network === ARC_CAIP2 || r.network.startsWith("eip155:"),
+  // Only consider requirements we can actually settle (EVM networks), preferred first.
+  const usable = orderByPreference(
+    accepts.filter((r) => !r.network || r.network.startsWith("eip155:")),
+    agent.preferChain,
   );
   const chosen = usable[0] ?? accepts[0];
   if (!chosen) {

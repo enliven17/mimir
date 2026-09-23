@@ -19,6 +19,8 @@ export interface PaymentEvent {
   payer: string | null; // buyer address, when the settlement header carries it
   seller: string | null; // wallet that received the payment
   txId: string | null; // Circle settlement id / tx
+  /** CAIP-2 network it settled on. Absent on events from before multichain (Arc). */
+  network?: string | null;
   at: number; // ms epoch
 }
 
@@ -48,6 +50,7 @@ export function recordPayment(e: PaymentEvent): Promise<void> {
     payer: e.payer,
     seller: e.seller,
     tx_id: e.txId,
+    network: e.network ?? null,
     at: e.at,
     // The settlement id is what the facilitator replays on a retry, so it is the
     // dedupe key. Without it the same settlement could be counted twice.
@@ -64,6 +67,8 @@ export interface RevenueSummary {
   uniqueSellers: number;
   byResource: Array<{ resource: string; calls: number; usd: number }>;
   bySeller: Array<{ seller: string; calls: number; usd: number }>;
+  /** Spend per CAIP-2 network — nanopayments settle on whichever chain the buyer picked. */
+  byNetwork: Array<{ network: string; calls: number; usd: number }>;
   recent: PaymentEvent[];
 }
 
@@ -75,12 +80,14 @@ function fromDbSummary(s: X402RevenueSummary): RevenueSummary {
     uniqueSellers: s.uniqueSellers,
     byResource: s.byResource,
     bySeller: s.bySeller,
+    byNetwork: s.byNetwork,
     recent: s.recent.map((r) => ({
       resource: r.resource,
       priceUsd: r.price_usd,
       payer: r.payer,
       seller: r.seller,
       txId: r.tx_id,
+      network: r.network ?? null,
       at: r.at,
     })),
   };
@@ -89,6 +96,7 @@ function fromDbSummary(s: X402RevenueSummary): RevenueSummary {
 function inMemorySummary(limit: number): RevenueSummary {
   const byResource = new Map<string, { calls: number; usd: number }>();
   const bySeller = new Map<string, { calls: number; usd: number }>();
+  const byNetwork = new Map<string, { calls: number; usd: number }>();
   const payers = new Set<string>();
   const sellers = new Set<string>();
   let totalUsd = 0;
@@ -103,6 +111,11 @@ function inMemorySummary(limit: number): RevenueSummary {
       s.usd += e.priceUsd;
       bySeller.set(seller, s);
     }
+    const networkKey = e.network ?? "eip155:5042002";
+    const n = byNetwork.get(networkKey) ?? { calls: 0, usd: 0 };
+    n.calls += 1;
+    n.usd += e.priceUsd;
+    byNetwork.set(networkKey, n);
     const r = byResource.get(e.resource) ?? { calls: 0, usd: 0 };
     r.calls += 1;
     r.usd += e.priceUsd;
@@ -118,6 +131,9 @@ function inMemorySummary(limit: number): RevenueSummary {
       .sort((a, b) => b.usd - a.usd),
     bySeller: [...bySeller.entries()]
       .map(([seller, v]) => ({ seller, calls: v.calls, usd: Math.round(v.usd * 1e6) / 1e6 }))
+      .sort((a, b) => b.usd - a.usd),
+    byNetwork: [...byNetwork.entries()]
+      .map(([network, v]) => ({ network, calls: v.calls, usd: Math.round(v.usd * 1e6) / 1e6 }))
       .sort((a, b) => b.usd - a.usd),
     recent: events.slice(-limit).reverse(),
   };

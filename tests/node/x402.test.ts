@@ -58,3 +58,17 @@ test("usdcToAtomic uses 6 decimals", () => {
   assert.equal(usdcToAtomic(0.001), 1_000n);
   assert.equal(usdcToAtomic(0.000001), 1n);
 });
+
+test("the preferred network is paid first, the rest stay as fallbacks", async () => {
+  const { orderByPreference } = await import("../../lib/x402");
+  const accepts = [
+    { network: "eip155:5042002" },
+    { network: "eip155:84532" },
+    { network: "eip155:421614" },
+  ];
+  assert.deepEqual(
+    orderByPreference(accepts, "base").map((a) => a.network),
+    ["eip155:84532", "eip155:5042002", "eip155:421614"],
+  );
+  assert.deepEqual(orderByPreference(accepts, undefined), accepts);
+});
