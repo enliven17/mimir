@@ -28,6 +28,12 @@ const TARGETS: ChainKey[] = ["base", "arbitrum"];
 const AGENTS: Array<{ label: string; idEnv: string; addressEnv: string }> = [
   { label: "oracle", idEnv: "CIRCLE_ORACLE_WALLET_ID", addressEnv: "CIRCLE_ORACLE_ADDRESS" },
   { label: "market-creator", idEnv: "CIRCLE_CREATOR_WALLET_ID", addressEnv: "CIRCLE_CREATOR_ADDRESS" },
+  // Demo traders; Alice is also the smoke test's challenger.
+  ...["ALICE", "BOB", "CAROL", "DAVE"].map((name) => ({
+    label: name.toLowerCase(),
+    idEnv: `CIRCLE_${name}_WALLET_ID`,
+    addressEnv: `CIRCLE_${name}_ADDRESS`,
+  })),
   ...COUNCIL_PERSONAS.map((p) => ({
     label: `council/${p.slug}`,
     idEnv: personaWalletIdEnv(p),
