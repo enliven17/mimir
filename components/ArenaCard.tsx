@@ -1,7 +1,9 @@
 "use client";
 
 import { Link } from "@/i18n/navigation";
-import { getVSChallengerCount, isVSJoinable, didUserChallengeVS, type VSData } from "@/lib/contract";
+import { getVSChallengerCount, isVSJoinable, didUserChallengeVS, vsChain, type VSData } from "@/lib/contract";
+import { vsPath } from "@/lib/chains";
+import ChainBadge from "./ui/ChainBadge";
 import { computeClaimQuality } from "@/lib/claimQuality";
 import { openPeepsAvatar } from "@/lib/avatars";
 import { useTranslations } from "next-intl";
@@ -27,6 +29,7 @@ type ArenaVS = Pick<
       | "resolution_url"
       | "settlement_rule"
       | "deadline"
+      | "chain"
     >
   >;
 
@@ -152,6 +155,7 @@ export default function ArenaCard({
             <span className={`shrink-0 ${sampleBadgePillClass}`}>{sampleBadgeLabel}</span>
           ) : null}
           <span className={statusPillClass}>{t(statusPillMessageKey)}</span>
+          <ChainBadge chain={vsChain(vs)} />
           {joined ? (
             <span className="font-display text-xs font-semibold uppercase tracking-wide text-pv-emerald bg-pv-emerald/15 px-2 py-1 ring-1 ring-pv-emerald/30">
               {t("arenaJoinedBadge")}
@@ -262,7 +266,7 @@ export default function ArenaCard({
           </div>
 
           <Link
-            href={`/vs/${vs.id}`}
+            href={vsPath(vs.id, vsChain(vs))}
             className={
               isArchived || joined
                 ? "inline-flex shrink-0 items-center justify-center rounded-md border border-white/[0.15] bg-transparent px-5 py-2 font-display text-[10px] font-bold uppercase tracking-[0.18em] text-pv-muted shadow-none transition-[color,border-color,transform,box-shadow] duration-200 ease-out hover:-translate-y-px hover:border-white/[0.28] hover:bg-transparent hover:text-pv-text hover:shadow-[0_4px_18px_-6px_rgba(0,0,0,0.45)] active:translate-y-0 active:scale-[0.98] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-surface"

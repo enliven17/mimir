@@ -13,8 +13,11 @@ import {
   hasZeroAddressWinner,
   isVSJoinable,
   isVSMultiChallengerWin,
+  vsChain,
   type VSData,
 } from "@/lib/contract";
+import { claimKey, vsPath } from "@/lib/chains";
+import ChainBadge from "@/components/ui/ChainBadge";
 import { ZERO_ADDRESS, shortenAddress } from "@/lib/constants";
 import { mergePendingVS } from "@/lib/pending-vs";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
@@ -242,7 +245,7 @@ export default function HomePage() {
 
   const arenaGridCards = Array.from(
     new Map(
-      [...openVS, ...allVS.filter((v) => v.state !== "open")].map((vs) => [vs.id, vs]),
+      [...openVS, ...allVS.filter((v) => v.state !== "open")].map((vs) => [claimKey(vsChain(vs), vs.id), vs]),
     ).values(),
   )
     .slice(0, 5)
@@ -703,7 +706,7 @@ export default function HomePage() {
             <div className="grid grid-cols-1 gap-px border-x border-pv-border/25 bg-pv-border/25 sm:grid-cols-2 lg:grid-cols-3 [&>*]:border-0 [&>*]:h-full">
               {arenaGridCards.map(({ vs, challengersCount }) => (
                 <ArenaCard
-                  key={vs.id}
+                  key={claimKey(vsChain(vs), vs.id)}
                   vs={vs}
                   challengersCount={challengersCount}
                   archiveLabelShort={vs.id === -5}
@@ -782,7 +785,7 @@ export default function HomePage() {
 
             <div className="grid grid-cols-1 gap-px border-x border-pv-border/25 bg-pv-border/25 lg:grid-cols-2 [&>*]:border-0 [&>*]:h-full">
               {openVS.slice(0, 4).map((vs) => (
-                <VSCard key={vs.id} vs={vs} />
+                <VSCard key={claimKey(vsChain(vs), vs.id)} vs={vs} />
               ))}
             </div>
 
@@ -814,8 +817,8 @@ export default function HomePage() {
 
                 return (
                   <Link
-                    key={vs.id}
-                    href={`/vs/${vs.id}`}
+                    key={claimKey(vsChain(vs), vs.id)}
+                    href={vsPath(vs.id, vsChain(vs))}
                     className="group flex items-center justify-between gap-4 bg-pv-bg px-5 py-4 transition-colors hover:bg-pv-surface sm:px-6"
                   >
                     <div className="flex min-w-0 items-center gap-3 sm:gap-4">
@@ -825,6 +828,7 @@ export default function HomePage() {
                       <span className="hidden shrink-0 border border-pv-emerald/40 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-pv-emerald sm:inline-block">
                         Settled
                       </span>
+                      <ChainBadge chain={vsChain(vs)} compact className="hidden sm:inline-flex" />
                       <span className="truncate font-mono text-[13px] text-pv-text/90">
                         {winnerLabel}
                       </span>

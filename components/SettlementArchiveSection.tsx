@@ -4,7 +4,9 @@ import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { PlusCircle } from "lucide-react";
-import { getVSChallengerCount, getVSTotalPot, type VSData } from "@/lib/contract";
+import { getVSChallengerCount, getVSTotalPot, vsChain, type VSData } from "@/lib/contract";
+import { claimKey, vsPath } from "@/lib/chains";
+import ChainBadge from "@/components/ui/ChainBadge";
 import { Button } from "@/components/ui";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { formatUsdcBare } from "@/lib/money";
@@ -129,8 +131,8 @@ export default function SettlementArchiveSection({
           {feedRows.map((row) =>
             row.kind === "live" ? (
               <Link
-                key={row.vs.id}
-                href={`/vs/${row.vs.id}`}
+                key={claimKey(vsChain(row.vs), row.vs.id)}
+                href={vsPath(row.vs.id, vsChain(row.vs))}
                 className="group flex gap-6 bg-pv-bg p-5 transition-colors duration-300 hover:bg-pv-surface md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-8 md:p-6"
               >
                 {/* Columna izquierda: enumeración centrada verticalmente */}
@@ -143,8 +145,9 @@ export default function SettlementArchiveSection({
                 {/* Columna derecha: título / canal arriba, datos a la derecha (o debajo en mobile) */}
                 <div className="flex min-w-0 flex-1 flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-8">
                   <div className="min-w-0 max-w-full md:max-w-[55%] lg:max-w-[50%]">
-                    <span className="mb-1 block font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-muted">
-                      {tCat(row.vs.category)} / {t("archiveTerminalChannel")}
+                    <span className="mb-1 flex flex-wrap items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-pv-muted">
+                      <span>{tCat(row.vs.category)} / {t("archiveTerminalChannel")}</span>
+                      <ChainBadge chain={vsChain(row.vs)} compact />
                     </span>
                     <span className="line-clamp-2 font-display text-base font-bold leading-snug text-pv-text sm:text-lg">
                       {row.vs.question}

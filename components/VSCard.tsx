@@ -18,8 +18,11 @@ import {
   getVSChallengerCount,
   getVSTotalPot,
   isVSJoinable,
+  vsChain,
   type VSData,
 } from "@/lib/contract";
+import { vsPath } from "@/lib/chains";
+import ChainBadge from "./ui/ChainBadge";
 import { shortenAddress, getCategoryInfo, ZERO_ADDRESS, getTimeRemaining } from "@/lib/constants";
 import { impliedOdds, crowdImbalance } from "@/lib/odds";
 import OddsBar from "./vs/OddsBar";
@@ -81,7 +84,7 @@ export default function VSCard({
           : ""
       }`}
     >
-      <Link href={`/vs/${vs.id}`} className="absolute inset-0 z-0 rounded" aria-label={vs.question} />
+      <Link href={vsPath(vs.id, vsChain(vs))} className="absolute inset-0 z-0 rounded" aria-label={vs.question} />
 
       <div className="pointer-events-none absolute left-0 top-0 h-full w-2/5 bg-[radial-gradient(ellipse_at_0%_50%,rgba(51,79,169,0.06),transparent_65%)]" />
 
@@ -92,6 +95,7 @@ export default function VSCard({
             {isSample && sampleBadgeLabel ? (
               <span className={`shrink-0 ${pillClass} tracking-[0.14em]`}>{sampleBadgeLabel}</span>
             ) : null}
+            <ChainBadge chain={vsChain(vs)} compact />
             <span className="text-[13px] font-semibold">{shortenAddress(vs.creator)}</span>
             {showChallengesLabel ? (
               <span className="text-xs text-pv-muted">{t("challenges")}</span>
