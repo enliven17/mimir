@@ -74,6 +74,7 @@ sequenceDiagram
 - [Discovering what Mimir sells](#discovering-what-mimir-sells)
 - [Operating the workers](#operating-the-workers)
 - [Circle stack integration](#circle-stack-integration)
+- [Multichain: Arc, Base and Arbitrum](#multichain-arc-base-and-arbitrum)
 - [Cross-chain inflow (CCTP V2)](#cross-chain-inflow-cctp-v2)
 - [Tech stack](#tech-stack)
 - [Repository layout](#repository-layout)
@@ -680,6 +681,46 @@ A fresh ciphertext is generated for every call. The entity secret never leaves t
 
 ---
 
+## Multichain: Arc, Base and Arbitrum
+
+Arc is the home chain. Mimir also runs on **Base Sepolia** and **Arbitrum Sepolia**, and the user picks the network in the header: markets are created, challenged and settled on whichever network they chose, and the feed shows all three side by side.
+
+| | Arc Testnet | Base Sepolia | Arbitrum Sepolia |
+| --- | --- | --- | --- |
+| Chain id / CAIP-2 | `5042002` / `eip155:5042002` | `84532` / `eip155:84532` | `421614` / `eip155:421614` |
+| Escrow | `Mimir.sol` v2 (live), `MimirV3` after cutover | `MimirV3`, ERC-20 mode | `MimirV3`, ERC-20 mode |
+| Stake asset | native USDC via `msg.value` (18 decimals) | USDC `0x036C…CF7e` (6 decimals) | USDC `0x75fa…AA4d` (6 decimals) |
+| Stake flow | one transaction | exact `approve`, then the stake | exact `approve`, then the stake |
+| Gas | USDC | Sepolia ETH | Sepolia ETH |
+| Agent signing | Circle W3S | Circle W3S (derived wallet) | Circle W3S (derived wallet) |
+| Nanopayments | Gateway, domain 26 | Gateway, domain 6 | Gateway, domain 3 |
+
+**One contract, two stake modes.** `MimirV3` takes the stake asset in its constructor. `address(0)` means native mode (Arc); a token address means ERC-20 mode, where stakes are pulled with `transferFrom` after an exact approve, `msg.value` must be zero, and a fee-on-transfer token is rejected by a balance check. `MIN_STAKE` is 2 USDC in the asset's own decimals. A blacklisted USDC recipient reverts rather than returning false, so payouts go through a low-level call and a failed push is parked in `pendingWithdrawals`, the same as a rejecting contract on Arc. The forge suite runs the fee invariants in native mode and the stake, payout, blacklist and rematch paths against a 6-decimal mock USDC.
+
+**One registry.** `lib/chains.ts` is the only file that knows which networks exist: chain definitions, stake decimals, USDC addresses, W3S blockchain ids, Circle domains, explorers, RPCs and the ABI each escrow speaks. A chain is enabled by setting its contract address, and everything above the registry (the app, the read index, the workers, the x402 sellers) picks it up. Callers speak whole USDC and a `ChainKey`; `usdcToStakeUnits` and `stakeUnitsToUsdc` are the only place the 18 vs 6 decimal difference exists.
+
+**Claim identity is `(chain, id)`.** Claim ids restart at 1 on every chain. The read index keys `claims` and `challengers` by `(chain, id)`, and an existing Arc-only index is migrated in place on boot (rows are tagged `arc`, primary keys widened, nothing rewritten). Claim URLs carry `?chain=base` or `?chain=arbitrum`; a link without it always means Arc, so every link shared before multichain still resolves. Caches, copy-trading positions and council reasoning are keyed the same way.
+
+**Same agents, same addresses.** The oracle, the market creator and every council persona keep one address on all three chains: their Arc W3S wallets are derived onto `BASE-SEPOLIA` and `ARB-SEPOLIA` (`npm run circle:derive-wallets`), which returns a new wallet id per chain for the same key. `lib/w3s-escrow.ts` picks the right wallet id, ABI and stake flow for each write, so still no agent holds a private key on any chain. The workers loop over every enabled chain, and one chain's RPC failing never stops the others.
+
+**Nanopayments across networks.** Every paid endpoint accepts x402 payment on all enabled networks. A buying agent prefers the network of the claim it is working on and falls back to the others the seller offers; the EIP-712 signature comes from that network's W3S wallet. The revenue ledger records the network of each settlement, and `/revenue` breaks earnings down per chain. A Gateway balance lives on the chain it was deposited on, so a buyer funds each network it pays on: `DEPOSIT_USDC=2 npm run gateway:deposit -- all`.
+
+### Turning on a chain
+
+```bash
+npm run circle:derive-wallets          # agent wallets on Base + Arbitrum, same addresses
+# fund the market creator with Sepolia ETH on Base and Arbitrum, and the agents with USDC
+npm run deploy:v3 -- base              # writes NEXT_PUBLIC_BASE_CONTRACT_ADDRESS + _DEPLOY_BLOCK
+npm run deploy:v3 -- arbitrum          # writes NEXT_PUBLIC_ARBITRUM_CONTRACT_ADDRESS + _DEPLOY_BLOCK
+npm run smoke:v3 -- base               # optional: open, challenge and settle one market for real
+DEPOSIT_USDC=2 npm run gateway:deposit -- all
+npm run warm:vs-index                  # index the new chains
+```
+
+Copy the new variables to Vercel and Railway and redeploy both. Arc stays on the v2 escrow until the separate cutover in [`docs/MAINNET_CUTOVER.md`](./docs/MAINNET_CUTOVER.md); switching it to V3 later is `NEXT_PUBLIC_CONTRACT_ADDRESS`, `NEXT_PUBLIC_DEPLOY_BLOCK` and `NEXT_PUBLIC_ARC_ABI_VERSION=v3`.
+
+---
+
 ## Cross-chain inflow (CCTP V2)
 
 The `/bridge` page is a thin orchestrator over Circle's V2 contracts and the Iris attestation API. Everything runs in the browser via wagmi/viem; no backend session, no custodial step.
@@ -1063,7 +1104,11 @@ Every env var lives in `.env.example`. Quick reference:
 | `npm run compile:contract`                   | Compile the Solidity sources into `artifacts/`                                     |
 | `npm run test:contract`                      | Forge tests for the escrow, including a fuzzed fee invariant                       |
 | `npm run test:smoke`                         | Every Node-native test under `tests/node`, discovered automatically                |
-| `npm run warm:vs-index`                      | Rebuild the Neon read-index from current on-chain state                            |
+| `npm run warm:vs-index`                      | Rebuild the Neon read-index from every enabled chain                                |
+| `npm run circle:derive-wallets`              | Derive every agent W3S wallet onto Base Sepolia + Arbitrum Sepolia (same addresses) |
+| `npm run deploy:v3 -- <arc\|base\|arbitrum>` | Compile + deploy `MimirV3` (native mode on Arc, ERC-20 mode elsewhere)             |
+| `npm run smoke:v3 -- <chain>`                | Open, challenge and settle one V3 market on that chain and check the fee math      |
+| `npm run gateway:deposit -- <chain\|all>`    | Fund an agent's Gateway balance for nanopayments on one or every chain             |
 | `npm run seed` / `npm run seed:dry`          | Seed demo claims (live / dry-run)                                                  |
 | `npx tsx scripts/circle-entity-secret.ts`    | One-time W3S entity-secret bootstrap                                               |
 | `npx tsx scripts/circle-create-wallets.ts`   | Create oracle + market-creator W3S wallets                                         |
