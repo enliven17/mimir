@@ -65,10 +65,15 @@ export interface EscrowWriteArgs {
   agentOwner?: `0x${string}`;
   feeLevel?: "LOW" | "MEDIUM" | "HIGH";
   refId?: string;
+  /**
+   * Target a specific escrow instead of the chain's live one, e.g. the Arc V3
+   * deploy that sits beside v2 until cutover. Its ABI version must be given too.
+   */
+  escrow?: { address: `0x${string}`; abiVersion: "v2" | "v3" };
 }
 
-function callFor(chain: ChainKey, functionName: string, args: readonly unknown[], agentOwner?: string) {
-  if (getChain(chain).abiVersion === "v2") return { abi: MIMIR_ABI as readonly unknown[], args };
+function callFor(abiVersion: "v2" | "v3", functionName: string, args: readonly unknown[], agentOwner?: string) {
+  if (abiVersion === "v2") return { abi: MIMIR_ABI as readonly unknown[], args };
   const attributed =
     functionName === "createClaim" || functionName === "challengeClaim"
       ? [...args, agentOwner ?? ZERO_ADDRESS]
@@ -83,7 +88,7 @@ function callFor(chain: ChainKey, functionName: string, args: readonly unknown[]
  */
 async function ensureW3SAllowance(a: EscrowWriteArgs, need: bigint): Promise<void> {
   const cfg = getChain(a.chain);
-  const spender = getContractAddress(a.chain);
+  const spender = a.escrow?.address ?? getContractAddress(a.chain);
   const allowance = await createChainPublicClient(a.chain).readContract({
     address: cfg.usdc,
     abi: erc20Abi,
@@ -107,10 +112,10 @@ export async function w3sEscrowWrite(a: EscrowWriteArgs): Promise<Hex> {
   if (stake > 0 && cfg.stakeMode === "erc20") {
     await ensureW3SAllowance(a, usdcToStakeUnits(a.chain, stake));
   }
-  const call = callFor(a.chain, a.functionName, a.args, a.agentOwner);
+  const call = callFor(a.escrow?.abiVersion ?? cfg.abiVersion, a.functionName, a.args, a.agentOwner);
   return executeContract({
     walletId: a.walletId,
-    contractAddress: getContractAddress(a.chain),
+    contractAddress: a.escrow?.address ?? getContractAddress(a.chain),
     abiFunctionSignature: buildAbiFunctionSignature(a.functionName, call.abi),
     abiParameters: toCircleAbiParameters(call.args),
     // Circle takes msg.value as a decimal token amount, never wei.

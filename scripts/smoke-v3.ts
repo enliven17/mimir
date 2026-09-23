@@ -9,36 +9,63 @@
  * Reads from the chain rather than trusting return values, because a settlement
  * that "succeeded" while paying the wrong amount is the failure worth catching.
  *
- * Run: npx tsx --env-file=.env.local scripts/smoke-v3.ts
+ * Run:
+ *   npm run smoke:v3                 # the Arc V3 deploy (NEXT_PUBLIC_V3_CONTRACT_ADDRESS)
+ *   npm run smoke:v3 -- base         # Base Sepolia (ERC-20 stakes, approve path)
+ *   npm run smoke:v3 -- arbitrum --claim=4
  */
 
-import { formatEther, parseEther } from "viem";
+import { erc20Abi } from "viem";
 
 import {
   executeContract,
-  getMarketCreatorWalletId,
   getMarketCreatorAddress,
-  getOracleWalletId,
   getOracleAddress,
 } from "../lib/circle-w3s";
-import { createArcPublicClient, weiToUsdc, getExplorerTxUrl } from "../lib/arc";
+import { createChainPublicClient } from "../lib/arc";
+import {
+  CHAINS,
+  explorerTxUrl,
+  isChainKey,
+  stakeUnitsToUsdc,
+  usdcToStakeUnits,
+  type ChainKey,
+} from "../lib/chains";
+import { requireWalletIdFor, w3sEscrowWrite } from "../lib/w3s-escrow";
 import { MIMIR_V3_ABI } from "../lib/mimir-v3-abi";
 
-const STAKE_USDC = "2";
+const STAKE_USDC = 2;
+
+const chain: ChainKey = (() => {
+  const raw = (process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "arc").toLowerCase();
+  if (!isChainKey(raw)) throw new Error(`unknown chain "${raw}" (arc | base | arbitrum)`);
+  return raw;
+})();
+const cfg = CHAINS[chain];
+const fmt = (units: bigint) => stakeUnitsToUsdc(chain, units).toFixed(6);
 /** Challenges are locked out in the last 60s, so the deadline needs headroom. */
 const DEADLINE_SECONDS = 180;
 
 function contractAddress(): `0x${string}` {
-  const addr = process.env.NEXT_PUBLIC_V3_CONTRACT_ADDRESS?.trim();
-  if (!addr) throw new Error("NEXT_PUBLIC_V3_CONTRACT_ADDRESS is not set; run npm run deploy:v3 first");
+  // On Arc the V3 deploy sits beside the live v2 escrow until cutover.
+  const addr =
+    chain === "arc" ? process.env.NEXT_PUBLIC_V3_CONTRACT_ADDRESS?.trim() : cfg.contractAddress;
+  if (!addr) throw new Error(`No MimirV3 on ${cfg.name}; run npm run deploy:v3 -- ${chain} first`);
   return addr as `0x${string}`;
 }
 
 function challengerWallet(): { walletId: string; address: `0x${string}` } {
-  const walletId = process.env.CIRCLE_ALICE_WALLET_ID?.trim();
+  const walletId = requireWalletIdFor("CIRCLE_ALICE_WALLET_ID", chain);
   const address = process.env.CIRCLE_ALICE_ADDRESS?.trim();
-  if (!walletId || !address) throw new Error("CIRCLE_ALICE_WALLET_ID and CIRCLE_ALICE_ADDRESS are required");
+  if (!address) throw new Error("CIRCLE_ALICE_ADDRESS is required");
   return { walletId, address: address as `0x${string}` };
+}
+
+/** USDC held by `address`: native balance on Arc, the ERC-20 elsewhere. */
+function usdcBalance(client: ReturnType<typeof createChainPublicClient>, address: `0x${string}`) {
+  return cfg.stakeMode === "native"
+    ? client.getBalance({ address })
+    : client.readContract({ address: cfg.usdc, abi: erc20Abi, functionName: "balanceOf", args: [address] });
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -66,17 +93,17 @@ async function withRetry<T>(label: string, fn: () => Promise<T>, attempts = 5): 
 
 async function main(): Promise<void> {
   const mimir = contractAddress();
-  const client = createArcPublicClient();
-  const creatorWallet = getMarketCreatorWalletId();
+  const client = createChainPublicClient(chain);
+  const creatorWallet = requireWalletIdFor("CIRCLE_CREATOR_WALLET_ID", chain);
   const creatorAddr = getMarketCreatorAddress();
-  const oracleWallet = getOracleWalletId();
+  const oracleWallet = requireWalletIdFor("CIRCLE_ORACLE_WALLET_ID", chain);
   const challenger = challengerWallet();
 
   const [platformBps, agentBps, platformRecipient] = (await withRetry("feePolicy", () =>
     client.readContract({ address: mimir, abi: MIMIR_V3_ABI, functionName: "feePolicy" }),
   )) as [number, number, `0x${string}`];
 
-  console.log("MimirV3 smoke test");
+  console.log(`MimirV3 smoke test on ${cfg.name}`);
   console.log(`  contract   : ${mimir}`);
   console.log(`  creator    : ${creatorAddr}`);
   console.log(`  challenger : ${challenger.address}`);
@@ -88,12 +115,12 @@ async function main(): Promise<void> {
     ["creator", creatorAddr],
     ["challenger", challenger.address],
   ] as const) {
-    const bal = await withRetry(`${label} balance`, () => client.getBalance({ address: addr }));
-    console.log(`  ${label} balance: ${weiToUsdc(bal).toFixed(4)} USDC`);
-    if (bal < parseEther("3")) throw new Error(`${label} needs at least 3 USDC`);
+    const bal = await withRetry(`${label} balance`, () => usdcBalance(client, addr));
+    console.log(`  ${label} balance: ${fmt(bal)} USDC`);
+    if (bal < usdcToStakeUnits(chain, 3)) throw new Error(`${label} needs at least 3 USDC on ${cfg.name}`);
   }
 
-  const stake = parseEther(STAKE_USDC);
+  const stake = usdcToStakeUnits(chain, STAKE_USDC);
   const deadline = Math.floor(Date.now() / 1000) + DEADLINE_SECONDS;
 
   // Resume an already-funded market rather than opening another one: a transient
@@ -108,12 +135,15 @@ async function main(): Promise<void> {
   } else {
   // ── 1. Create ────────────────────────────────────────────────────────────
   console.log("\n1. Creating a market…");
-  const createTx = await executeContract({
+  // Through w3sEscrowWrite so the ERC-20 approve path is exercised on Base/Arbitrum.
+  const createTx = await w3sEscrowWrite({
+    chain,
     walletId: creatorWallet,
-    contractAddress: mimir,
-    abiFunctionSignature:
-      "createClaim(string,string,string,string,uint256,uint256,string,uint256,string,string,uint256,string,string,uint256,bool,string,address)",
-    abiParameters: [
+    owner: creatorAddr,
+    functionName: "createClaim",
+    escrow: { address: mimir, abiVersion: "v3" },
+    stakeUsdc: STAKE_USDC,
+    args: [
       "MimirV3 smoke test: does settlement pay the right amount?",
       "yes",
       "no",
@@ -130,14 +160,13 @@ async function main(): Promise<void> {
       "0",
       false,
       "",
-      // Attribute the creator side to an agent owner so the second fee leg is
-      // exercised too. The challenger address stands in for an agent owner here.
-      challenger.address,
     ],
-    amount: STAKE_USDC,
+    // Attribute the creator side to an agent owner so the second fee leg is
+    // exercised too. The challenger address stands in for an agent owner here.
+    agentOwner: challenger.address,
     refId: `smoke-v3-create-${Date.now()}`,
   });
-  console.log(`   tx: ${getExplorerTxUrl(createTx)}`);
+  console.log(`   tx: ${explorerTxUrl(chain, createTx)}`);
 
   claimId = (await withRetry("claimCount", () =>
     client.readContract({ address: mimir, abi: MIMIR_V3_ABI, functionName: "claimCount" }),
@@ -146,15 +175,17 @@ async function main(): Promise<void> {
 
   // ── 2. Challenge ─────────────────────────────────────────────────────────
   console.log("\n2. Challenging from the second wallet…");
-  const challengeTx = await executeContract({
+  const challengeTx = await w3sEscrowWrite({
+    chain,
     walletId: challenger.walletId,
-    contractAddress: mimir,
-    abiFunctionSignature: "challengeClaim(uint256,uint256,string,address)",
-    abiParameters: [claimId.toString(), stake.toString(), "", "0x0000000000000000000000000000000000000000"],
-    amount: STAKE_USDC,
+    owner: challenger.address,
+    functionName: "challengeClaim",
+    escrow: { address: mimir, abiVersion: "v3" },
+    stakeUsdc: STAKE_USDC,
+    args: [claimId, stake, ""],
     refId: `smoke-v3-challenge-${Date.now()}`,
   });
-  console.log(`   tx: ${getExplorerTxUrl(challengeTx)}`);
+  console.log(`   tx: ${explorerTxUrl(chain, challengeTx)}`);
 
   // ── 3. Wait out the deadline ─────────────────────────────────────────────
   const waitMs = Math.max(0, deadline * 1000 - Date.now()) + 5_000;
@@ -164,7 +195,7 @@ async function main(): Promise<void> {
 
   // ── 4. Settle ────────────────────────────────────────────────────────────
   console.log("\n4. Settling for the creator…");
-  const creatorBefore = await withRetry("balance", () => client.getBalance({ address: creatorAddr }));
+  const creatorBefore = await withRetry("balance", () => usdcBalance(client, creatorAddr));
   const feesBefore = (await withRetry("accruedFees", () =>
     client.readContract({
       address: mimir,
@@ -187,11 +218,11 @@ async function main(): Promise<void> {
     ],
     refId: `smoke-v3-settle-${Date.now()}`,
   });
-  console.log(`   tx: ${getExplorerTxUrl(settleTx)}`);
+  console.log(`   tx: ${explorerTxUrl(chain, settleTx)}`);
 
   // ── 5. Verify the arithmetic ─────────────────────────────────────────────
   console.log("\n5. Checking what actually moved…");
-  const creatorAfter = await withRetry("balance", () => client.getBalance({ address: creatorAddr }));
+  const creatorAfter = await withRetry("balance", () => usdcBalance(client, creatorAddr));
   const feesAfter = (await withRetry("accruedFees", () =>
     client.readContract({
       address: mimir,
@@ -216,8 +247,8 @@ async function main(): Promise<void> {
     console.log("   note: the platform recipient is the winning wallet, so that leg is waived");
   }
 
-  console.log(`   creator received : ${formatEther(received)} USDC`);
-  console.log(`   platform fee     : ${formatEther(feesAfter - feesBefore)} USDC (expected ${formatEther(expectedPlatformFee)})`);
+  console.log(`   creator received : ${fmt(received)} USDC`);
+  console.log(`   platform fee     : ${fmt(feesAfter - feesBefore)} USDC (expected ${fmt(expectedPlatformFee)})`);
 
   const agentFee = (await client.readContract({
     address: mimir,
@@ -225,7 +256,7 @@ async function main(): Promise<void> {
     functionName: "accruedFees",
     args: [challenger.address],
   })) as bigint;
-  console.log(`   agent owner fee  : ${formatEther(agentFee)} USDC (expected ${formatEther(expectedAgentFee)})`);
+  console.log(`   agent owner fee  : ${fmt(agentFee)} USDC (expected ${fmt(expectedAgentFee)})`);
 
   const failures: string[] = [];
   if (received < stake) failures.push("the winner received less than their principal");
@@ -235,14 +266,14 @@ async function main(): Promise<void> {
   if (feesAfter - feesBefore !== expectedPlatformFee) failures.push("the platform fee is not the policy amount");
   if (agentFee < expectedAgentFee) failures.push("the agent owner fee did not accrue");
 
-  const escrowBalance = await client.getBalance({ address: mimir });
+  const escrowBalance = await usdcBalance(client, mimir);
   const [accrued, claimed] = (await client.readContract({
     address: mimir,
     abi: MIMIR_V3_ABI,
     functionName: "getFeeStats",
   })) as [bigint, bigint, bigint];
-  console.log(`   escrow balance   : ${formatEther(escrowBalance)} USDC`);
-  console.log(`   fees outstanding : ${formatEther(accrued - claimed)} USDC`);
+  console.log(`   escrow balance   : ${fmt(escrowBalance)} USDC`);
+  console.log(`   fees outstanding : ${fmt(accrued - claimed)} USDC`);
   if (escrowBalance < accrued - claimed) {
     failures.push("the escrow holds less than it owes in fees");
   }
@@ -266,7 +297,7 @@ async function main(): Promise<void> {
       abiParameters: [],
       refId: `smoke-v3-claim-${Date.now()}`,
     });
-    console.log(`   tx: ${getExplorerTxUrl(claimTx)}`);
+    console.log(`   tx: ${explorerTxUrl(chain, claimTx)}`);
     const left = (await withRetry("accruedFees", () =>
       client.readContract({
         address: mimir,
@@ -275,7 +306,7 @@ async function main(): Promise<void> {
         args: [claimant.address],
       }),
     )) as bigint;
-    console.log(`   remaining accrued: ${formatEther(left)} USDC`);
+    console.log(`   remaining accrued: ${fmt(left)} USDC`);
     if (left !== 0n) failures.push("claimFees did not clear the balance");
   } else {
     console.log("\n6. Nothing accrued to a wallet this script controls, skipping the claim.");
