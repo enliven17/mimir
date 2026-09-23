@@ -76,7 +76,7 @@ export async function loadMemberSettlements(members: BasketMember[]): Promise<Me
   const rows = await query(
     `SELECT ch.address, ch.stake, c.deadline, c.winner_side, c.creator_stake, c.total_challenger_stake
        FROM challengers ch
-       JOIN claims c ON c.id = ch.claim_id
+       JOIN claims c ON c.chain = ch.chain AND c.id = ch.claim_id
       WHERE LOWER(ch.address) IN (${placeholders})
         AND c.state = 'resolved'`,
     addresses,
