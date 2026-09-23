@@ -115,6 +115,7 @@ test("explore filter URL serialization round-trips new flags", () => {
     needsChallengers: true,
     expiringSoon: true,
     participation: "joined",
+    network: "base",
   });
 
   const parsed = parseExploreSearchParams(new URLSearchParams(serialized));
@@ -127,5 +128,35 @@ test("explore filter URL serialization round-trips new flags", () => {
     needsChallengers: true,
     expiringSoon: true,
     participation: "joined",
+    network: "base",
   });
+});
+
+test("network filter keeps one chain; rows without a chain count as Arc", () => {
+  const list = [
+    makeVS({ id: 1, chain: "base", created_at: 3 }),
+    makeVS({ id: 1, created_at: 2 }),
+    makeVS({ id: 2, chain: "arc", created_at: 1 }),
+  ];
+  const arc = applyExploreFilters(list, { ...DEFAULT_EXPLORE_FILTERS, network: "arc" });
+  assert.deepEqual(arc.map((vs) => [vs.chain ?? "arc", vs.id]), [["arc", 1], ["arc", 2]]);
+  const base = applyExploreFilters(list, { ...DEFAULT_EXPLORE_FILTERS, network: "base" });
+  assert.deepEqual(base.map((vs) => vs.id), [1]);
+});
+
+test("unknown ?net= values fall back to all networks and stay out of the URL", () => {
+  assert.equal(parseExploreSearchParams(new URLSearchParams("net=solana")).network, "all");
+  assert.equal(serializeExploreFilters(DEFAULT_EXPLORE_FILTERS), "");
+});
+
+test("newest sort orders by creation time across chains, not by colliding ids", () => {
+  const sorted = applyExploreFilters(
+    [
+      makeVS({ id: 9, chain: "arc", created_at: 100 }),
+      makeVS({ id: 2, chain: "base", created_at: 300 }),
+      makeVS({ id: 5, chain: "arbitrum", created_at: 200 }),
+    ],
+    DEFAULT_EXPLORE_FILTERS
+  );
+  assert.deepEqual(sorted.map((vs) => vs.chain), ["base", "arbitrum", "arc"]);
 });

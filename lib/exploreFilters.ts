@@ -1,6 +1,7 @@
 import type { VSData } from "@/lib/contract";
 import { CATEGORIES } from "@/lib/constants";
 import { computeClaimQuality } from "@/lib/claimQuality";
+import { isChainKey, type ChainKey } from "@/lib/chains";
 
 export type ExploreSort = "newest" | "highest" | "expiring" | "strength";
 
@@ -15,6 +16,9 @@ export const EXPLORE_SORT_OPTIONS: ExploreSort[] = [
 /** Wallet participation filter for the live arena. Applied in ExploreClient (needs address). */
 export type ParticipationFilter = "all" | "joined" | "available";
 
+/** Network filter: every chain, or one ChainKey (URL `?net=`). */
+export type NetworkFilter = "all" | ChainKey;
+
 export interface ExploreFilterState {
   cat: string;
   minStake: number;
@@ -23,6 +27,7 @@ export interface ExploreFilterState {
   needsChallengers: boolean;
   expiringSoon: boolean;
   participation: ParticipationFilter;
+  network: NetworkFilter;
 }
 
 export const DEFAULT_EXPLORE_FILTERS: ExploreFilterState = {
@@ -33,6 +38,7 @@ export const DEFAULT_EXPLORE_FILTERS: ExploreFilterState = {
   needsChallengers: false,
   expiringSoon: false,
   participation: "all",
+  network: "all",
 };
 
 /** Valores permitidos para `minStake` (URL `?min=`) y chips del sidebar Explore */
@@ -51,7 +57,20 @@ export function normalizeExploreMinStake(n: number): number {
   return Math.min(rounded, 1_000_000);
 }
 
-/** Lee y valida query params (?cat=&min=&sort=&q=). Valores inválidos → defaults. */
+/** Rows written before multichain carry no chain: those are Arc. */
+function chainOf(v: Pick<VSData, "chain">): ChainKey {
+  return v.chain ?? "arc";
+}
+
+/**
+ * Newest first. Ids restart on every chain, so creation time leads and the id
+ * only breaks ties within a chain.
+ */
+function byNewest(a: VSData, b: VSData): number {
+  return (b.created_at ?? 0) - (a.created_at ?? 0) || b.id - a.id;
+}
+
+/** Lee y valida query params (?cat=&min=&sort=&q=&net=). Valores inválidos → defaults. */
 export function parseExploreSearchParams(sp: URLSearchParams): ExploreFilterState {
   const catRaw = sp.get("cat") ?? "all";
   const cat =
@@ -72,8 +91,10 @@ export function parseExploreSearchParams(sp: URLSearchParams): ExploreFilterStat
   const mineRaw = sp.get("mine");
   const participation: ParticipationFilter =
     mineRaw === "joined" || mineRaw === "available" ? mineRaw : "all";
+  const netRaw = sp.get("net");
+  const network: NetworkFilter = isChainKey(netRaw) ? netRaw : "all";
 
-  return { cat, minStake, sort, search, needsChallengers, expiringSoon, participation };
+  return { cat, minStake, sort, search, needsChallengers, expiringSoon, participation, network };
 }
 
 /** Serializa solo desviaciones respecto a defaults (URLs limpias). */
@@ -85,6 +106,7 @@ export function serializeExploreFilters(f: ExploreFilterState): string {
   if (f.needsChallengers) p.set("needs", "1");
   if (f.expiringSoon) p.set("soon", "1");
   if (f.participation !== "all") p.set("mine", f.participation);
+  if (f.network !== "all") p.set("net", f.network);
   const q = f.search.trim();
   if (q) p.set("q", q);
   return p.toString();
@@ -115,6 +137,9 @@ export function applyExploreFilters(
   nowTs = Math.floor(Date.now() / 1000)
 ): VSData[] {
   let list = open;
+  if (f.network !== "all") {
+    list = list.filter((v) => chainOf(v) === f.network);
+  }
   if (f.cat !== "all") {
     list = list.filter((v) => v.category === f.cat);
   }
@@ -159,10 +184,10 @@ export function applyExploreFilters(
       if (bScore !== aScore) {
         return bScore - aScore;
       }
-      return b.id - a.id;
+      return byNewest(a, b);
     });
   } else {
-    sorted.sort((a, b) => b.id - a.id);
+    sorted.sort(byNewest);
   }
   return sorted;
 }

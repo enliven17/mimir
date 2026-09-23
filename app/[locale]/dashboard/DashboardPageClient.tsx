@@ -143,6 +143,7 @@ export default function DashboardPageClient() {
         needsChallengers: false,
         expiringSoon: false,
         participation: "all",
+        network: "all",
       }),
     [tabFiltered, categoryFilter, minStakeFilter, searchQuery]
   );
