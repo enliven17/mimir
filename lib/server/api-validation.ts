@@ -1,3 +1,4 @@
+import { enabledChainKeys, isChainKey, type ChainKey } from "@/lib/chains";
 import { isAddress } from "viem";
 
 export const INVITE_KEY_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -51,4 +52,15 @@ export function parseInviteKey(value: string | null): string | null {
   }
 
   return trimmed;
+}
+
+/**
+ * `?chain=` / body `chain`. Absent means Arc, so pre-multichain links and
+ * clients keep working. Returns null for a name that is not a deployed chain,
+ * which callers turn into a 400 rather than silently reading Arc.
+ */
+export function parseChainParam(value: unknown): ChainKey | null {
+  if (value == null || value === "") return "arc";
+  const key = isChainKey(value) ? value : null;
+  return key && enabledChainKeys().includes(key) ? key : null;
 }

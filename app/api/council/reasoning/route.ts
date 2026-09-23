@@ -11,7 +11,9 @@
 import { requirePayment, json } from "@/lib/x402-server";
 import { verifyPass } from "@/lib/x402-pass";
 import { COUNCIL_PERSONAS } from "@/agents/council/personas";
-import { createArcPublicClient, getContractAddress } from "@/lib/arc";
+import { createChainPublicClient, getContractAddress } from "@/lib/arc";
+import { parseChainParam } from "@/lib/server/api-validation";
+import { claimKey } from "@/lib/chains";
 import { MIMIR_ABI } from "@/lib/mimir-abi";
 import { ZERO_ADDRESS } from "@/lib/constants";
 import { callLLM } from "@/lib/llm";
@@ -39,6 +41,9 @@ export async function GET(req: Request): Promise<Response> {
   if (!Number.isInteger(claimId) || claimId < 1) {
     return json({ error: "claimId must be a positive integer" }, { status: 400 });
   }
+  // Claim ids restart per chain; absent means Arc.
+  const chain = parseChainParam(searchParams.get("chain"));
+  if (!chain) return json({ error: "unknown chain" }, { status: 400 });
   const payTo = personaAddress(slug);
   if (!payTo) {
     return json({ error: `persona '${slug}' has no wallet configured` }, { status: 503 });
@@ -56,7 +61,7 @@ export async function GET(req: Request): Promise<Response> {
 
   // Paid already — now serve. A warm (claim, persona) pair skips both the contract
   // read and the LLM call; the read stays billed either way.
-  const cached = getCachedReasoning(claimId, slug);
+  const cached = getCachedReasoning(claimKey(chain, claimId), slug);
   if (cached) {
     return json(
       {
@@ -76,8 +81,8 @@ export async function GET(req: Request): Promise<Response> {
   let sideA = "";
   let sideB = "";
   try {
-    const base = (await createArcPublicClient().readContract({
-      address: getContractAddress(),
+    const base = (await createChainPublicClient(chain).readContract({
+      address: getContractAddress(chain),
       abi: MIMIR_ABI,
       functionName: "getClaim",
       args: [BigInt(claimId)],
@@ -108,7 +113,7 @@ Write one tight paragraph (max 90 words): which side you lean toward and your ho
     reasoning = (await callLLM(prompt, { maxTokens: 300 })).trim();
     if (reasoning) {
       // Only successful generations are cached — never the fallback below.
-      setCachedReasoning(claimId, slug, { question, sideA, sideB, reasoning });
+      setCachedReasoning(claimKey(chain, claimId), slug, { question, sideA, sideB, reasoning });
     }
   } catch {
     reasoning = "(reasoning unavailable right now)";

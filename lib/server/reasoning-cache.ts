@@ -29,10 +29,11 @@ type Entry = CachedReasoning & { at: number };
 
 const entries = new Map<string, Entry>();
 
-const cacheKey = (claimId: number, slug: string) => `${claimId}:${slug}`;
+// `claimId` may be a chain-qualified key ("base:12"): ids restart per chain.
+const cacheKey = (claimId: number | string, slug: string) => `${claimId}:${slug}`;
 
 export function getCachedReasoning(
-  claimId: number,
+  claimId: number | string,
   slug: string,
   nowMs = Date.now()
 ): CachedReasoning | null {
@@ -55,7 +56,7 @@ export function getCachedReasoning(
 }
 
 export function setCachedReasoning(
-  claimId: number,
+  claimId: number | string,
   slug: string,
   value: CachedReasoning,
   nowMs = Date.now()

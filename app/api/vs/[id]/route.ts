@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   createApiError,
+  parseChainParam,
   parseInviteKey,
   parsePositiveIntegerParam,
 } from "@/lib/server/api-validation";
@@ -27,9 +28,16 @@ export async function GET(
       );
     }
 
-    const inviteKey = parseInviteKey(
-      new URL(request.url).searchParams.get("invite")
-    );
+    const search = new URL(request.url).searchParams;
+    const chain = parseChainParam(search.get("chain"));
+    if (!chain) {
+      return NextResponse.json(
+        createApiError("invalid_parameter", "Unknown chain"),
+        { status: 400 }
+      );
+    }
+
+    const inviteKey = parseInviteKey(search.get("invite"));
     if (inviteKey === null) {
       return NextResponse.json(
         createApiError("invalid_parameter", "Invalid invite key"),
@@ -40,7 +48,7 @@ export async function GET(
     }
 
     if (inviteKey) {
-      const privateItem = await getVsWithInvite(vsId, inviteKey);
+      const privateItem = await getVsWithInvite(vsId, inviteKey, chain);
       if (!privateItem) {
         return NextResponse.json(
           createApiError("not_found", "VS not found"),
@@ -63,7 +71,7 @@ export async function GET(
       );
     }
 
-    const { item, cache } = await getVsDetailSnapshot(vsId);
+    const { item, cache } = await getVsDetailSnapshot(vsId, chain);
     if (!item) {
       return NextResponse.json(
         createApiError("not_found", "VS not found"),

@@ -15,7 +15,8 @@
 
 import { requirePayment, json } from "@/lib/x402-server";
 import { COUNCIL_PERSONAS } from "@/agents/council/personas";
-import { createArcPublicClient, getContractAddress } from "@/lib/arc";
+import { createChainPublicClient, getContractAddress } from "@/lib/arc";
+import { parseChainParam } from "@/lib/server/api-validation";
 import { fetchDecodedClaim } from "@/lib/claim-codec";
 import { evaluateClaimAsPersona } from "@/agents/council/shared/persona-llm";
 import { fetchEvidence } from "@/lib/server/evidence-fetcher";
@@ -65,6 +66,9 @@ export async function GET(req: Request): Promise<Response> {
   if (!Number.isInteger(claimId) || claimId < 1) {
     return json({ error: "claimId must be a positive integer" }, { status: 400 });
   }
+  // Claim ids restart per chain; absent means Arc.
+  const chain = parseChainParam(searchParams.get("chain"));
+  if (!chain) return json({ error: "unknown chain" }, { status: 400 });
   const payTo = personaAddress(slug);
   if (!payTo) return json({ error: `persona '${slug}' has no wallet configured` }, { status: 503 });
 
@@ -75,7 +79,7 @@ export async function GET(req: Request): Promise<Response> {
   // Read the claim from chain.
   let claim: ClaimOnChain;
   try {
-    const decoded = await fetchDecodedClaim(createArcPublicClient(), getContractAddress(), claimId);
+    const decoded = await fetchDecodedClaim(createChainPublicClient(chain), getContractAddress(chain), claimId);
     if (!decoded) {
       return json({ error: `claim ${claimId} not found` }, { status: 404, headers: gate.responseHeaders });
     }

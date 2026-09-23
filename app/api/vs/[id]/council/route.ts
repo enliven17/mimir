@@ -14,12 +14,13 @@
 
 import { NextResponse } from "next/server";
 import {
-  createArcPublicClient,
+  createChainPublicClient,
   getContractAddress,
   getDeployBlock,
-  weiToUsdc,
   paginatedGetLogs,
 } from "@/lib/arc";
+import { stakeUnitsToUsdc } from "@/lib/chains";
+import { parseChainParam } from "@/lib/server/api-validation";
 import {
   COUNCIL_PERSONAS,
   personaAddressEnv,
@@ -42,6 +43,7 @@ interface PersonaVote {
 
 interface CouncilResponse {
   claimId:    number;
+  chain:      string;
   total:      number;
   stakedCount: number;
   totalUsdc:  number;
@@ -49,7 +51,7 @@ interface CouncilResponse {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id: rawId } = await ctx.params;
@@ -58,9 +60,16 @@ export async function GET(
     return NextResponse.json({ error: "invalid claim id" }, { status: 400 });
   }
 
-  const client    = createArcPublicClient();
-  const address   = getContractAddress();
-  const fromBlock = getDeployBlock();
+  const chain = parseChainParam(new URL(req.url).searchParams.get("chain"));
+  if (!chain) {
+    return NextResponse.json({ error: "unknown chain" }, { status: 400 });
+  }
+
+  // Persona addresses are the same on every chain (W3S wallets are derived
+  // from one wallet set), so only the escrow being scanned changes.
+  const client    = createChainPublicClient(chain);
+  const address   = getContractAddress(chain);
+  const fromBlock = getDeployBlock(chain);
 
   let logs: any[] = [];
   try {
@@ -110,7 +119,7 @@ export async function GET(
       archetype:   p.archetype,
       accent:      p.accent,
       staked:      !!hit,
-      stakeUsdc:   hit ? weiToUsdc(hit.stake) : 0,
+      stakeUsdc:   hit ? stakeUnitsToUsdc(chain, hit.stake) : 0,
       txHash:      hit?.txHash ?? null,
       blockNumber: hit?.blockNumber ?? null,
     };
@@ -121,6 +130,7 @@ export async function GET(
 
   const body: CouncilResponse = {
     claimId,
+    chain,
     total:       votes.length,
     stakedCount,
     totalUsdc,

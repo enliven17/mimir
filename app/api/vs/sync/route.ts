@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   createApiError,
+  parseChainParam,
   parseInviteKey,
   parsePositiveIntegerParam,
 } from "@/lib/server/api-validation";
@@ -13,6 +14,7 @@ export const maxDuration = 30;
 type RefreshBody = {
   claimId?: number;
   inviteKey?: string | null;
+  chain?: string;
 };
 
 export async function POST(request: Request) {
@@ -29,6 +31,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const chain = parseChainParam(payload.chain);
+    if (!chain) {
+      return NextResponse.json(
+        createApiError("invalid_parameter", "Unknown chain"),
+        { status: 400 }
+      );
+    }
+
     const inviteKey = parseInviteKey(payload.inviteKey ?? null);
     if (inviteKey === null) {
       return NextResponse.json(
@@ -39,6 +49,7 @@ export async function POST(request: Request) {
 
     const claim = await triggerPostWriteRefresh({
       claimId,
+      chain,
       inviteKey,
     });
 
