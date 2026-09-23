@@ -1063,7 +1063,8 @@ export default function CreatePage() {
         setCreated(result.claimId);
         setCreatedPending(Boolean(result.pending));
         setCreatedTxHash(result.txHash || "");
-        setCreatedExplorerTxHash(result.explorerTxHash || "");
+        // explorerTxHash is a full URL (lib/contract); the receipt links need the hash.
+        setCreatedExplorerTxHash(result.txHash || "");
         setCreatedInviteKey(inviteKey);
         if (inviteKey) {
           rememberPrivateInviteKey(result.claimId, inviteKey, createChain);
