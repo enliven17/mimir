@@ -14,12 +14,20 @@
  *   4. Create top-scored claims on-chain via Mimir contract
  *   5. Optionally self-stake creator side (puts skin in the game)
  *
+ * Multichain: new markets round-robin across the enabled chains where the
+ * creator has a W3S wallet (CIRCLE_CREATOR_WALLET_ID on Arc, + _BASE /
+ * _ARBITRUM). The duplicate guard and MAX_ACTIVE_CLAIMS count inventory on
+ * every enabled chain, so the cap is global, not per network.
+ *
  * Run: npx tsx agents/market-creator/index.ts
- * Env: CREATOR_PRIVATE_KEY, NEXT_PUBLIC_CONTRACT_ADDRESS, ANTHROPIC_API_KEY
+ * Env: CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_CREATOR_ADDRESS,
+ *      CIRCLE_CREATOR_WALLET_ID[_BASE|_ARBITRUM], NEXT_PUBLIC_*CONTRACT_ADDRESS
  *      CREATOR_STAKE_USDC=2      (stake per market, default 2 USDC)
  *      MAX_CLAIMS_PER_RUN=5      (max new claims per run, default 5)
- *      MAX_ACTIVE_CLAIMS=30      (skip run if joinable on-chain claims >= this)
+ *      MAX_ACTIVE_CLAIMS=30      (skip run if joinable claims on all chains >= this)
  *      RUN_INTERVAL_HOURS=6      (hours between runs, default 6h)
+ *      MARKET_CREATOR_CHAINS=base,arc (optional: chains to open markets on,
+ *                                in round-robin order; default all usable)
  */
 
 // Worker-scoped Gemini key. Falls back to the shared GEMINI_API_KEY when
@@ -27,25 +35,20 @@
 // rationale.
 applyWorkerGeminiKey("CREATOR_GEMINI_API_KEY");
 
-import { formatEther } from "viem";
 import { requireEnv, requireAnyLLMKey, applyWorkerGeminiKey } from "../../lib/agent-bootstrap";
 import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson } from "../../lib/llm";
 import {
-  createArcPublicClient,
-  arcTestnet,
+  createChainPublicClient,
   getContractAddress,
   getExplorerTxUrl,
-  usdcToWei,
-  weiToUsdc,
 } from "../../lib/arc";
-import {
-  executeContract,
-  buildAbiFunctionSignature,
-  toCircleAbiParameters,
-  getMarketCreatorWalletId,
-  getMarketCreatorAddress,
-} from "../../lib/circle-w3s";
+import { enabledChainKeys, getChain, usdcToStakeUnits, type ChainKey } from "../../lib/chains";
+import { getMarketCreatorAddress } from "../../lib/circle-w3s";
+import { w3sEscrowWrite } from "../../lib/w3s-escrow";
 import { MIMIR_ABI, STATE } from "../../lib/mimir-abi";
+import type { PayingAgent } from "../../lib/x402";
+import { chainTag, stakeBalanceUsdc, walletChains } from "../shared/chains";
+import { creatorChainOrder, rotationFrom } from "./chain-picker";
 import { gatherCouncilPreflight } from "./council-preflight";
 import {
   fetchPolymarketCandidates,
@@ -57,7 +60,6 @@ import { atomicToUsdc } from "../../lib/x402";
 import { reportingPoll } from "../../lib/ops/heartbeat";
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const CONTRACT_ADDRESS    = getContractAddress();
 const CREATOR_STAKE_USDC  = Number(process.env.CREATOR_STAKE_USDC ?? "2");
 const MAX_CLAIMS_PER_RUN  = Number(process.env.MAX_CLAIMS_PER_RUN ?? "5");
 const MAX_ACTIVE_CLAIMS   = Number(process.env.MAX_ACTIVE_CLAIMS ?? "30");
@@ -75,20 +77,35 @@ const PREFLIGHT_CAP_USDC = Number(process.env.MARKET_CREATOR_PREFLIGHT_CAP_USDC 
 const PREFLIGHT_PERSONAS = process.env.MARKET_CREATOR_PREFLIGHT_PERSONAS;
 const PREFLIGHT_DELAY_MS = Number(process.env.MARKET_CREATOR_PREFLIGHT_DELAY_MS ?? "30000");
 
-requireEnv(["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_WALLET_ID", "CIRCLE_CREATOR_ADDRESS"]);
+requireEnv(["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_CREATOR_ADDRESS"]);
 requireAnyLLMKey();
 
-const SIG_CREATE_CLAIM = buildAbiFunctionSignature("createClaim", MIMIR_ABI);
-const SIG_CANCEL_CLAIM = buildAbiFunctionSignature("cancelClaim", MIMIR_ABI);
+// ── Wallets + chains ──────────────────────────────────────────────────────────
+const CREATOR_WALLET_ENV = "CIRCLE_CREATOR_WALLET_ID";
+const CREATOR_ADDR       = getMarketCreatorAddress();
+const { chains: WALLET_CHAINS, walletIds: CREATOR_WALLETS } = walletChains("market-creator", CREATOR_WALLET_ENV);
+/** Where new markets open, in round-robin order. */
+const CREATE_CHAINS = creatorChainOrder(process.env.MARKET_CREATOR_CHAINS, WALLET_CHAINS);
+if (CREATE_CHAINS.length === 0) {
+  console.error("[market-creator] No enabled chain has a creator W3S wallet. Exiting.");
+  process.exit(1);
+}
+if (process.env.MARKET_CREATOR_CHAINS?.trim()) {
+  // Unknown or wallet-less keys drop out silently in the picker; say what stuck.
+  console.log(`[market-creator] MARKET_CREATOR_CHAINS="${process.env.MARKET_CREATOR_CHAINS}" → ${CREATE_CHAINS.join(", ")}`);
+}
+// Round-robin cursor: the next market starts on the chain after the last one used.
+let createTurn = 0;
 
-// ── Clients ───────────────────────────────────────────────────────────────────
-const publicClient   = createArcPublicClient();
-const CREATOR_WALLET = getMarketCreatorWalletId();
-const CREATOR_ADDR   = getMarketCreatorAddress();
-const CREATOR_PAYER  = {
-  walletId: CREATOR_WALLET,
-  address: CREATOR_ADDR as `0x${string}`,
-};
+/** x402 payer that settles preflight nanopayments on `chain` first. */
+function creatorPayer(chain: ChainKey): PayingAgent {
+  return {
+    walletId:    CREATOR_WALLETS[chain] ?? CREATOR_WALLETS[CREATE_CHAINS[0]]!,
+    address:     CREATOR_ADDR,
+    walletIds:   CREATOR_WALLETS,
+    preferChain: chain,
+  };
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ClaimCandidate {
@@ -104,11 +121,15 @@ interface ClaimCandidate {
   sourceType:       string;
 }
 
-interface ExistingClaimSignature {
-  id:               number;
+interface ClaimSignatureKeys {
   category:         string;
   questionKey:      string;
   resolutionUrlKey: string;
+}
+
+interface ExistingClaimSignature extends ClaimSignatureKeys {
+  /** `<chain>#<id>`: the guard spans chains, so an id alone is ambiguous. */
+  label:            string;
 }
 
 interface SportEvent {
@@ -220,9 +241,8 @@ function normalizeResolutionUrl(value: string): string {
   }
 }
 
-function buildCandidateSignature(candidate: ClaimCandidate): ExistingClaimSignature {
+function buildCandidateSignature(candidate: ClaimCandidate): ClaimSignatureKeys {
   return {
-    id:               0,
     category:         String(candidate.category ?? "").toLowerCase().trim(),
     questionKey:      normalizeComparableText(String(candidate.question ?? "")),
     resolutionUrlKey: normalizeResolutionUrl(String(candidate.resolutionUrl ?? "")),
@@ -233,12 +253,12 @@ function filterDuplicateCandidates(
   candidates: ClaimCandidate[],
   existingClaims: ExistingClaimSignature[],
 ): ClaimCandidate[] {
-  const existingQuestionKeys = new Map<string, number>();
-  const existingSourceKeys = new Map<string, number>();
+  const existingQuestionKeys = new Map<string, string>();
+  const existingSourceKeys = new Map<string, string>();
 
   for (const claim of existingClaims) {
-    if (claim.questionKey) existingQuestionKeys.set(`${claim.category}:${claim.questionKey}`, claim.id);
-    if (claim.resolutionUrlKey) existingSourceKeys.set(`${claim.category}:${claim.resolutionUrlKey}`, claim.id);
+    if (claim.questionKey) existingQuestionKeys.set(`${claim.category}:${claim.questionKey}`, claim.label);
+    if (claim.resolutionUrlKey) existingSourceKeys.set(`${claim.category}:${claim.resolutionUrlKey}`, claim.label);
   }
 
   const seenQuestionKeys = new Set<string>();
@@ -251,13 +271,13 @@ function filterDuplicateCandidates(
 
     const existingSourceId = sig.resolutionUrlKey ? existingSourceKeys.get(sourceKey) : undefined;
     if (existingSourceId !== undefined) {
-      console.warn(`[market-creator] Drop duplicate candidate - same source as active claim #${existingSourceId}: ${candidate.question.slice(0, 90)}`);
+      console.warn(`[market-creator] Drop duplicate candidate - same source as active claim ${existingSourceId}: ${candidate.question.slice(0, 90)}`);
       return false;
     }
 
     const existingQuestionId = sig.questionKey ? existingQuestionKeys.get(questionKey) : undefined;
     if (existingQuestionId !== undefined) {
-      console.warn(`[market-creator] Drop duplicate candidate - same question as active claim #${existingQuestionId}: ${candidate.question.slice(0, 90)}`);
+      console.warn(`[market-creator] Drop duplicate candidate - same question as active claim ${existingQuestionId}: ${candidate.question.slice(0, 90)}`);
       return false;
     }
 
@@ -283,11 +303,14 @@ async function applyCouncilPreflight(candidates: ClaimCandidate[]): Promise<Clai
     `(min score ${PREFLIGHT_MIN_SCORE}, ${PREFLIGHT_DELAY_MS / 1000}s persona gap)...`,
   );
 
-  for (const candidate of candidates) {
+  for (const [i, candidate] of candidates.entries()) {
+    // The market doesn't exist yet, so pay on the chain it would likely open
+    // on — spreads preflight nanopayments across networks like the markets.
+    const likelyChain = rotationFrom(CREATE_CHAINS, createTurn + i)[0];
     const result = await gatherCouncilPreflight({
       candidate,
       baseUrl: PREFLIGHT_BASE_URL,
-      payer: CREATOR_PAYER,
+      payer: creatorPayer(likelyChain),
       personaCsv: PREFLIGHT_PERSONAS,
       capUsdc: PREFLIGHT_CAP_USDC,
       delayMs: PREFLIGHT_DELAY_MS,
@@ -500,7 +523,7 @@ async function draftClaimCandidates(sourceData: {
     ),
   ].join("\n");
 
-  const prompt = `You are Mimir, an AI that creates high-quality prediction market claims for a USDC market on Arc blockchain.
+  const prompt = `You are Mimir, an AI that creates high-quality prediction market claims for an on-chain USDC market.
 
 ## Current Data Sources
 
@@ -666,50 +689,65 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
 
 // ── Create claim on-chain ─────────────────────────────────────────────────────
 
-async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
+async function createClaimOn(chain: ChainKey, candidate: ClaimCandidate): Promise<string | null> {
+  const tag = chainTag("market-creator", chain);
   // Floor the WHOLE expression: sports candidates get kickoff-pinned
   // fractional deadlineHours, and BigInt() throws on non-integers.
   const deadline = BigInt(Math.floor(Date.now() / 1000 + candidate.deadlineHours * 3600));
-  const stake    = usdcToWei(CREATOR_STAKE_USDC);
 
-  // Check balance
-  const balance = await publicClient.getBalance({ address: CREATOR_ADDR });
-  if (balance < stake * 3n) {
-    console.warn(`[market-creator] Insufficient balance for ${candidate.question.slice(0, 40)}`);
+  // Check balance: stakeable USDC on this chain, 3x the stake as headroom.
+  const balanceUsdc = await stakeBalanceUsdc(chain, CREATOR_ADDR);
+  if (balanceUsdc < CREATOR_STAKE_USDC * 3) {
+    console.warn(`${tag} Insufficient balance (${balanceUsdc.toFixed(2)} USDC) for ${candidate.question.slice(0, 40)}`);
     return null;
   }
 
-  try {
-    const txHash = await executeContract({
-      walletId:             CREATOR_WALLET,
-      contractAddress:      CONTRACT_ADDRESS,
-      abiFunctionSignature: SIG_CREATE_CLAIM,
-      abiParameters: toCircleAbiParameters([
-        candidate.question,
-        candidate.creatorPosition,
-        candidate.counterPosition,
-        candidate.resolutionUrl,
-        deadline,
-        stake,
-        candidate.category,
-        BigInt(0),                   // parentId
-        candidate.marketType,
-        "pool",                      // oddsMode
-        BigInt(0),                   // challengerPayoutBps
-        "",                          // handicapLine
-        candidate.settlementRule,
-        BigInt(100),                 // maxChallengers
-        false,                       // isPrivate
-        "",                          // inviteKey
-      ]),
-      amount: formatEther(stake), // Circle expects decimal USDC, not wei
-      refId:  `mc-${Date.now()}`,
-    });
-    return txHash;
-  } catch (err) {
-    console.error(`[market-creator] Failed to create claim:`, err);
-    return null;
+  return w3sEscrowWrite({
+    chain,
+    walletId:     CREATOR_WALLETS[chain]!,
+    owner:        CREATOR_ADDR,
+    functionName: "createClaim",
+    args: [
+      candidate.question,
+      candidate.creatorPosition,
+      candidate.counterPosition,
+      candidate.resolutionUrl,
+      deadline,
+      usdcToStakeUnits(chain, CREATOR_STAKE_USDC),
+      candidate.category,
+      BigInt(0),                   // parentId
+      candidate.marketType,
+      "pool",                      // oddsMode
+      BigInt(0),                   // challengerPayoutBps
+      "",                          // handicapLine
+      candidate.settlementRule,
+      BigInt(100),                 // maxChallengers
+      false,                       // isPrivate
+      "",                          // inviteKey
+    ],
+    stakeUsdc: CREATOR_STAKE_USDC,
+    refId:     `mc-${chain}-${Date.now()}`,
+  });
+}
+
+/**
+ * Open the market on the next chain in the rotation, falling through to the
+ * others when a chain can't take it. Advances the round-robin past the chain
+ * that did.
+ */
+async function createClaim(candidate: ClaimCandidate): Promise<{ chain: ChainKey; txHash: string } | null> {
+  const rotation = rotationFrom(CREATE_CHAINS, createTurn);
+  for (const [i, chain] of rotation.entries()) {
+    try {
+      const txHash = await createClaimOn(chain, candidate);
+      if (!txHash) continue;
+      createTurn += i + 1;
+      return { chain, txHash };
+    } catch (err) {
+      console.error(`${chainTag("market-creator", chain)} Failed to create claim:`, err);
+    }
   }
+  return null;
 }
 
 // ── Cancel sweep + joinable count ─────────────────────────────────────────────
@@ -723,21 +761,51 @@ async function createClaim(candidate: ClaimCandidate): Promise<string | null> {
 // returns `claimCount - totalResolved`, which lumps CANCELLED and abandoned
 // expired-OPEN claims (created by other addresses, no challenger, no
 // cancellation rights) into "unresolved" and falsely saturates the cap.
+//
+// Every enabled chain is walked so the cap and duplicate guard are global;
+// cancelling needs the creator's wallet on that chain, counting does not.
 
 const CREATOR_ADDR_LC = CREATOR_ADDR.toLowerCase();
 
-async function sweepAndCount(): Promise<{ cancelled: number; joinable: number; joinableClaims: ExistingClaimSignature[] }> {
-  let total: bigint;
-  try {
-    total = await publicClient.readContract({
-      address: CONTRACT_ADDRESS, abi: MIMIR_ABI, functionName: "claimCount",
-    }) as bigint;
-  } catch (err) {
-    console.warn("[market-creator] Failed to read claimCount for sweep:", err);
-    return { cancelled: 0, joinable: 0, joinableClaims: [] };
-  }
+interface SweepResult {
+  cancelled: number;
+  joinable: number;
+  joinableClaims: ExistingClaimSignature[];
+}
 
-  const now = BigInt(Math.floor(Date.now() / 1000));
+async function cancelStale(chain: ChainKey, id: number): Promise<boolean> {
+  const tag = chainTag("market-creator", chain);
+  const walletId = CREATOR_WALLETS[chain];
+  if (!walletId) return false;
+  console.log(`${tag} Cancelling stale claim #${id} (expired, no challenger)`);
+  try {
+    const txHash = await w3sEscrowWrite({
+      chain,
+      walletId,
+      owner:        CREATOR_ADDR,
+      functionName: "cancelClaim",
+      args:         [BigInt(id)],
+      refId:        `mc-cancel-${chain}-${id}`,
+    });
+    console.log(`${tag} ✓ Cancelled #${id} — ${getExplorerTxUrl(txHash, chain)}`);
+    if (CANCEL_DELAY_MS > 0) {
+      await new Promise((r) => setTimeout(r, CANCEL_DELAY_MS));
+    }
+    return true;
+  } catch (err) {
+    console.error(`${tag} Failed to cancel #${id}:`, err);
+    return false;
+  }
+}
+
+/** One chain's sweep. Throws when claimCount can't be read. */
+async function sweepChain(chain: ChainKey, now: bigint): Promise<SweepResult> {
+  const client = createChainPublicClient(chain);
+  const address = getContractAddress(chain);
+  const total = await client.readContract({
+    address, abi: MIMIR_ABI, functionName: "claimCount",
+  }) as bigint;
+
   let cancelled = 0;
   let joinable = 0;
   const joinableClaims: ExistingClaimSignature[] = [];
@@ -745,8 +813,8 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number; j
   for (let id = 1; id <= Number(total); id++) {
     let claim: any;
     try {
-      claim = await publicClient.readContract({
-        address: CONTRACT_ADDRESS, abi: MIMIR_ABI,
+      claim = await client.readContract({
+        address, abi: MIMIR_ABI,
         functionName: "getClaim", args: [BigInt(id)],
       });
     } catch {
@@ -760,7 +828,7 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number; j
     if ((state === STATE.OPEN || state === STATE.ACTIVE) && deadline > now) {
       joinable++;
       joinableClaims.push({
-        id,
+        label:            `${chain}#${id}`,
         category:         String(claim[13] ?? "").toLowerCase().trim(),
         questionKey:      normalizeComparableText(String(claim[1] ?? "")),
         resolutionUrlKey: normalizeResolutionUrl(String(claim[4] ?? "")),
@@ -770,36 +838,47 @@ async function sweepAndCount(): Promise<{ cancelled: number; joinable: number; j
     if (creator !== CREATOR_ADDR_LC) continue;
     if (state !== STATE.OPEN) continue;
     if (deadline > now) continue;
-
-    console.log(`[market-creator] Cancelling stale claim #${id} (expired, no challenger)`);
-    try {
-      const txHash = await executeContract({
-        walletId:             CREATOR_WALLET,
-        contractAddress:      CONTRACT_ADDRESS,
-        abiFunctionSignature: SIG_CANCEL_CLAIM,
-        abiParameters:        toCircleAbiParameters([BigInt(id)]),
-        refId:                `mc-cancel-${id}`,
-      });
-      console.log(`[market-creator] ✓ Cancelled #${id} — ${getExplorerTxUrl(txHash)}`);
-      cancelled++;
-      if (CANCEL_DELAY_MS > 0) {
-        await new Promise((r) => setTimeout(r, CANCEL_DELAY_MS));
-      }
-    } catch (err) {
-      console.error(`[market-creator] Failed to cancel #${id}:`, err);
-    }
+    if (await cancelStale(chain, id)) cancelled++;
   }
   return { cancelled, joinable, joinableClaims };
 }
 
+async function sweepAndCount(): Promise<SweepResult> {
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const results: SweepResult[] = [];
+  for (const chain of enabledChainKeys()) {
+    try {
+      const r = await sweepChain(chain, now);
+      console.log(`${chainTag("market-creator", chain)} Joinable: ${r.joinable}${r.cancelled ? ` · cancelled ${r.cancelled}` : ""}`);
+      results.push(r);
+    } catch (err) {
+      // An unreadable chain counts as zero inventory for this run: the cap may
+      // overshoot by that chain's claims, which beats not creating anything.
+      console.warn(`${chainTag("market-creator", chain)} Failed to read claimCount for sweep:`, err instanceof Error ? err.message : err);
+    }
+  }
+  return {
+    cancelled:      results.reduce((n, r) => n + r.cancelled, 0),
+    joinable:       results.reduce((n, r) => n + r.joinable, 0),
+    joinableClaims: results.flatMap((r) => r.joinableClaims),
+  };
+}
+
 // ── Main run ──────────────────────────────────────────────────────────────────
 
-async function run(): Promise<void> {
-  const balance = await publicClient.getBalance({ address: CREATOR_ADDR });
+async function logBalances(): Promise<void> {
+  for (const chain of WALLET_CHAINS) {
+    const balance = await stakeBalanceUsdc(chain, CREATOR_ADDR)
+      .then((usdc) => `${usdc.toFixed(4)} USDC`)
+      .catch(() => "unavailable (RPC error)");
+    console.log(`${chainTag("market-creator", chain)} Balance : ${balance}`);
+  }
+}
 
+async function run(): Promise<void> {
   console.log(`\n[market-creator] ── Run at ${new Date().toISOString()}`);
   console.log(`[market-creator] Creator : ${CREATOR_ADDR}`);
-  console.log(`[market-creator] Balance : ${weiToUsdc(balance).toFixed(4)} USDC`);
+  await logBalances();
 
   // Single-pass sweep: cancels creator's stale expired-OPEN claims AND counts
   // joinable inventory (state ∈ {OPEN,ACTIVE} && deadline > now) on the same
@@ -811,7 +890,7 @@ async function run(): Promise<void> {
     console.log(`[market-creator] Cancelled ${cancelled} stale claim(s) — stake refunded.`);
   }
 
-  console.log(`[market-creator] Joinable on-chain: ${joinable} (cap: ${MAX_ACTIVE_CLAIMS})`);
+  console.log(`[market-creator] Joinable on all chains: ${joinable} (cap: ${MAX_ACTIVE_CLAIMS})`);
   if (joinable >= MAX_ACTIVE_CLAIMS) {
     console.log(`[market-creator] Inventory ≥ cap — skipping this run.`);
     return;
@@ -869,10 +948,12 @@ async function run(): Promise<void> {
   for (let i = 0; i < selected.length; i++) {
     const candidate = selected[i];
     console.log(`\n[market-creator] Creating: "${candidate.question.slice(0, 60)}..."`);
-    const txHash = await createClaim(candidate);
-    if (txHash) {
-      console.log(`[market-creator] ✓ Created — ${getExplorerTxUrl(txHash)}`);
+    const result = await createClaim(candidate);
+    if (result) {
+      console.log(`${chainTag("market-creator", result.chain)} ✓ Created — ${getExplorerTxUrl(result.txHash, result.chain)}`);
       created++;
+    } else {
+      console.warn("[market-creator] No chain could take this market.");
     }
     if (i < selected.length - 1 && CREATE_DELAY_MS > 0) {
       console.log(`[market-creator] Cooling down ${(CREATE_DELAY_MS / 60000).toFixed(1)} min before next market...`);
@@ -886,18 +967,15 @@ async function run(): Promise<void> {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const balance = await publicClient.getBalance({ address: CREATOR_ADDR });
-
   console.log("═══════════════════════════════════════════════");
   console.log("  Mimir Market Creator Agent (Circle W3S signer)");
   console.log(`  Creator    : ${CREATOR_ADDR}`);
-  console.log(`  Wallet ID  : ${CREATOR_WALLET}`);
-  console.log(`  Balance    : ${weiToUsdc(balance).toFixed(4)} USDC`);
-  console.log(`  Network    : Arc Testnet (${arcTestnet.id})`);
+  console.log(`  Opens on   : ${CREATE_CHAINS.map((c) => `${getChain(c).name} (${getChain(c).chain.id})`).join(" → ")} (round-robin)`);
+  console.log(`  Counts on  : ${enabledChainKeys().join(", ")}`);
   console.log(`  LLM        : ${activeLLMProvider()} / ${activeLLMModel()} · key=${activeLLMKeyFingerprint()}`);
   console.log(`  Stake/mkt  : ${CREATOR_STAKE_USDC} USDC`);
   console.log(`  Max/run    : ${MAX_CLAIMS_PER_RUN} claims`);
-  console.log(`  Active cap : ${MAX_ACTIVE_CLAIMS} unresolved (skip run above this)`);
+  console.log(`  Active cap : ${MAX_ACTIVE_CLAIMS} joinable across all chains (skip run above this)`);
   console.log(`  Preflight  : ${PREFLIGHT_ENABLED ? `on via ${PREFLIGHT_BASE_URL}` : "off"}`);
   console.log(`  Create gap : ${CREATE_DELAY_MS / 1000}s`);
   console.log(`  Cancel gap : ${CANCEL_DELAY_MS / 1000}s`);
