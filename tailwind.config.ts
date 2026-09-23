@@ -27,6 +27,13 @@ const config: Config = {
           gold:     "#E0B36A",
           danger:   "#EF6B6B",
         },
+        // Network identity dots (lib/chainUi.ts). Only ever used as small
+        // markers next to a chain name, never as a surface or text color.
+        chain: {
+          arc:      "#A78BFA",
+          base:     "#0052FF",
+          arbitrum: "#28A0F0",
+        },
       },
       fontFamily: {
         display: ["'Maple Mono'", "var(--font-display)", "ui-monospace", "monospace"],

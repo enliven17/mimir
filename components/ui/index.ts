@@ -11,6 +11,7 @@ export {
   ArenaCardSkeleton,
 } from "./Skeleton";
 export { default as PoolBadge } from "./PoolBadge";
+export { default as ChainBadge } from "./ChainBadge";
 export { default as CountdownTimer } from "./CountdownTimer";
 export { default as VSStrip } from "./VSStrip";
 
