@@ -16,9 +16,12 @@ import {
   getVSChallengerCount,
   isVSJoinable,
   didUserChallengeVS,
+  vsChain,
   type VSData,
   type VSFeedSnapshot,
 } from "@/lib/contract";
+import { claimKey, getChain } from "@/lib/chains";
+import { CHAIN_DOT_CLASS, isMultichain } from "@/lib/chainUi";
 import { mergePendingVS } from "@/lib/pending-vs";
 import {
   applyExploreFilters,
@@ -26,6 +29,7 @@ import {
   MIN_STAKE_OPTIONS,
   normalizeExploreMinStake,
   type ExploreSort,
+  type NetworkFilter,
 } from "@/lib/exploreFilters";
 import type {
   ChallengeOpportunitiesResponse,
@@ -135,8 +139,9 @@ function IntelligenceDossierSkeleton() {
 
 export default function ExploreClient() {
   const { filters, updateFilters, resetFilters } = useExploreFilterState();
-  const { address } = useWallet();
+  const { address, enabledChains } = useWallet();
   const locale = useLocale();
+  const showNetworkFilter = useMemo(() => isMultichain(), []);
   const [allVS, setAllVS] = useState<VSData[]>([]);
   const [opportunities, setOpportunities] = useState<ChallengeOpportunity[]>([]);
   const [vsFreshness, setVsFreshness] = useState<VSCacheFreshness | null>(null);
@@ -157,6 +162,7 @@ export default function ExploreClient() {
 
   const t = useTranslations("explore");
   const cacheT = useTranslations("cache");
+  const tNet = useTranslations("network");
 
   const loadExploreData = useCallback(
     async ({
@@ -309,12 +315,10 @@ export default function ExploreClient() {
     [filters, openChallenges]
   );
 
-  // Closed = resolved or cancelled. Sorted newest first by id.
+  // Closed = resolved or cancelled. applyExploreFilters sorts them (newest
+  // by creation time: ids collide across chains).
   const closedChallenges = useMemo(
-    () =>
-      allVS
-        .filter((vs) => vs.state === "resolved" || vs.state === "cancelled")
-        .sort((a, b) => b.id - a.id),
+    () => allVS.filter((vs) => vs.state === "resolved" || vs.state === "cancelled"),
     [allVS]
   );
 
@@ -362,7 +366,7 @@ export default function ExploreClient() {
     opportunities,
   ]);
 
-  const { cat, sort, search, minStake, needsChallengers, expiringSoon } = filters;
+  const { cat, sort, search, minStake, needsChallengers, expiringSoon, network } = filters;
 
   useEffect(() => {
     if (minStake === 0) {
@@ -381,7 +385,8 @@ export default function ExploreClient() {
     search.trim().length > 0 ||
     needsChallengers !== DEFAULT_EXPLORE_FILTERS.needsChallengers ||
     expiringSoon !== DEFAULT_EXPLORE_FILTERS.expiringSoon ||
-    filters.participation !== DEFAULT_EXPLORE_FILTERS.participation;
+    filters.participation !== DEFAULT_EXPLORE_FILTERS.participation ||
+    network !== DEFAULT_EXPLORE_FILTERS.network;
 
   /**
    * Proving Ground only narrows on category, search, and expiring window.
@@ -540,7 +545,7 @@ export default function ExploreClient() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {filteredClosedChallenges.map((vs) => (
           <motion.div
-            key={vs.id}
+            key={claimKey(vsChain(vs), vs.id)}
             layout
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -598,7 +603,7 @@ export default function ExploreClient() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {filteredOpenChallenges.map((vs) => (
           <motion.div
-            key={vs.id}
+            key={claimKey(vsChain(vs), vs.id)}
             layout
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1090,6 +1095,46 @@ export default function ExploreClient() {
                   {refreshing ? cacheT("refreshing") : cacheT("refresh")}
                 </button>
               </div>
+
+              {showNetworkFilter && activeView !== "ai" ? (
+                <div className="col-span-full mt-4 border-t border-white/[0.06] pt-4">
+                  <span
+                    id="explore-network-label"
+                    className="mb-3 block font-display text-[10px] font-bold uppercase tracking-[0.22em] text-pv-muted"
+                  >
+                    {tNet("filterLabel")}
+                  </span>
+                  <div
+                    className="flex flex-wrap gap-2"
+                    role="group"
+                    aria-labelledby="explore-network-label"
+                  >
+                    {(["all", ...enabledChains] as NetworkFilter[]).map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-pressed={network === key}
+                        onClick={() => updateFilters({ network: key })}
+                        className={`${filterPillBase} inline-flex items-center gap-2 ${
+                          network === key ? filterPillActive : filterPillInactive
+                        }`}
+                      >
+                        {key === "all" ? (
+                          tNet("filterAll")
+                        ) : (
+                          <>
+                            <span
+                              className={`h-2 w-2 rounded-full ${CHAIN_DOT_CLASS[key]}`}
+                              aria-hidden
+                            />
+                            {getChain(key).shortName}
+                          </>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {address && activeView === "open" ? (
                 <div className="col-span-full mt-4 border-t border-white/[0.06] pt-4">
