@@ -1,15 +1,16 @@
 "use client";
 
 /**
- * CCTP V2 bridge — pull USDC into Arc Testnet from any V2-supported chain.
+ * CCTP V2 bridge — pull USDC onto the selected Mimir network (Arc, Base or
+ * Arbitrum Sepolia; header selector) from any other V2-supported chain.
  *
  * Flow (Fast Transfer mode, ~13–19s):
- *   1. Switch wallet to source chain (Base/Eth/Avalanche Sepolia)
+ *   1. Switch wallet to source chain
  *   2. Approve USDC for TokenMessengerV2 (skipped if allowance is sufficient)
- *   3. depositForBurn on source chain
+ *   3. depositForBurn on source chain, addressed to the destination domain
  *   4. Poll Circle's Iris attestation service
- *   5. Switch to Arc Testnet
- *   6. receiveMessage on Arc → user receives USDC
+ *   5. Switch to the destination chain
+ *   6. receiveMessage on the destination → user receives USDC
  *
  * No backend required: all calls go direct from the browser via wagmi/viem +
  * Circle's public Iris API. The "Circle stack" footprint is real on-chain.
@@ -41,11 +42,20 @@ import {
 } from "@/lib/cctp";
 import GatewayBalanceWidget from "@/components/GatewayBalanceWidget";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
+import { useWallet } from "@/lib/wallet";
+import type { ChainKey } from "@/lib/chains";
 
-type SourceKey = "ethSepolia" | "baseSepolia" | "avalancheFuji";
+type CctpKey = "arcTestnet" | "baseSepolia" | "arbSepolia" | "ethSepolia" | "avalancheFuji";
 
-const SOURCES: SourceKey[] = ["baseSepolia", "ethSepolia", "avalancheFuji"];
-const DEST: CctpChain = CCTP_CHAINS.arcTestnet;
+/** CCTP entry for each Mimir network (lib/chains ChainKey → lib/cctp key). */
+const CCTP_KEY_FOR: Record<ChainKey, CctpKey> = {
+  arc:      "arcTestnet",
+  base:     "baseSepolia",
+  arbitrum: "arbSepolia",
+};
+
+/** Source order in the picker; the current destination is filtered out. */
+const ALL_SOURCES: CctpKey[] = ["baseSepolia", "arbSepolia", "arcTestnet", "ethSepolia", "avalancheFuji"];
 
 type Phase = "idle" | "approving" | "burning" | "attesting" | "minting" | "done";
 
@@ -54,8 +64,16 @@ export default function BridgePage() {
   const chainId = useChainId();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  const { selectedChain } = useWallet();
 
-  const [sourceKey, setSourceKey] = useState<SourceKey>("baseSepolia");
+  // Destination follows the header network, but freezes once a burn is sent:
+  // the burn names a destination domain and the mint must happen there.
+  const [flowDestKey, setFlowDestKey] = useState<CctpKey | null>(null);
+  const destKey: CctpKey = flowDestKey ?? CCTP_KEY_FOR[selectedChain];
+  const DEST: CctpChain = CCTP_CHAINS[destKey];
+  const SOURCES = useMemo(() => ALL_SOURCES.filter((k) => k !== destKey), [destKey]);
+
+  const [sourceKey, setSourceKey] = useState<CctpKey>("baseSepolia");
   const [amount, setAmount]       = useState("5");
   const [phase, setPhase]         = useState<Phase>("idle");
   const [burnTxHash, setBurnTxHash]     = useState<Hex | null>(null);
@@ -63,7 +81,12 @@ export default function BridgePage() {
   const [irisMessage, setIrisMessage]   = useState<{ message: Hex; attestation: Hex } | null>(null);
   const [error, setError]               = useState<string | null>(null);
 
-  const source = CCTP_CHAINS[sourceKey];
+  // A source equal to the destination is meaningless; fall back to the first valid one.
+  useEffect(() => {
+    if (sourceKey === destKey) setSourceKey(SOURCES[0]);
+  }, [SOURCES, destKey, sourceKey]);
+
+  const source = CCTP_CHAINS[sourceKey === destKey ? SOURCES[0] : sourceKey];
   const amountUnits = useMemo(() => {
     try { return parseUnits(amount || "0", 6); } catch { return 0n; }
   }, [amount]);
@@ -109,7 +132,7 @@ export default function BridgePage() {
           network: "testnet",
         });
         setIrisMessage({ message: msg.message, attestation: msg.attestation });
-        setPhase("idle"); // user clicks "Switch to Arc & Mint"
+        setPhase("idle"); // user clicks "Switch to <destination>" then "Mint"
       } catch (err: any) {
         setError(`Attestation failed: ${err?.message ?? err}`);
         setPhase("idle");
@@ -123,7 +146,7 @@ export default function BridgePage() {
     try { switchChain({ chainId: source.chainId }); } catch (e: any) { setError(e?.message ?? "switch failed"); }
   }
 
-  async function handleSwitchToArc() {
+  async function handleSwitchToDest() {
     setError(null);
     try { switchChain({ chainId: DEST.chainId }); } catch (e: any) { setError(e?.message ?? "switch failed"); }
   }
@@ -154,6 +177,7 @@ export default function BridgePage() {
     if (balance < amountUnits) { setError("Insufficient USDC balance on source chain"); return; }
     setError(null);
     setPhase("burning");
+    setFlowDestKey(destKey);
     try {
       const tx = await writeContractAsync({
         chainId:      source.chainId,
@@ -174,6 +198,7 @@ export default function BridgePage() {
     } catch (e: any) {
       setError(e?.message ?? "burn failed");
       setPhase("idle");
+      setFlowDestKey(null);
     }
   }
 
@@ -204,17 +229,19 @@ export default function BridgePage() {
     setIrisMessage(null);
     setPhase("idle");
     setError(null);
+    setFlowDestKey(null);
   }
 
   // ── UI ──────────────────────────────────────────────────────────────────────
   return (
     <div className="pb-12">
-      <BlueprintHeading>Bridge USDC to Arc</BlueprintHeading>
+      <BlueprintHeading>{`Bridge USDC to ${DEST.name}`}</BlueprintHeading>
 
       <div className="mx-auto mt-8 max-w-2xl space-y-6 px-4 sm:px-6">
       <p className="text-center text-pv-muted">
-          Bring USDC from Base, Ethereum, or Avalanche Sepolia into Arc Testnet via
-          Circle's native burn-and-mint protocol. Fast Transfer (~15s).
+          Bring USDC onto {DEST.name} from another testnet via Circle&apos;s native
+          burn-and-mint protocol. Fast Transfer (~15s). The destination is the network
+          selected in the header{flowDestKey ? " (locked until this transfer finishes)" : ""}.
         </p>
 
       <GatewayBalanceWidget />
@@ -230,13 +257,16 @@ export default function BridgePage() {
           <div className="rounded-2xl border border-pv-border/30 bg-pv-surface/80 p-6 space-y-4">
             <div>
               <label className="text-xs uppercase tracking-widest text-pv-muted/85">Source chain</label>
-              <div className="mt-2 grid grid-cols-3 gap-2">
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Source chain">
                 {SOURCES.map((k) => (
                   <button
                     key={k}
+                    type="button"
+                    aria-pressed={source === CCTP_CHAINS[k]}
+                    disabled={flowDestKey !== null}
                     onClick={() => { setSourceKey(k); reset(); }}
-                    className={`rounded-lg border p-3 text-sm transition ${
-                      sourceKey === k
+                    className={`rounded-lg border p-3 text-sm transition focus-ring disabled:cursor-not-allowed disabled:opacity-50 ${
+                      source === CCTP_CHAINS[k]
                         ? "border-pv-emerald bg-pv-emerald/10 text-pv-emerald"
                         : "border-pv-border/30 text-pv-muted hover:border-pv-border/50"
                     }`}
@@ -294,17 +324,17 @@ export default function BridgePage() {
               >
                 {phase === "burning" ? "Burning USDC on source…" :
                  phase === "attesting" ? "Waiting for Circle attestation (~15s)…" :
-                 `Burn ${amount} USDC for Arc`}
+                 `Burn ${amount} USDC for ${DEST.name}`}
               </button>
             )}
 
             {irisMessage && !onDestChain && phase !== "minting" && phase !== "done" && (
               <button
-                onClick={handleSwitchToArc}
+                onClick={handleSwitchToDest}
                 disabled={isSwitching}
                 className="w-full rounded-lg bg-pv-emerald px-4 py-3 font-medium text-white transition hover:bg-pv-emerald disabled:opacity-50"
               >
-                {isSwitching ? "Switching…" : "Switch wallet to Arc Testnet"}
+                {isSwitching ? "Switching…" : `Switch wallet to ${DEST.name}`}
               </button>
             )}
 
@@ -314,7 +344,7 @@ export default function BridgePage() {
                 disabled={phase === "minting"}
                 className="w-full rounded-lg bg-pv-emerald px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:opacity-50"
               >
-                {phase === "minting" ? "Minting on Arc…" : `Mint ${amount} USDC on Arc`}
+                {phase === "minting" ? `Minting on ${DEST.name}…` : `Mint ${amount} USDC on ${DEST.name}`}
               </button>
             )}
 
