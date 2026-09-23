@@ -121,8 +121,8 @@ test("copy depth is 1 and cycles are refused", () => {
 });
 
 test("a position already held is not duplicated", () => {
-  assert.equal(run({ usage: { heldClaimIds: [42] } }).reason, "duplicate_position");
-  assert.equal(run({ usage: { heldClaimIds: [41, 43] } }).allowed, true);
+  assert.equal(run({ usage: { heldClaimIds: ["arc:42"] } }).reason, "duplicate_position");
+  assert.equal(run({ usage: { heldClaimIds: ["arc:41", "arc:43", "base:42"] } }).allowed, true);
 });
 
 test("a stale signal is refused at the boundary", () => {
@@ -191,7 +191,7 @@ test("a refused copy always stakes zero", () => {
   for (const d of [
     run({ globallyPaused: true }),
     run({ permission: { active: false } }),
-    run({ usage: { heldClaimIds: [42] } }),
+    run({ usage: { heldClaimIds: ["arc:42"] } }),
   ]) {
     assert.equal(d.allowed, false);
     assert.equal(d.stakeUsdc, 0);
@@ -206,7 +206,7 @@ test("every skip reason the gate can return is in the published enum", () => {
     run({ permission: { expiresAt: NOW - 1 } }),
     run({ permission: { executionAgentId: "statistician" } }),
     run({ signal: { ancestry: ["x"] } }),
-    run({ usage: { heldClaimIds: [42] } }),
+    run({ usage: { heldClaimIds: ["arc:42"] } }),
     run({ signal: { placedAt: 0 } }),
     run({ permission: { allowedCategories: ["sports"] } }),
     run({ permission: { allowedModes: ["fixed"] }, signal: { oddsMode: "pool" } }),

@@ -1,3 +1,4 @@
+import { claimKey, parseChainKey, type ChainKey } from "./chains";
 import "server-only";
 
 /**
@@ -105,17 +106,19 @@ export async function revokePermission(id: string, follower: string, now = Date.
 export async function recordExecution(args: {
   permissionId: string;
   claimId: number;
+  chain?: ChainKey;
   executed: boolean;
   skipReason?: CopySkipReason | null;
   stakeUsdc?: number;
   txHash?: string | null;
 }): Promise<void> {
   await query(
-    `INSERT INTO copy_executions(permission_id, claim_id, executed, skip_reason, stake_usdc, tx_hash, at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO copy_executions(permission_id, claim_id, chain, executed, skip_reason, stake_usdc, tx_hash, at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       args.permissionId,
       args.claimId,
+      args.chain ?? "arc",
       args.executed,
       args.skipReason ?? null,
       args.stakeUsdc ?? 0,
@@ -127,11 +130,12 @@ export async function recordExecution(args: {
 
 export async function listExecutions(permissionId: string, limit = 50) {
   const rows = await query(
-    "SELECT claim_id, executed, skip_reason, stake_usdc, tx_hash, at FROM copy_executions WHERE permission_id = ? ORDER BY at DESC LIMIT ?",
+    "SELECT claim_id, chain, executed, skip_reason, stake_usdc, tx_hash, at FROM copy_executions WHERE permission_id = ? ORDER BY at DESC LIMIT ?",
     [permissionId, limit],
   );
   return rows.map((r) => ({
     claimId: Number(r.claim_id ?? 0),
+    chain: String(r.chain ?? "arc"),
     executed: Boolean(r.executed),
     skipReason: r.skip_reason === null || r.skip_reason === undefined ? null : String(r.skip_reason),
     stakeUsdc: Number(r.stake_usdc ?? 0),
@@ -162,9 +166,9 @@ export async function loadUsage(permissionId: string, now = Date.now()) {
       [dayAgo, weekAgo, permissionId],
     ),
     query(
-      `SELECT e.claim_id, e.stake_usdc, c.state, c.winner_side
+      `SELECT e.claim_id, e.chain, e.stake_usdc, c.state, c.winner_side
          FROM copy_executions e
-         LEFT JOIN claims c ON c.id = e.claim_id
+         LEFT JOIN claims c ON c.chain = e.chain AND c.id = e.claim_id
         WHERE e.permission_id = ? AND e.executed = TRUE`,
       [permissionId],
     ),
@@ -172,13 +176,13 @@ export async function loadUsage(permissionId: string, now = Date.now()) {
 
   let openExposureUsdc = 0;
   let realizedLossUsdc = 0;
-  const heldClaimIds: number[] = [];
+  const heldClaimIds: string[] = [];
 
   for (const row of positions) {
     const stake = Number(row.stake_usdc ?? 0);
     const state = String(row.state ?? "");
     const claimId = Number(row.claim_id ?? 0);
-    heldClaimIds.push(claimId);
+    heldClaimIds.push(claimKey(parseChainKey(row.chain, "arc"), claimId));
 
     if (state === "resolved") {
       // The copy sits on the challenger side, so a creator win is a total loss

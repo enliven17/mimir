@@ -1,3 +1,4 @@
+import { claimKey, parseChainKey, type ChainKey } from "@/lib/chains";
 import "server-only";
 
 /**
@@ -32,6 +33,8 @@ const SIGNAL_WINDOW_MS = 60 * 60 * 1000;
 export interface CopyInstruction {
   permissionId: string;
   claimId: number;
+  /** Chain to stake on; the claim id only means something there. */
+  chain: ChainKey;
   signalAgentId: string;
   question: string;
   category: string;
@@ -63,16 +66,16 @@ async function recentSignals(
   now: number,
 ): Promise<Array<{ signal: CopySignal; question: string }>> {
   const rows = await query(
-    `SELECT c.id, c.question, c.category, c.odds_mode, c.creator_stake,
+    `SELECT c.id, c.chain, c.question, c.category, c.odds_mode, c.creator_stake,
             c.total_challenger_stake, c.deadline, c.state, c.settlement_rule,
             c.resolution_url, c.creator_position, c.counter_position,
             ch.stake, ch.address
        FROM challengers ch
-       JOIN claims c ON c.id = ch.claim_id
+       JOIN claims c ON c.chain = ch.chain AND c.id = ch.claim_id
       WHERE LOWER(ch.address) = ?
         AND c.state IN ('open', 'active')
         AND c.deadline > ?
-      ORDER BY c.id DESC
+      ORDER BY c.created_at DESC, c.id DESC
       LIMIT 50`,
     [wallet, Math.floor(now / 1000)],
   ).catch(() => []);
@@ -96,6 +99,7 @@ async function recentSignals(
     const signal: CopySignal = {
       signalAgentId: "",
       claimId: Number(r.id ?? 0),
+      chain: parseChainKey(r.chain, "arc"),
       category: String(r.category ?? "custom"),
       oddsMode: String(r.odds_mode ?? "pool"),
       stakeUsdc: Number(r.stake ?? 0),
@@ -137,7 +141,7 @@ export async function buildCopyInstructions(
         spentThisWeekUsdc: 0,
         openExposureUsdc: 0,
         realizedLossUsdc: 0,
-        heldClaimIds: [] as number[],
+        heldClaimIds: [] as string[],
       })),
     ]);
 
@@ -152,6 +156,7 @@ export async function buildCopyInstructions(
       instructions.push({
         permissionId: permission.id,
         claimId: signal.claimId,
+        chain: signal.chain ?? "arc",
         signalAgentId: permission.signalAgentId,
         question,
         category: signal.category,
@@ -163,7 +168,7 @@ export async function buildCopyInstructions(
         running.spentTodayUsdc += decision.stakeUsdc;
         running.spentThisWeekUsdc += decision.stakeUsdc;
         running.openExposureUsdc += decision.stakeUsdc;
-        running.heldClaimIds.push(signal.claimId);
+        running.heldClaimIds.push(claimKey(signal.chain ?? "arc", signal.claimId));
       }
     }
   }

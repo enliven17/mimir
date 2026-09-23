@@ -12,6 +12,8 @@
  * can reason about after the fact, and this is somebody's money.
  */
 
+import { claimKey, type ChainKey } from "./chains";
+
 export const COPY_SKIP_REASONS = [
   "globally_paused",
   "permission_inactive",
@@ -74,6 +76,8 @@ export interface CopyPermission {
 export interface CopySignal {
   signalAgentId: string;
   claimId: number;
+  /** Chain the claim lives on. Absent means Arc. */
+  chain?: ChainKey;
   category: string;
   /** "pool" or "fixed". */
   oddsMode: string;
@@ -93,8 +97,8 @@ export interface CopyUsage {
   spentThisWeekUsdc: number;
   openExposureUsdc: number;
   realizedLossUsdc: number;
-  /** Claim ids the follower already holds a position in. */
-  heldClaimIds: number[];
+  /** Claims the follower already holds, as claimKey(chain, id): ids repeat across chains. */
+  heldClaimIds: string[];
 }
 
 export interface CopyDecision {
@@ -185,7 +189,7 @@ export function evaluateCopy(args: {
     return deny("cycle_detected", "this signal already passed through the executing agent");
   }
 
-  if (u.heldClaimIds.includes(s.claimId)) {
+  if (u.heldClaimIds.includes(claimKey(s.chain ?? "arc", s.claimId))) {
     return deny("duplicate_position", `already holding a position in claim ${s.claimId}`);
   }
 
