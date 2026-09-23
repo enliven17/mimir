@@ -7,7 +7,7 @@
  * gas is ETH. Everything above this file speaks whole-USDC numbers and a
  * ChainKey; the unit and ABI differences stop here.
  *
- * NEXT_PUBLIC_* reads must stay literal (process.process.env.NEXT_PUBLIC_X) so Next
+ * NEXT_PUBLIC_* reads must stay literal (process.env.NEXT_PUBLIC_X) so Next
  * can inline them into the browser bundle — no computed env keys below.
  */
 import type { Chain } from "viem";
@@ -176,8 +176,8 @@ export function enabledChainKeys(): ChainKey[] {
   return enabledChains().map((c) => c.key);
 }
 
-export const DEFAULT_CHAIN: ChainKey = isChainKey(process.process.env.NEXT_PUBLIC_DEFAULT_CHAIN)
-  ? process.process.env.NEXT_PUBLIC_DEFAULT_CHAIN
+export const DEFAULT_CHAIN: ChainKey = isChainKey(process.env.NEXT_PUBLIC_DEFAULT_CHAIN)
+  ? process.env.NEXT_PUBLIC_DEFAULT_CHAIN
   : "arc";
 
 /** Lenient parse for query strings and request bodies; unknown → default. */
