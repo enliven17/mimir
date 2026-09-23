@@ -8,13 +8,22 @@
  *
  * Reads the durable Neon ledger via /api/x402/revenue (falls back to in-memory
  * when no DB is configured). Each settled payment links to its on-chain receipt
- * on ArcScan; the on-chain Gateway balance remains the ultimate truth.
+ * on the explorer of the network it settled on (x402 buyers pick the chain);
+ * the on-chain Gateway balance remains the ultimate truth.
  */
 
 import { useEffect, useState } from "react";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { shortenAddress } from "@/lib/constants";
 import { GATEWAY_WALLET_ADDRESS } from "@/lib/arc";
+import {
+  chainByCaip2,
+  explorerAddressUrl,
+  explorerTxUrl,
+  type ChainKey,
+} from "@/lib/chains";
+import { CHAIN_DOT_CLASS } from "@/lib/chainUi";
+import ChainBadge from "@/components/ui/ChainBadge";
 
 interface PaymentEvent {
   resource: string;
@@ -22,6 +31,8 @@ interface PaymentEvent {
   payer: string | null;
   seller: string | null;
   txId: string | null;
+  /** CAIP-2 network the payment settled on; absent on rows logged before multichain (Arc). */
+  network?: string | null;
   at: number;
 }
 interface RevenueSummary {
@@ -31,26 +42,36 @@ interface RevenueSummary {
   uniqueSellers: number;
   byResource: Array<{ resource: string; calls: number; usd: number }>;
   bySeller: Array<{ seller: string; calls: number; usd: number }>;
+  /** Spend per CAIP-2 network. Optional so an older API response still renders. */
+  byNetwork?: Array<{ network: string; calls: number; usd: number }>;
   recent: PaymentEvent[];
+}
+
+/** Arc is where every pre-multichain payment settled, so it is the fallback. */
+function chainOfNetwork(network: string | null | undefined): ChainKey {
+  return (network ? chainByCaip2(network)?.key : undefined) ?? "arc";
 }
 
 function short(addr: string | null): string {
   return addr ? shortenAddress(addr) : "—";
 }
 
-const ARCSCAN = "https://testnet.arcscan.app";
 const GATEWAY_WALLET = GATEWAY_WALLET_ADDRESS;
 function isTxHash(id: string | null): id is string {
   return !!id && /^0x[0-9a-fA-F]{64}$/.test(id);
 }
 
 interface SettlementTx {
+  /** Absent on responses from before /api/x402/settlements went multichain. */
+  chain?: ChainKey;
   hash: string;
+  explorerUrl?: string | null;
   method: string | null;
   status: string;
   timestamp: string;
   from: string;
-  valueUsdc: number;
+  /** Null off Arc: there the batch moves ERC-20 USDC, not native value. */
+  valueUsdc: number | null;
 }
 
 /**
@@ -58,11 +79,19 @@ interface SettlementTx {
  * BATCHES, so most payments have a facilitator settlement id instead of an
  * on-chain tx hash — label those honestly rather than dressing them up.
  */
-function ReceiptLink({ txId, payer }: { txId: string | null; payer: string | null }) {
+function ReceiptLink({
+  txId,
+  payer,
+  chain,
+}: {
+  txId: string | null;
+  payer: string | null;
+  chain: ChainKey;
+}) {
   if (isTxHash(txId)) {
     return (
       <a
-        href={`${ARCSCAN}/tx/${txId}`}
+        href={explorerTxUrl(chain, txId)}
         target="_blank"
         rel="noopener noreferrer"
         className="text-pv-emerald underline-offset-2 hover:underline"
@@ -75,7 +104,7 @@ function ReceiptLink({ txId, payer }: { txId: string | null; payer: string | nul
   if (txId || payer) {
     return (
       <a
-        href={`${ARCSCAN}/address/${GATEWAY_WALLET}`}
+        href={explorerAddressUrl(chain, GATEWAY_WALLET)}
         target="_blank"
         rel="noopener noreferrer"
         className="rounded border border-white/[0.12] bg-pv-surface2/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-pv-muted transition-colors hover:border-pv-emerald/40 hover:text-pv-emerald"
@@ -153,6 +182,37 @@ export default function RevenuePage() {
             <Stat label="Seller wallets" value={data.uniqueSellers.toLocaleString()} />
           </section>
 
+          {data.byNetwork && data.byNetwork.length > 0 ? (
+            <section className="mt-10" aria-labelledby="revenue-by-network">
+              <h2 id="revenue-by-network" className="label">By network</h2>
+              <div className="card mt-3 divide-y divide-white/[0.08]">
+                {data.byNetwork.map((n) => {
+                  const chain = chainByCaip2(n.network);
+                  return (
+                    <div key={n.network} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="inline-flex min-w-0 items-center gap-2 text-sm text-pv-text">
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${chain ? CHAIN_DOT_CLASS[chain.key] : "bg-pv-muted"}`}
+                          aria-hidden
+                        />
+                        {chain ? chain.name : <code className="break-all font-mono">{n.network}</code>}
+                      </span>
+                      <div className="shrink-0 text-left text-sm sm:text-right">
+                        <span className="font-mono font-semibold text-pv-text">${n.usd.toFixed(6)}</span>
+                        <span className="ml-3 font-mono text-pv-muted">{n.calls} calls</span>
+                        {data.totalUsd > 0 ? (
+                          <span className="ml-3 font-mono text-pv-muted">
+                            {Math.round((n.usd / data.totalUsd) * 100)}%
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
           <section className="mt-10">
             <h2 className="label">By endpoint</h2>
             <div className="card mt-3 divide-y divide-white/[0.08]">
@@ -184,7 +244,7 @@ export default function RevenuePage() {
               {data.bySeller.map((r) => (
                 <div key={r.seller} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <a
-                    href={`${ARCSCAN}/address/${r.seller}`}
+                    href={explorerAddressUrl("arc", r.seller)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="min-w-0 break-all font-mono text-sm text-pv-text underline-offset-2 hover:text-pv-emerald hover:underline"
@@ -246,7 +306,10 @@ export default function RevenuePage() {
                         ${e.priceUsd.toFixed(6)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono">
-                        <ReceiptLink txId={e.txId} payer={e.payer} />
+                        <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                          <ChainBadge chain={chainOfNetwork(e.network)} compact />
+                          <ReceiptLink txId={e.txId} payer={e.payer} chain={chainOfNetwork(e.network)} />
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -254,11 +317,11 @@ export default function RevenuePage() {
               </table>
             </div>
             <p className="mt-3 font-mono text-[11px] leading-relaxed text-pv-muted">
-              Payments are W3S-signed and settled in USDC on Arc through Circle&apos;s Gateway —
-              individual nanopayments are verified off-chain by the facilitator and land
-              on-chain in batches at the{" "}
+              Payments are W3S-signed and settled in USDC through Circle&apos;s Gateway on the
+              network the buyer paid from (Arc is home) — individual nanopayments are verified
+              off-chain by the facilitator and land on-chain in batches at the{" "}
               <a
-                href={`${ARCSCAN}/address/${GATEWAY_WALLET}`}
+                href={explorerAddressUrl("arc", GATEWAY_WALLET)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-pv-emerald underline-offset-2 hover:underline"
@@ -287,26 +350,29 @@ export default function RevenuePage() {
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center font-mono text-pv-muted">
                         {settlementsError
-                          ? "ArcScan's explorer API is temporarily unavailable — check back shortly."
+                          ? "A block explorer API is temporarily unavailable — check back shortly."
                           : "No Gateway transactions loaded yet…"}
                       </td>
                     </tr>
                   )}
                   {settlements.map((s) => (
-                    <tr key={s.hash} className="transition-colors hover:bg-pv-surface2/40">
+                    <tr key={`${s.chain ?? "arc"}-${s.hash}`} className="transition-colors hover:bg-pv-surface2/40">
                       <td className="px-4 py-2.5 font-mono text-pv-muted">
-                        {s.timestamp ? new Date(s.timestamp).toLocaleString() : "—"}
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <ChainBadge chain={s.chain ?? "arc"} compact />
+                          {s.timestamp ? new Date(s.timestamp).toLocaleString() : "—"}
+                        </span>
                       </td>
                       <td className="px-4 py-2.5">
                         <code className="font-mono text-pv-text">{s.method ?? "transfer"}</code>
                       </td>
                       <td className="px-4 py-2.5 font-mono text-pv-muted">{short(s.from)}</td>
                       <td className="px-4 py-2.5 text-right font-mono font-semibold text-pv-text">
-                        {s.valueUsdc > 0 ? s.valueUsdc.toFixed(4) : "—"}
+                        {s.valueUsdc !== null && s.valueUsdc > 0 ? s.valueUsdc.toFixed(4) : "—"}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono">
                         <a
-                          href={`${ARCSCAN}/tx/${s.hash}`}
+                          href={s.explorerUrl ?? explorerTxUrl(s.chain ?? "arc", s.hash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-pv-emerald underline-offset-2 hover:underline"
@@ -321,8 +387,8 @@ export default function RevenuePage() {
               </table>
             </div>
             <p className="mt-3 font-mono text-[11px] leading-relaxed text-pv-muted">
-              Real transactions on the Gateway Wallet contract, straight from ArcScan —
-              the on-chain counterpart of the batched receipts above.
+              Real transactions on the Gateway Wallet contract, straight from each
+              network&apos;s explorer — the on-chain counterpart of the batched receipts above.
             </p>
           </section>
         </>
@@ -333,7 +399,8 @@ export default function RevenuePage() {
 }
 
 function PaymentCard({ event }: { event: PaymentEvent }) {
-  const receipt = <ReceiptLink txId={event.txId} payer={event.payer} />;
+  const chain = chainOfNetwork(event.network);
+  const receipt = <ReceiptLink txId={event.txId} payer={event.payer} chain={chain} />;
 
   return (
     <div className="px-4 py-4">
@@ -355,6 +422,7 @@ function PaymentCard({ event }: { event: PaymentEvent }) {
         <span className="min-w-0 truncate">seller {short(event.seller)}</span>
       </div>
       <div className="mt-3 flex items-center justify-end gap-3 font-mono text-xs">
+        <ChainBadge chain={chain} compact />
         <span className="shrink-0">{receipt}</span>
       </div>
     </div>
