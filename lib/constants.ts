@@ -1,3 +1,5 @@
+import { vsPath, type ChainKey } from "./chains";
+
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 export const MIN_STAKE = 2;
 
@@ -187,8 +189,9 @@ export function getTimeRemaining(deadline: number, locale: "es" | "en" = "es") {
   };
 }
 
-export function getShareUrl(vsId: number, inviteKey = ""): string {
-  const path = inviteKey ? `/vs/${vsId}?invite=${encodeURIComponent(inviteKey)}` : `/vs/${vsId}`;
+/** Absolute claim URL (path only on the server). Arc links carry no ?chain=. */
+export function getShareUrl(vsId: number, inviteKey = "", chain: ChainKey = "arc"): string {
+  const path = vsPath(vsId, chain, inviteKey);
   if (typeof window !== "undefined") return `${window.location.origin}${path}`;
   return path;
 }

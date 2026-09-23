@@ -1,4 +1,8 @@
-import type { VSData } from "./contract";
+import { vsChain, type VSData } from "./contract";
+import { claimKey, type ChainKey } from "./chains";
+
+// Ids restart on every chain, so pending items are matched by chain + id.
+const keyOf = (v: Pick<VSData, "id" | "chain">) => claimKey(vsChain(v), v.id);
 
 const STORAGE_KEY = "proven_pending_vs";
 
@@ -37,19 +41,21 @@ function writeAll(items: PendingVS[]) {
 
 /** Save a newly created VS so it shows up immediately in lists. */
 export function savePendingVS(vs: PendingVS) {
-  const items = readAll().filter((i) => i.id !== vs.id);
+  const items = readAll().filter((i) => keyOf(i) !== keyOf(vs));
   items.unshift(vs);
   writeAll(items);
 }
 
-/** Look up a single pending VS by id. */
-export function getPendingVS(id: number): PendingVS | null {
-  return readAll().find((i) => i.id === id) ?? null;
+/** Look up a single pending VS by chain + id. */
+export function getPendingVS(id: number, chain: ChainKey = "arc"): PendingVS | null {
+  const key = claimKey(chain, id);
+  return readAll().find((i) => keyOf(i) === key) ?? null;
 }
 
 /** Remove a pending VS once it appears on-chain. */
-export function removePendingVS(id: number) {
-  writeAll(readAll().filter((i) => i.id !== id));
+export function removePendingVS(id: number, chain: ChainKey = "arc") {
+  const key = claimKey(chain, id);
+  writeAll(readAll().filter((i) => keyOf(i) !== key));
 }
 
 /**
@@ -64,13 +70,13 @@ export function mergePendingVS(
   const pending = readAll();
   if (pending.length === 0) return onChain;
 
-  const onChainIds = new Set(onChain.map((v) => v.id));
+  const onChainIds = new Set(onChain.map(keyOf));
   const stillPending: PendingVS[] = [];
 
   for (const p of pending) {
-    if (onChainIds.has(p.id)) {
+    if (onChainIds.has(keyOf(p))) {
       // appeared on-chain — drop from localStorage
-      removePendingVS(p.id);
+      removePendingVS(p.id, vsChain(p));
     } else if (
       !filterAddress ||
       p.creator.toLowerCase() === filterAddress.toLowerCase()
