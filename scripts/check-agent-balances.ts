@@ -1,8 +1,28 @@
 /**
- * Quick read of both Mimir agent wallets on Arc Testnet.
+ * Quick read of both Mimir agent wallets on every enabled chain.
+ * Stake balance is USDC (native on Arc, ERC-20 elsewhere); on the ERC-20
+ * chains gas is ETH, shown alongside.
  * Run: npx tsx scripts/check-agent-balances.ts
  */
-import { createArcPublicClient, weiToUsdc, getExplorerAddressUrl } from "../lib/arc";
+import { formatEther } from "viem";
+
+import { createChainPublicClient, getExplorerAddressUrl } from "../lib/arc";
+import { enabledChainKeys, getChain, type ChainKey } from "../lib/chains";
+import { stakeBalanceUsdc } from "../agents/shared/chains";
+
+async function line(chain: ChainKey, label: string, address: `0x${string}`): Promise<string> {
+  const cfg = getChain(chain);
+  const usdc = await stakeBalanceUsdc(chain, address)
+    .then((v) => `${v.toFixed(4)} USDC`)
+    .catch(() => "USDC unavailable (RPC error)");
+  // Arc pays gas in the same native USDC; only the ERC-20 chains need a gas line.
+  const gas = cfg.stakeMode === "erc20"
+    ? await createChainPublicClient(chain).getBalance({ address })
+        .then((wei) => ` · ${Number(formatEther(wei)).toFixed(5)} ${cfg.gasSymbol} gas`)
+        .catch(() => ` · ${cfg.gasSymbol} unavailable`)
+    : "";
+  return `  ${label.padEnd(15)} ${usdc}${gas}\n                  ${getExplorerAddressUrl(address, chain)}`;
+}
 
 async function main(): Promise<void> {
   const oracle  = process.env.CIRCLE_ORACLE_ADDRESS;
@@ -12,19 +32,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const client = createArcPublicClient();
-  const [ob, cb] = await Promise.all([
-    client.getBalance({ address: oracle  as `0x${string}` }),
-    client.getBalance({ address: creator as `0x${string}` }),
-  ]);
-
-  console.log("Arc Testnet balances:\n");
-  console.log(`  oracle          ${oracle}`);
-  console.log(`                  ${weiToUsdc(ob).toFixed(4)} USDC`);
-  console.log(`                  ${getExplorerAddressUrl(oracle)}\n`);
-  console.log(`  market-creator  ${creator}`);
-  console.log(`                  ${weiToUsdc(cb).toFixed(4)} USDC`);
-  console.log(`                  ${getExplorerAddressUrl(creator)}`);
+  console.log(`oracle          ${oracle}`);
+  console.log(`market-creator  ${creator}\n`);
+  for (const chain of enabledChainKeys()) {
+    console.log(`${getChain(chain).name} balances:`);
+    console.log(await line(chain, "oracle", oracle as `0x${string}`));
+    console.log(await line(chain, "market-creator", creator as `0x${string}`));
+    console.log("");
+  }
 }
 
 main().catch((err) => {
