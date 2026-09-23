@@ -1,7 +1,8 @@
 /**
  * CCTP V2 — Cross-Chain Transfer Protocol helpers
  *
- * Bridges USDC from any V2 chain to Arc Testnet (and back) via burn-and-mint.
+ * Bridges USDC between any V2 chains via burn-and-mint. The bridge page mints
+ * onto whichever Mimir network is selected (Arc, Base or Arbitrum Sepolia).
  * Reference: https://developers.circle.com/cctp
  *
  * V2 flow (Fast Transfer mode, ~13–19s finality):
@@ -59,6 +60,13 @@ export const CCTP_CHAINS: Record<string, CctpChain> = {
     domain:      6,
     usdc:        "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as Address,
     explorerUrl: "https://sepolia.basescan.org",
+  },
+  arbSepolia: {
+    name:        "Arbitrum Sepolia",
+    chainId:     421614,
+    domain:      3,
+    usdc:        "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d" as Address,
+    explorerUrl: "https://sepolia.arbiscan.io",
   },
   avalancheFuji: {
     name:        "Avalanche Fuji",
