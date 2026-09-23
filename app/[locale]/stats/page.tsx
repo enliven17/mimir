@@ -1,15 +1,27 @@
 import Link from "next/link";
 import { cachedFor } from "@/lib/server/ttl-cache";
+import { createChainPublicClient, getContractAddress } from "@/lib/arc";
 import {
-  createArcPublicClient,
-  getContractAddress,
-  getDeployBlock,
-  paginatedGetLogs,
-  weiToUsdc,
-  getExplorerAddressUrl,
-  getExplorerTxUrl,
-} from "@/lib/arc";
+  enabledChains,
+  explorerAddressUrl,
+  explorerTxUrl,
+  getChain,
+  stakeUnitsToUsdc,
+  vsPath,
+  type ChainKey,
+} from "@/lib/chains";
 import { MIMIR_ABI, STATE } from "@/lib/mimir-abi";
+import ChainBadge from "@/components/ui/ChainBadge";
+import {
+  CLAIM_CHALLENGED_EVENT,
+  CLAIM_CREATED_EVENT,
+  CLAIM_RESOLVED_EVENT,
+  acrossChains,
+  blockClock,
+  gasBalance,
+  scanEvent,
+  usdcBalance,
+} from "../_lib/chainScan";
 import { ZERO_ADDRESS } from "@/lib/constants";
 import { getPersonaForAddress } from "@/lib/council-resolver";
 import type { PersonaSpec } from "@/agents/council/personas";
@@ -33,6 +45,9 @@ export const revalidate = 30;
 // ── Data ─────────────────────────────────────────────────────────────────────
 
 interface Settlement {
+  chain:        ChainKey;
+  /** Approximate unix seconds, for ordering across chains. */
+  ts:           number;
   id:           number;
   winnerSide:   number;
   confidence:   number;
@@ -43,11 +58,13 @@ interface Settlement {
 }
 
 interface ClaimRow {
+  chain:                ChainKey;
   id:                   number;
   creator:              string;
   question:             string;
-  creatorStake:         bigint;
-  totalChallengerStake: bigint;
+  /** Whole USDC: stake units differ per chain (18 decimals on Arc, 6 elsewhere). */
+  creatorStakeUsdc:         number;
+  totalChallengerStakeUsdc: number;
   state:                number;
   winnerSide:           number;
   confidence:           number;
@@ -64,8 +81,13 @@ const STATS_READ_CONCURRENCY = 20;
 const fetchClaims = cachedFor(fetchClaimsUncached, 30_000);
 
 async function fetchClaimsUncached(): Promise<ClaimRow[]> {
-  const client  = createArcPublicClient();
-  const address = getContractAddress();
+  const perChain = await acrossChains("stats", fetchChainClaims);
+  return perChain.flatMap((r) => r.value);
+}
+
+async function fetchChainClaims(chain: ChainKey): Promise<ClaimRow[]> {
+  const client  = createChainPublicClient(chain);
+  const address = getContractAddress(chain);
 
   try {
     const count = await client.readContract({
@@ -80,11 +102,12 @@ async function fetchClaimsUncached(): Promise<ClaimRow[]> {
           address, abi: MIMIR_ABI, functionName: "getClaim", args: [BigInt(id)],
         }) as readonly any[];
         return {
+          chain,
           id,
           creator:              base[0] as string,
           question:             base[1] as string,
-          creatorStake:         BigInt(base[5]),
-          totalChallengerStake: BigInt(base[6]),
+          creatorStakeUsdc:         stakeUnitsToUsdc(chain, BigInt(base[5])),
+          totalChallengerStakeUsdc: stakeUnitsToUsdc(chain, BigInt(base[6])),
           state:                Number(base[9]),
           winnerSide:           Number(base[10]),
           confidence:           Number(base[12]),
@@ -118,20 +141,23 @@ async function fetchClaimsUncached(): Promise<ClaimRow[]> {
       const stillMissing = claims.filter((c) => c === null).length;
       if (stillMissing > 0) {
         console.warn(
-          `[stats] ${stillMissing}/${total} claims unreadable after retry — totals below are short by that many.`
+          `[stats] ${chain}: ${stillMissing}/${total} claims unreadable after retry — totals below are short by that many.`
         );
       }
     }
 
     return claims.filter((c): c is ClaimRow => c !== null);
   } catch (err) {
-    console.error("[stats] fetchClaims failed:", err);
+    console.error(`[stats] ${chain} fetchClaims failed:`, err);
     return [];
   }
 }
 
 interface StakerRow {
   address:        string;
+  /** Network and approximate time of the wallet's first stake anywhere. */
+  firstChain:     ChainKey;
+  firstTs:        number;
   firstBlock:     number;
   firstTxHash:    string;
   claimsCreated:  number;
@@ -148,66 +174,58 @@ interface StakerRow {
 // concurrent fetches ahead of it had already come back fine.
 const fetchStakerLogs = cachedFor(fetchStakerLogsUncached, 30_000);
 
-async function fetchStakerLogsUncached(): Promise<{ created: any[]; challenged: any[] }> {
-  const client  = createArcPublicClient();
-  const address = getContractAddress();
-  const fromBlock = getDeployBlock();
-  try {
-    const [created, challenged] = await Promise.all([
-      paginatedGetLogs(client, {
-        address,
-        event: {
-          type: "event",
-          name: "ClaimCreated",
-          inputs: [
-            { name: "id",       type: "uint256", indexed: true },
-            { name: "creator",  type: "address", indexed: true },
-            { name: "category", type: "string",  indexed: false },
-          ],
-        } as any,
-      }, fromBlock),
-      paginatedGetLogs(client, {
-        address,
-        event: {
-          type: "event",
-          name: "ClaimChallenged",
-          inputs: [
-            { name: "id",         type: "uint256", indexed: true },
-            { name: "challenger", type: "address", indexed: true },
-            { name: "stake",      type: "uint256", indexed: false },
-          ],
-        } as any,
-      }, fromBlock),
+/** A staking log tagged with where and (roughly) when it happened. */
+interface ChainLog {
+  chain: ChainKey;
+  ts:    number;
+  log:   any;
+}
+
+async function fetchStakerLogsUncached(): Promise<{ created: ChainLog[]; challenged: ChainLog[] }> {
+  const perChain = await acrossChains("stats", async (chain) => {
+    const [created, challenged, clock] = await Promise.all([
+      scanEvent(chain, CLAIM_CREATED_EVENT),
+      scanEvent(chain, CLAIM_CHALLENGED_EVENT),
+      blockClock(chain),
     ]);
-    return { created, challenged };
-  } catch (err) {
-    console.error("[stats] fetchStakerLogs failed:", err);
-    return { created: [], challenged: [] };
-  }
+    const tag = (log: any): ChainLog => ({ chain, ts: clock(Number(log.blockNumber ?? 0)), log });
+    return { created: created.map(tag), challenged: challenged.map(tag) };
+  });
+  return {
+    created:    perChain.flatMap((r) => r.value.created),
+    challenged: perChain.flatMap((r) => r.value.challenged),
+  };
 }
 
 function buildStakers(
-  created: any[],
-  challenged: any[],
-  oracleAddr?: string,
-  creatorAddr?: string,
+  created: ChainLog[],
+  challenged: ChainLog[],
+  oracleAddrs: string[],
+  creatorAddrs: string[],
 ): StakerRow[] {
   try {
-    const oracleLower  = oracleAddr?.toLowerCase();
-    const creatorLower = creatorAddr?.toLowerCase();
+    const oracleSet  = new Set(oracleAddrs.map((a) => a.toLowerCase()));
+    const creatorSet = new Set(creatorAddrs.map((a) => a.toLowerCase()));
     const byAddr = new Map<string, StakerRow>();
 
     const upsert = (
       rawAddr: string,
-      blockNumber: number,
-      txHash: string,
+      { chain, ts, log }: ChainLog,
       bump: "created" | "challenged",
     ) => {
       const addr = rawAddr.toLowerCase();
       if (!addr || addr === ZERO_ADDRESS) return;
+      const blockNumber = Number(log.blockNumber ?? 0);
+      const txHash: string = log.transactionHash;
       const existing = byAddr.get(addr);
       if (existing) {
-        if (blockNumber < existing.firstBlock) {
+        // Earliest by time across chains; block number only within one chain.
+        const earlier =
+          ts < existing.firstTs ||
+          (ts === existing.firstTs && chain === existing.firstChain && blockNumber < existing.firstBlock);
+        if (earlier) {
+          existing.firstChain  = chain;
+          existing.firstTs     = ts;
           existing.firstBlock  = blockNumber;
           existing.firstTxHash = txHash;
         }
@@ -218,37 +236,31 @@ function buildStakers(
       const persona = getPersonaForAddress(addr);
       byAddr.set(addr, {
         address: addr,
+        firstChain:     chain,
+        firstTs:        ts,
         firstBlock:     blockNumber,
         firstTxHash:    txHash,
         claimsCreated:  bump === "created"    ? 1 : 0,
         challengesMade: bump === "challenged" ? 1 : 0,
         kind:
-          addr === oracleLower  ? "oracle" :
-          addr === creatorLower ? "market-creator" :
+          oracleSet.has(addr)  ? "oracle" :
+          creatorSet.has(addr) ? "market-creator" :
           persona               ? "council" :
                                   "human",
         persona: persona ?? undefined,
       });
     };
 
-    for (const log of created as any[]) {
-      upsert(
-        String(log.args.creator ?? ""),
-        Number(log.blockNumber ?? 0),
-        log.transactionHash,
-        "created",
-      );
+    for (const entry of created) {
+      upsert(String(entry.log.args.creator ?? ""), entry, "created");
     }
-    for (const log of challenged as any[]) {
-      upsert(
-        String(log.args.challenger ?? ""),
-        Number(log.blockNumber ?? 0),
-        log.transactionHash,
-        "challenged",
-      );
+    for (const entry of challenged) {
+      upsert(String(entry.log.args.challenger ?? ""), entry, "challenged");
     }
 
-    return Array.from(byAddr.values()).sort((a, b) => a.firstBlock - b.firstBlock);
+    return Array.from(byAddr.values()).sort(
+      (a, b) => a.firstTs - b.firstTs || a.firstBlock - b.firstBlock,
+    );
   } catch (err) {
     console.error("[stats] fetchStakers failed:", err);
     return [];
@@ -257,64 +269,71 @@ function buildStakers(
 
 const fetchSettlements = cachedFor(fetchSettlementsUncached, 30_000);
 
+/** The timeline shows this many settlements, newest first across chains. */
+const SETTLEMENT_TIMELINE_SIZE = 12;
+
 async function fetchSettlementsUncached(): Promise<Settlement[]> {
-  const client  = createArcPublicClient();
-  const address = getContractAddress();
-  try {
-    const logs = await paginatedGetLogs(client, {
-      address,
-      event: {
-        type: "event",
-        name: "ClaimResolved",
-        inputs: [
-          { name: "id",           type: "uint256", indexed: true },
-          { name: "winnerSide",   type: "uint8",   indexed: false },
-          { name: "summary",      type: "string",  indexed: false },
-          { name: "confidence",   type: "uint8",   indexed: false },
-          { name: "evidenceHash", type: "bytes32", indexed: false },
-        ],
-      } as any,
-    }, getDeployBlock());
-    return logs.slice(-12).reverse().map((log: any) => ({
-      id:           Number(log.args.id ?? 0),
-      winnerSide:   Number(log.args.winnerSide ?? 0),
-      confidence:   Number(log.args.confidence ?? 0),
-      summary:      String(log.args.summary ?? "").slice(0, 180),
-      evidenceHash: String(log.args.evidenceHash ?? ""),
-      txHash:       log.transactionHash,
-      blockNumber:  Number(log.blockNumber ?? 0),
-    }));
-  } catch (err) {
-    console.error("[stats] fetchSettlements failed:", err);
-    return [];
-  }
+  const perChain = await acrossChains("stats", async (chain) => {
+    const [logs, clock] = await Promise.all([
+      scanEvent(chain, CLAIM_RESOLVED_EVENT),
+      blockClock(chain),
+    ]);
+    return logs.slice(-SETTLEMENT_TIMELINE_SIZE).map((log: any): Settlement => {
+      const blockNumber = Number(log.blockNumber ?? 0);
+      return {
+        chain,
+        ts:           clock(blockNumber),
+        id:           Number(log.args.id ?? 0),
+        winnerSide:   Number(log.args.winnerSide ?? 0),
+        confidence:   Number(log.args.confidence ?? 0),
+        summary:      String(log.args.summary ?? "").slice(0, 180),
+        evidenceHash: String(log.args.evidenceHash ?? ""),
+        txHash:       log.transactionHash,
+        blockNumber,
+      };
+    });
+  });
+  return perChain
+    .flatMap((r) => r.value)
+    .sort((a, b) => b.ts - a.ts || b.blockNumber - a.blockNumber)
+    .slice(0, SETTLEMENT_TIMELINE_SIZE);
 }
 
 const fetchOracleAndCreator = cachedFor(fetchOracleAndCreatorUncached, 30_000);
 
-async function fetchOracleAndCreatorUncached() {
-  const client = createArcPublicClient();
-  const address = getContractAddress();
-  try {
-    const oracle = (await client.readContract({
-      address, abi: MIMIR_ABI, functionName: "oracle",
-    })) as `0x${string}`;
-    const owner = (await client.readContract({
-      address, abi: MIMIR_ABI, functionName: "owner",
-    })) as `0x${string}`;
-    const [oracleBal, ownerBal] = await Promise.all([
-      client.getBalance({ address: oracle }),
-      client.getBalance({ address: owner }),
+interface ChainAgentVault {
+  chain:         ChainKey;
+  oracle:        `0x${string}`;
+  owner:         `0x${string}`;
+  oracleUsdc:    number;
+  ownerUsdc:     number;
+  /** ETH for gas on ERC-20 chains; null on Arc, where gas is USDC. */
+  oracleGas:     number | null;
+  ownerGas:      number | null;
+}
+
+async function fetchOracleAndCreatorUncached(): Promise<ChainAgentVault[]> {
+  const perChain = await acrossChains("stats", async (chain): Promise<ChainAgentVault> => {
+    const client = createChainPublicClient(chain);
+    const address = getContractAddress(chain);
+    const [oracle, owner] = (await Promise.all([
+      client.readContract({ address, abi: MIMIR_ABI, functionName: "oracle" }),
+      client.readContract({ address, abi: MIMIR_ABI, functionName: "owner" }),
+    ])) as [`0x${string}`, `0x${string}`];
+    const [oracleUsdc, ownerUsdc, oracleGas, ownerGas] = await Promise.all([
+      usdcBalance(chain, oracle),
+      usdcBalance(chain, owner),
+      gasBalance(chain, oracle),
+      gasBalance(chain, owner),
     ]);
-    return {
-      oracle, owner,
-      oracleBalance: oracleBal,
-      ownerBalance:  ownerBal,
-    };
-  } catch (err) {
-    console.error("[stats] fetchOracleAndCreator failed:", err);
-    return null;
-  }
+    return { chain, oracle, owner, oracleUsdc, ownerUsdc, oracleGas, ownerGas };
+  });
+  return perChain.map((r) => r.value);
+}
+
+function formatVaultBalance(usdc: number, gas: number | null, chain: ChainKey): string {
+  const base = `${usdc.toFixed(4)} USDC`;
+  return gas === null ? base : `${base} · ${gas.toFixed(4)} ${getChain(chain).gasSymbol}`;
 }
 
 // ── UI primitives ────────────────────────────────────────────────────────────
@@ -376,7 +395,7 @@ function tierLabel(c: number): { label: string; cls: string } {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function StatsPage() {
-  const [claims, settlements, agentInfo, stakerLogs] = await Promise.all([
+  const [claims, settlements, vaults, stakerLogs] = await Promise.all([
     fetchClaims(),
     fetchSettlements(),
     fetchOracleAndCreator(),
@@ -385,9 +404,10 @@ export default async function StatsPage() {
   const stakers = buildStakers(
     stakerLogs.created,
     stakerLogs.challenged,
-    agentInfo?.oracle,
-    agentInfo?.owner,
+    vaults.map((v) => v.oracle),
+    vaults.map((v) => v.owner),
   );
+  const networkNames = enabledChains().map((c) => c.name).join(", ");
   const humanStakers   = stakers.filter((s) => s.kind === "human");
   const councilStakers = stakers.filter((s) => s.kind === "council");
 
@@ -396,12 +416,12 @@ export default async function StatsPage() {
   const totalResolved  = resolvedClaims.length;
   const openClaims     = claims.filter((c) => c.state === 0 || c.state === 1).length;
 
-  // Total wagered = creator stakes + challenger stakes across all claims, in USDC.
-  const totalWageredWei = claims.reduce(
-    (acc, c) => acc + c.creatorStake + c.totalChallengerStake,
-    0n,
+  // Total wagered = creator stakes + challenger stakes across all claims and
+  // chains, in USDC (already normalised per chain in fetchChainClaims).
+  const totalWageredUsdc = claims.reduce(
+    (acc, c) => acc + c.creatorStakeUsdc + c.totalChallengerStakeUsdc,
+    0,
   );
-  const totalWageredUsdc = weiToUsdc(totalWageredWei);
 
   // Confidence tiers from resolved on-chain claim state. The settlement
   // timeline below is intentionally capped; aggregate stats must not be.
@@ -425,7 +445,7 @@ export default async function StatsPage() {
       <div className="mx-auto max-w-[1100px] px-4 pt-6 sm:px-6 lg:px-8">
       <header className="mb-8">
         <p className="text-center text-sm text-pv-muted">
-          Every number on this page is read directly from the Mimir contract on Arc Testnet.
+          Every number on this page is read directly from the Mimir contracts on {networkNames}.
         </p>
       </header>
 
@@ -457,26 +477,31 @@ export default async function StatsPage() {
           <p className="mb-5 text-xs text-pv-muted">
             The W3S-managed wallets that the oracle and market-creator sign through.
           </p>
-          {agentInfo ? (
+          {vaults.length > 0 ? (
             <div className="space-y-4 text-sm">
-              <div>
-                <div className="mb-1 flex items-baseline justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-pv-emerald">Oracle</span>
-                  <span className="font-mono tabular-nums text-pv-text">{weiToUsdc(agentInfo.oracleBalance).toFixed(4)} USDC</span>
+              {vaults.map((v) => (
+                <div key={v.chain} className="space-y-3">
+                  <ChainBadge chain={v.chain} />
+                  <div>
+                    <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-pv-emerald">Oracle</span>
+                      <span className="font-mono tabular-nums text-pv-text">{formatVaultBalance(v.oracleUsdc, v.oracleGas, v.chain)}</span>
+                    </div>
+                    <a className="block break-all font-mono text-[10px] text-pv-muted hover:text-pv-emerald" href={explorerAddressUrl(v.chain, v.oracle)} target="_blank" rel="noreferrer">
+                      {v.oracle}
+                    </a>
+                  </div>
+                  <div>
+                    <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-pv-emerald">Market-creator (owner)</span>
+                      <span className="font-mono tabular-nums text-pv-text">{formatVaultBalance(v.ownerUsdc, v.ownerGas, v.chain)}</span>
+                    </div>
+                    <a className="block break-all font-mono text-[10px] text-pv-muted hover:text-pv-emerald" href={explorerAddressUrl(v.chain, v.owner)} target="_blank" rel="noreferrer">
+                      {v.owner}
+                    </a>
+                  </div>
                 </div>
-                <a className="block break-all font-mono text-[10px] text-pv-muted hover:text-pv-emerald" href={getExplorerAddressUrl(agentInfo.oracle)} target="_blank" rel="noreferrer">
-                  {agentInfo.oracle}
-                </a>
-              </div>
-              <div>
-                <div className="mb-1 flex items-baseline justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-pv-emerald">Market-creator (owner)</span>
-                  <span className="font-mono tabular-nums text-pv-text">{weiToUsdc(agentInfo.ownerBalance).toFixed(4)} USDC</span>
-                </div>
-                <a className="block break-all font-mono text-[10px] text-pv-muted hover:text-pv-emerald" href={getExplorerAddressUrl(agentInfo.owner)} target="_blank" rel="noreferrer">
-                  {agentInfo.owner}
-                </a>
-              </div>
+              ))}
               <p className="border-t border-pv-border/30 pt-3 text-[11px] leading-relaxed text-pv-muted">
                 Neither wallet holds a local private key — both sign through Circle&apos;s Programmable Wallets (W3S).
               </p>
@@ -552,7 +577,7 @@ export default async function StatsPage() {
                     <div className="flex items-center gap-1.5">
                       {badge}
                       <a
-                        href={getExplorerAddressUrl(s.address)}
+                        href={explorerAddressUrl(s.firstChain, s.address)}
                         target="_blank"
                         rel="noreferrer"
                         className="truncate font-mono text-[11px] text-pv-text/85 hover:text-pv-emerald"
@@ -565,6 +590,9 @@ export default async function StatsPage() {
                       {s.claimsCreated > 0 && s.challengesMade > 0 && <> · </>}
                       {s.challengesMade > 0 && <>challenged {s.challengesMade}</>}
                       {" · block #"}{s.firstBlock}
+                    </div>
+                    <div className="mt-1">
+                      <ChainBadge chain={s.firstChain} compact />
                     </div>
                   </div>
                 </li>
@@ -587,11 +615,12 @@ export default async function StatsPage() {
               const side = SIDE_LABEL[s.winnerSide] ?? { label: "Unknown", color: "text-pv-muted" };
               const tier = tierLabel(s.confidence);
               return (
-                <div key={s.txHash} className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-4">
+                <div key={`${s.chain}-${s.txHash}`} className="rounded-2xl border border-pv-border/30 bg-pv-surface/70 p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className="font-mono text-pv-muted">Claim #{s.id}</span>
+                        <ChainBadge chain={s.chain} compact />
+                        <Link href={vsPath(s.id, s.chain)} className="font-mono text-pv-muted hover:text-pv-emerald">Claim #{s.id}</Link>
                         <span className={`font-bold ${side.color}`}>{side.label}</span>
                         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 font-bold uppercase tracking-[0.14em] ${tier.cls}`}>{tier.label} · {s.confidence}%</span>
                       </div>
@@ -605,7 +634,7 @@ export default async function StatsPage() {
                         )}
                     </div>
                     <a
-                      href={getExplorerTxUrl(s.txHash)}
+                      href={explorerTxUrl(s.chain, s.txHash)}
                       target="_blank"
                       rel="noreferrer"
                       className="shrink-0 rounded-lg border border-pv-border/40 px-2 py-1 text-[11px] text-pv-muted transition-colors hover:border-pv-emerald hover:text-pv-emerald"
@@ -625,9 +654,9 @@ export default async function StatsPage() {
         <h3 className="mb-4 font-display text-lg font-bold tracking-tight text-pv-text">Get testnet USDC</h3>
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            { label: "Circle Faucet",  href: "https://faucet.circle.com",         desc: "Testnet USDC on Arc and CCTP V2 chains" },
-            { label: "Arc Explorer",   href: "https://testnet.arcscan.app",       desc: "Inspect contract activity" },
-            { label: "Bridge",         href: "/bridge",                            desc: "CCTP V2 to pull USDC into Arc" },
+            { label: "Circle Faucet",  href: "https://faucet.circle.com",         desc: "Testnet USDC on Arc, Base, Arbitrum and other CCTP V2 chains" },
+            { label: "Arc Explorer",   href: getChain("arc").explorerUrl,          desc: "Inspect contract activity on the home chain" },
+            { label: "Bridge",         href: "/bridge",                            desc: "CCTP V2 to move USDC onto a Mimir network" },
           ].map(({ label, href, desc }) => {
             const isExternal = href.startsWith("http");
             const linkProps = isExternal
