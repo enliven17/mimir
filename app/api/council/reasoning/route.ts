@@ -9,7 +9,8 @@
  */
 
 import { requirePayment, json } from "@/lib/x402-server";
-import { verifyPass } from "@/lib/x402-pass";
+import { PASS_READ_LIMIT, passFromRequest, verifyPass } from "@/lib/x402-pass";
+import { allowRequest } from "@/lib/server/rate-limit";
 import { COUNCIL_PERSONAS } from "@/agents/council/personas";
 import { createChainPublicClient, getContractAddress } from "@/lib/arc";
 import { parseChainParam } from "@/lib/server/api-validation";
@@ -51,7 +52,11 @@ export async function GET(req: Request): Promise<Response> {
 
   // A valid subscription pass unlocks reads for its window — skip the per-read
   // 402. Otherwise charge the nanopayment into the persona's own wallet.
-  const hasPass = !!verifyPass(searchParams.get("pass"), PASS_PLAN);
+  // A pass is a bearer token, so each one gets a read budget: without it a
+  // single $0.01 pass could drive unlimited LLM calls with fresh claim ids.
+  const pass = verifyPass(passFromRequest(req), PASS_PLAN);
+  const hasPass =
+    !!pass && (await allowRequest("council-pass", `${pass.payer}:${pass.exp}`, PASS_READ_LIMIT, 24 * 3_600_000));
   let responseHeaders: Headers | undefined;
   if (!hasPass) {
     const gate = await requirePayment(req, PRICE, { payTo });

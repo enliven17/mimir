@@ -10,10 +10,29 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+/**
+ * X402_PASS_SECRET when set. Otherwise a key derived from the entity secret
+ * with a fixed label, so the wallet-custody secret itself is never used as a
+ * MAC key for tokens handed to the public.
+ */
 function secret(): string {
-  const s = process.env.X402_PASS_SECRET ?? process.env.CIRCLE_ENTITY_SECRET;
-  if (!s) throw new Error("X402_PASS_SECRET (or CIRCLE_ENTITY_SECRET) required to sign passes");
-  return s;
+  const own = process.env.X402_PASS_SECRET?.trim();
+  if (own) return own;
+  const entity = process.env.CIRCLE_ENTITY_SECRET?.trim();
+  if (!entity) throw new Error("X402_PASS_SECRET (or CIRCLE_ENTITY_SECRET) required to sign passes");
+  return createHmac("sha256", entity).update("mimir/x402-pass/v1").digest("base64url");
+}
+
+/** Reads a pass may buy over its window; past this it pays per read again. */
+export const PASS_READ_LIMIT = Number(process.env.COUNCIL_PASS_READ_LIMIT ?? 100);
+
+/**
+ * The pass a request carries: the `x-mimir-pass` header, or the `pass` query
+ * parameter for older clients (query strings end up in access logs, headers
+ * do not).
+ */
+export function passFromRequest(req: Request): string | null {
+  return req.headers.get("x-mimir-pass") ?? new URL(req.url).searchParams.get("pass");
 }
 
 function sign(body: string): string {

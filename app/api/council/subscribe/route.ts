@@ -4,9 +4,11 @@
  * POST /api/council/subscribe   ($0.01 → platform seller)
  *   → { pass, expiresAt, plan }
  *
- * Pass the returned token to /api/council/reasoning?...&pass=<pass> and reads
- * are free until it expires (default 10 min). This is the recurring/streaming
- * access tier on top of the per-read nanopayment. Unpaid → 402.
+ * Send the returned token as the `x-mimir-pass` header (or `&pass=` on older
+ * clients) to /api/council/reasoning and reads are free until it expires
+ * (default 10 min) or its read budget runs out (COUNCIL_PASS_READ_LIMIT). This
+ * is the recurring/streaming access tier on top of the per-read nanopayment.
+ * Unpaid → 402.
  */
 
 import { requirePayment, json } from "@/lib/x402-server";
