@@ -49,6 +49,9 @@ import { txErrorMessage } from "@/lib/tx-errors";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
 import { GlassCard, Button, Input, ListboxField } from "@/components/ui";
 import ClaimStrengthCard from "@/components/ClaimStrengthCard";
+import ResolverToggle from "@/components/vs/ResolverToggle";
+import { priceCheckTarget } from "@/lib/price-consensus";
+import { parseResolverSpec, priceSpecFromQuestion, resolverLine, winnerFor } from "@/lib/resolver-spec";
 import CreateChallengeTicket from "@/components/vs/CreateChallengeTicket";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import CreateSuccessScreen from "@/components/vs/CreateSuccessScreen";
@@ -244,6 +247,19 @@ export default function CreatePage() {
     settlementRule.trim() === recommendedSettlementTemplate.trim();
   const ticketSettlementPreview =
     settlementRule.trim() || recommendedSettlementTemplate;
+
+  // A single-asset price threshold with Yes/No sides can settle from data alone.
+  const priceResolver = useMemo(() => {
+    const target = priceCheckTarget(question, settlementRule);
+    const spec = target ? priceSpecFromQuestion(question, target.symbol, target.threshold) : null;
+    if (!spec || spec.kind !== "price" || !winnerFor(true, creatorPos, opponentPos)) return null;
+    return parseResolverSpec(settlementRule) ? null : spec;
+  }, [question, settlementRule, creatorPos, opponentPos]);
+  const [useResolver, setUseResolver] = useState(true);
+  const finalSettlementRule = (): string =>
+    priceResolver && useResolver
+      ? `${settlementRule.trim()}\n${resolverLine(priceResolver)}`.trim()
+      : settlementRule.trim();
   const ticketDraftId = useMemo(() => {
     const s = `${question}|${creatorPos}|${stake}|${marketType}|pool`;
     let h = 2166136261;
@@ -926,7 +942,7 @@ export default function CreatePage() {
       odds_mode: normalizedOddsMode,
       challenger_payout_bps: 0,
       handicap_line: "",
-      settlement_rule: settlementRule.trim(),
+      settlement_rule: finalSettlementRule(),
       max_challengers: normalizedMaxChallengers,
       visibility,
       invite_key: inviteKey,
@@ -1859,6 +1875,9 @@ export default function CreatePage() {
                   stakeAmount={stake}
                   walletAddress={address ?? undefined}
                 />
+                {priceResolver ? (
+                  <ResolverToggle spec={priceResolver} enabled={useResolver} onChange={setUseResolver} />
+                ) : null}
                 <ClaimStrengthCard
                   input={claimStrengthInput}
                   moderation={
