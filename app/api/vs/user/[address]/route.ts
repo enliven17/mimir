@@ -6,6 +6,7 @@ import {
 } from "@/lib/server/api-validation";
 import { getUserVsSnapshot } from "@/lib/server/vs-index";
 import { VS_CACHE_HEADERS } from "@/lib/server/vs-cache";
+import { allowRequest, clientIp, tooManyRequests } from "@/lib/server/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,11 @@ export async function GET(
           status: 400,
         }
       );
+    }
+
+    // A forced refresh is a synchronous chain scan; cap how often one client can ask.
+    if (refreshValue === "1" && !(await allowRequest("vs-user-refresh", clientIp(request), 10, 60_000))) {
+      return tooManyRequests(60);
     }
 
     const { items, cache } = await getUserVsSnapshot(address, {

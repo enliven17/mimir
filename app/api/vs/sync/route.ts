@@ -7,6 +7,7 @@ import {
   parsePositiveIntegerParam,
 } from "@/lib/server/api-validation";
 import { triggerPostWriteRefresh } from "@/lib/server/vs-index";
+import { allowRequest, clientIp, tooManyRequests } from "@/lib/server/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -18,6 +19,12 @@ type RefreshBody = {
 };
 
 export async function POST(request: Request) {
+  // Public and RPC-backed: a browser calls it after its own writes, which is a
+  // handful a minute, not a stream.
+  if (!(await allowRequest("vs-sync", clientIp(request), 30, 60_000))) {
+    return tooManyRequests(60);
+  }
+
   try {
     const payload = (await request.json()) as RefreshBody;
     const claimId = parsePositiveIntegerParam(
