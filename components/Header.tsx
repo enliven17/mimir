@@ -239,13 +239,14 @@ export default function Header() {
         ) : (
           <>
             {/* Desktop nav */}
-            <div className="hidden items-center gap-2 md:flex lg:gap-3">
+            <div className="hidden items-center gap-2 xl:flex xl:gap-3">
               {NAV_ITEMS.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
+                    aria-current={isActive ? "page" : undefined}
                     className={`chip relative whitespace-nowrap text-[13px] transition-all ${
                       item.accent
                         ? "border-pv-emerald bg-pv-emerald font-bold text-white hover:brightness-110"
@@ -282,7 +283,7 @@ export default function Header() {
             </div>
 
             {/* Mobile */}
-            <div className="flex items-center gap-2 md:hidden">
+            <div className="flex items-center gap-2 xl:hidden">
               <NetworkSelector />
               {isConnected && address ? (
                 <WalletAccountMenu
@@ -326,7 +327,7 @@ export default function Header() {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-b border-white/[0.08] bg-pv-surface/95 backdrop-blur-xl md:hidden"
+            className="overflow-hidden border-t border-b border-white/[0.08] bg-pv-surface/95 backdrop-blur-xl xl:hidden"
           >
             <LayoutGroup id="mobile-header-nav">
               <nav
