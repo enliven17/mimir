@@ -8,7 +8,9 @@
 import {
   createPublicClient,
   http,
+  encodeFunctionData,
   parseEventLogs,
+  parseSignature,
   type Log,
   type PublicClient,
 } from "viem";
@@ -683,6 +685,18 @@ async function sendBrowserTx(
     }
   }
 
+  const call = writeCall(chain, functionName, args);
+
+  // One signature instead of approve + stake, where the escrow supports it.
+  const permitted = await permitMulticall(chain, wc, account, valueUsdc, functionName, call).catch((err) => {
+    // A user saying no is final; anything else (no permit support on the token,
+    // an RPC hiccup) falls back to the approve path.
+    const text = String(err?.shortMessage ?? err?.message ?? "");
+    if (err?.code === 4001 || err?.name === "UserRejectedRequestError" || /user (rejected|denied)/i.test(text)) throw err;
+    return null;
+  });
+  if (permitted) return awaitReceipt(chain, permitted);
+
   await ensureAllowance(chain, account, valueUsdc, (amount) =>
     wc.writeContract({
       address: cfg.usdc,
@@ -694,7 +708,6 @@ async function sendBrowserTx(
     }),
   );
 
-  const call = writeCall(chain, functionName, args);
   const txHash = await wc.writeContract({
     address:      requireContractAddress(chain),
     abi:          call.abi as any,
@@ -707,7 +720,10 @@ async function sendBrowserTx(
     account,
     chain:        cfg.chain,
   });
+  return awaitReceipt(chain, txHash);
+}
 
+async function awaitReceipt(chain: ChainKey, txHash: `0x${string}`): Promise<ContractWriteResult> {
   const explorerUrl = explorerTxUrl(chain, txHash);
   try {
     const receipt = await Promise.race([
@@ -721,6 +737,86 @@ async function sendBrowserTx(
     return { txHash, explorerUrl, explorerTxHash: explorerUrl, receipt: null, pending: true };
   }
 }
+
+const permitSupport = new Map<ChainKey, boolean>();
+
+/**
+ * ERC-20 stake whose allowance is short, on an escrow build with multicall:
+ * sign an EIP-2612 permit (no transaction) and send permit + stake as one
+ * multicall. Returns the tx hash, or null when this path does not apply, in
+ * which case the caller falls back to approve-then-stake.
+ */
+async function permitMulticall(
+  chain: ChainKey,
+  wc: { signTypedData: (args: any) => Promise<`0x${string}`>; writeContract: (args: any) => Promise<`0x${string}`> },
+  account: `0x${string}`,
+  valueUsdc: number,
+  functionName: string,
+  call: { abi: readonly unknown[]; args: unknown[] },
+): Promise<`0x${string}` | null> {
+  const cfg = getChain(chain);
+  if (cfg.stakeMode !== "erc20" || valueUsdc <= 0 || cfg.abiVersion !== "v3") return null;
+  const escrow = requireContractAddress(chain);
+  const client = getPublicClient(chain);
+
+  // The multicall/permit build is the one with a dispute window; older v3
+  // deploys lack both, so probe once per chain.
+  if (!permitSupport.has(chain)) {
+    const ok = await client.readContract({ address: escrow, abi: MIMIR_V3_ABI, functionName: "disputeWindow" }).then(() => true, () => false);
+    permitSupport.set(chain, ok);
+  }
+  if (!permitSupport.get(chain)) return null;
+
+  const need = usdcToStakeUnits(chain, valueUsdc);
+  const [allowance, balance] = await Promise.all([
+    client.readContract({ address: cfg.usdc, abi: erc20Abi, functionName: "allowance", args: [account, escrow] }),
+    client.readContract({ address: cfg.usdc, abi: erc20Abi, functionName: "balanceOf", args: [account] }),
+  ]);
+  if (balance < need) throw new Error(`Not enough USDC on ${cfg.name}: need ${valueUsdc}, have ${stakeUnitsToUsdc(chain, balance)}`);
+  if (allowance >= need) return null;
+
+  const [name, version, nonce] = await Promise.all([
+    client.readContract({ address: cfg.usdc, abi: PERMIT_TOKEN_ABI, functionName: "name" }),
+    client.readContract({ address: cfg.usdc, abi: PERMIT_TOKEN_ABI, functionName: "version" }),
+    client.readContract({ address: cfg.usdc, abi: PERMIT_TOKEN_ABI, functionName: "nonces", args: [account] }),
+  ]);
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+  const signature = await wc.signTypedData({
+    account,
+    domain: { name, version, chainId: cfg.chain.id, verifyingContract: cfg.usdc },
+    types: {
+      Permit: [
+        { name: "owner", type: "address" },
+        { name: "spender", type: "address" },
+        { name: "value", type: "uint256" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" },
+      ],
+    },
+    primaryType: "Permit",
+    message: { owner: account, spender: escrow, value: need, nonce, deadline },
+  });
+  const { r, s, v } = parseSignature(signature);
+
+  const data = [
+    encodeFunctionData({ abi: MIMIR_V3_ABI, functionName: "usdcPermit", args: [need, deadline, Number(v ?? 27n), r, s] }),
+    encodeFunctionData({ abi: call.abi as any, functionName: functionName as any, args: call.args as any }),
+  ];
+  return wc.writeContract({
+    address: escrow,
+    abi: MIMIR_V3_ABI,
+    functionName: "multicall",
+    args: [data],
+    account,
+    chain: cfg.chain,
+  });
+}
+
+const PERMIT_TOKEN_ABI = [
+  { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "version", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "nonces", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+] as const;
 
 /**
  * Ask the read index to re-read one claim right after a confirmed write, so
