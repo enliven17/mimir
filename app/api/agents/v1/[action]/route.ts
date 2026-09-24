@@ -87,32 +87,21 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
     throw err;
   }
 
-  // A retry with the same idempotency key replays the stored answer rather than
-  // executing again. Issuing two API keys because a socket hiccuped is not a
-  // retry, it is a second key nobody knows about.
-  if (env.idempotencyKey) {
-    const stored = await getStoredResponse(env.agentId, env.idempotencyKey).catch(() => null);
-    if (stored) {
-      return new Response(JSON.stringify(stored.body), {
-        status: stored.status,
-        headers: { "content-type": "application/json", "idempotent-replay": "true" },
-      });
-    }
-  }
-
   try {
     const result = env.action === "register"
       ? await handleRegister(env)
       : await handleAuthenticated(env, req.headers.get("authorization"));
 
-    if (env.idempotencyKey) {
-      await storeResponse(env.agentId, env.idempotencyKey, env.action, result.status, result.body).catch(
-        () => undefined,
-      );
+    if (env.idempotencyKey && !result.replay) {
+      await storeResponse(env.agentId, env.idempotencyKey, env.action, result.status, storable(env.action, result.body))
+        .catch(() => undefined);
     }
     return new Response(JSON.stringify(result.body), {
       status: result.status,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(result.replay ? { "idempotent-replay": "true" } : {}),
+      },
     });
   } catch (err) {
     if (err instanceof AgentEnvelopeError) {
@@ -127,16 +116,36 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
 interface Handled {
   status: number;
   body: unknown;
+  replay?: boolean;
+}
+
+/**
+ * Runs only after the caller has proven who they are. A retry with the same
+ * idempotency key and action replays the stored answer rather than executing
+ * again; issuing two API keys because a socket hiccuped is not a retry, it is a
+ * second key nobody knows about. Otherwise the nonce is burned here.
+ */
+async function replayOrConsumeNonce(env: AgentEnvelope, nonce: string | null): Promise<Handled | null> {
+  if (env.idempotencyKey) {
+    const stored = await getStoredResponse(env.agentId, env.idempotencyKey, env.action).catch(() => null);
+    if (stored) return { ...stored, replay: true };
+  }
+  if (nonce && !(await consumeNonce(env.agentId, nonce))) {
+    throw new AgentEnvelopeError("nonce already used", 409, "nonce_replay");
+  }
+  return null;
+}
+
+/** A freshly issued key is shown once and never persisted, not even in the replay table. */
+function storable(action: string, body: unknown): unknown {
+  if (action !== "issueKey" || !body || typeof body !== "object") return body;
+  const { key: _key, ...rest } = body as Record<string, unknown>;
+  return { ...rest, key: null, note: "the key was shown once; revoke it by prefix if it was lost" };
 }
 
 // ── register ────────────────────────────────────────────────────────────────
 
 async function handleRegister(env: AgentEnvelope): Promise<Handled> {
-  const existing = await getAgent(env.agentId);
-  if (existing) {
-    throw new AgentEnvelopeError("that agent id is taken", 409, "agent_exists");
-  }
-
   const ownerWallet = normalizeAddress(env.body.ownerWallet);
   const operatorWallet = normalizeAddress(env.body.operatorWallet);
   const payoutWallet = normalizeAddress(env.body.payoutWallet) ?? ownerWallet;
@@ -192,8 +201,11 @@ async function handleRegister(env: AgentEnvelope): Promise<Handled> {
     throw new AgentEnvelopeError("operator proof does not match", 401, "bad_operator_proof");
   }
 
-  if (!(await consumeNonce(env.agentId, env.nonce))) {
-    throw new AgentEnvelopeError("nonce already used", 409, "nonce_replay");
+  const replay = await replayOrConsumeNonce(env, env.nonce);
+  if (replay) return replay;
+
+  if (await getAgent(env.agentId)) {
+    throw new AgentEnvelopeError("that agent id is taken", 409, "agent_exists");
   }
 
   const agent = await createAgent({
@@ -213,7 +225,9 @@ async function handleRegister(env: AgentEnvelope): Promise<Handled> {
 // ── everything else ─────────────────────────────────────────────────────────
 
 async function handleAuthenticated(env: AgentEnvelope, authorization: string | null): Promise<Handled> {
-  const { agent, credential } = await authenticateAgentRequest(env, authorization);
+  const { agent, credential, nonce } = await authenticateAgentRequest(env, authorization);
+  const replay = await replayOrConsumeNonce(env, nonce);
+  if (replay) return replay;
 
   const used = await requestsLastHour(agent.agentId).catch(() => 0);
   const decision = authorizeAction({ agent, action: env.action, requestsLastHour: used });
@@ -273,7 +287,8 @@ async function handleAuthenticated(env: AgentEnvelope, authorization: string | n
         label: str(env.body, "label") || "default",
         createdAt: Date.now(),
       });
-      // Shown once. Only the SHA-256 is kept, so this cannot be re-read later.
+      // Shown once. Only the SHA-256 is kept (the replay table stores a redacted
+      // copy), so this cannot be re-read later.
       return { status: 201, body: { ok: true, key, prefix: apiKeyPrefix(key) } };
     }
 

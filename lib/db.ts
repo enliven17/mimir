@@ -359,6 +359,8 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     response TEXT NOT NULL,
     at BIGINT NOT NULL DEFAULT 0
   )` },
+  // Older builds stored issued API keys here in plaintext. They are redacted now.
+  { sql: "DELETE FROM agent_api_responses WHERE action = 'issueKey' AND response LIKE '%\"key\":\"mk_%'" },
   { sql: `CREATE TABLE IF NOT EXISTS agent_request_audit (
     id BIGSERIAL PRIMARY KEY,
     agent_id TEXT NOT NULL,

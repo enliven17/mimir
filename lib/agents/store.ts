@@ -199,10 +199,11 @@ export interface StoredResponse {
 export async function getStoredResponse(
   agentId: string,
   idempotencyKey: string,
+  action: string,
 ): Promise<StoredResponse | null> {
   const rows = await query(
-    "SELECT status, response FROM agent_api_responses WHERE idempotency_key = ? AND agent_id = ?",
-    [`${agentId}:${idempotencyKey}`, agentId],
+    "SELECT status, response FROM agent_api_responses WHERE idempotency_key = ? AND agent_id = ? AND action = ?",
+    [`${agentId}:${idempotencyKey}`, agentId, action],
   );
   if (!rows[0]) return null;
   try {

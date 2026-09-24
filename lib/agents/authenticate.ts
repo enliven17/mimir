@@ -18,7 +18,7 @@ import {
 } from "./api";
 import { hashApiKey, parseApiKeyHeader } from "./api-keys";
 import { verifyAgentSignature } from "./signature";
-import { agentIdForKeyHash, consumeNonce, getAgent } from "./store";
+import { agentIdForKeyHash, getAgent } from "./store";
 import type { AgentRecord } from "./registry";
 
 export type Credential = "owner_signature" | "operator_signature" | "api_key";
@@ -26,6 +26,8 @@ export type Credential = "owner_signature" | "operator_signature" | "api_key";
 export interface Authenticated {
   agent: AgentRecord;
   credential: Credential;
+  /** Verified but not yet burned: the route burns it once it knows this is not an idempotent retry. */
+  nonce: string | null;
 }
 
 export function requiresOwnerSignature(action: AgentAction): boolean {
@@ -60,8 +62,8 @@ export async function authenticateAgentRequest(
         "owner_signature_required",
       );
     }
-    await assertFreshSignature(env, agent.ownerWallet, agent.agentId);
-    return { agent, credential: "owner_signature" };
+    const nonce = await verifySignedEnvelope(env, agent.ownerWallet);
+    return { agent, credential: "owner_signature", nonce };
   }
 
   const key = parseApiKeyHeader(authorizationHeader);
@@ -70,27 +72,25 @@ export async function authenticateAgentRequest(
     if (owner !== agent.agentId) {
       throw new AgentEnvelopeError("invalid API key", 401, "bad_api_key");
     }
-    return { agent, credential: "api_key" };
+    return { agent, credential: "api_key", nonce: null };
   }
 
   if (!env.signature) {
     throw new AgentEnvelopeError("no credential presented", 401, "no_credential");
   }
-  await assertFreshSignature(env, agent.operatorWallet, agent.agentId);
-  return { agent, credential: "operator_signature" };
+  const nonce = await verifySignedEnvelope(env, agent.operatorWallet);
+  return { agent, credential: "operator_signature", nonce };
 }
 
 /**
- * Verify the signature and burn the nonce.
+ * Verify the signature and return the nonce it carries.
  *
- * The nonce is consumed only after the signature checks out, so an attacker
- * cannot invalidate a legitimate caller's nonce by replaying it with garbage.
+ * The nonce is burned by the caller after the idempotency lookup, so a retry of
+ * the same signed envelope replays its stored answer instead of failing on its
+ * own nonce. It is still only burned after the signature checks out, so an
+ * attacker cannot invalidate a legitimate caller's nonce with garbage.
  */
-export async function assertFreshSignature(
-  env: AgentEnvelope,
-  expectedSigner: string,
-  agentId: string,
-): Promise<void> {
+export async function verifySignedEnvelope(env: AgentEnvelope, expectedSigner: string): Promise<string> {
   if (!env.nonce) {
     throw new AgentEnvelopeError("a signed request needs a nonce", 400, "missing_nonce");
   }
@@ -105,7 +105,5 @@ export async function assertFreshSignature(
   if (!ok) {
     throw new AgentEnvelopeError("signature does not match", 401, "bad_signature");
   }
-  if (!(await consumeNonce(agentId, env.nonce))) {
-    throw new AgentEnvelopeError("nonce already used", 409, "nonce_replay");
-  }
+  return env.nonce;
 }
