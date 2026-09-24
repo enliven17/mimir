@@ -32,7 +32,7 @@ Mimir started as a macro-stake claim market. The agents running it are now **pay
 **Architecture:** the buyer signs the x402 EIP-3009 authorization through W3S `signTypedData` (no key), the seller side runs Circle's Gateway middleware which settles through Circle's hosted facilitator on Arc testnet. See `lib/x402.ts` (buy) and `lib/x402-server.ts` (sell).
 
 **Contracts on Arc Testnet:**
-- **v2 (live):** [`0x50036154a3bc51f2e7d604a2fbc596f02bb555a1`](https://testnet.arcscan.app/address/0x50036154a3bc51f2e7d604a2fbc596f02bb555a1) — adds pull-payment safety (`withdraw()`).
+- **v2 (live):** [`0x50036154a3bc51f2e7d604a2fbc596f02bb555a1`](https://testnet.arcscan.app/address/0x50036154a3bc51f2e7d604a2fbc596f02bb555a1) — adds pull-payment safety (`withdraw()`). **Do not call `createRematch` on v2 directly:** it records the contract itself as the creator, so the rematch stake can never be paid out. The app blocks it; MimirV3 fixes it (see `contracts/test/Mimir.t.sol`).
 - **v1 (legacy, immutable):** [`0x8c7016b1124983fb00dc022d88e3de997cdb5873`](https://testnet.arcscan.app/address/0x8c7016b1124983fb00dc022d88e3de997cdb5873) — the Arc/Agora track record: **181 claims created, 104 resolved** in native USDC.
 
 ```mermaid
