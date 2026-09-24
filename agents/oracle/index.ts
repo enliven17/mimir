@@ -70,6 +70,7 @@ import {
   type CouncilVote,
 } from "./council-vote";
 import { reportingPoll } from "../../lib/ops/heartbeat";
+import { isFeatureEnabled, isPaused } from "../../lib/ops/flags";
 import {
   crossCheckThreshold,
   priceCheckTarget,
@@ -80,7 +81,7 @@ import { fetchPriceReadings, hasSecondPriceSource } from "../../lib/server/price
 // ── Config ────────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = Number(process.env.ORACLE_POLL_INTERVAL_MS ?? "60000");
 const MAX_CONTENT_CHARS     = 8_000;
-const AUTO_CHALLENGE        = process.env.AUTO_CHALLENGE === "1";
+const AUTO_CHALLENGE        = process.env.AUTO_CHALLENGE === "1" || isFeatureEnabled("auto_challenge");
 const CHALLENGE_STAKE_USDC  = Number(process.env.CHALLENGE_STAKE_USDC ?? "2");
 const CHALLENGE_CONFIDENCE  = Number(process.env.CHALLENGE_CONFIDENCE ?? "80");
 const LLM_THROTTLE_MS       = Number(process.env.ORACLE_LLM_THROTTLE_MS ?? "8000");
@@ -97,7 +98,7 @@ const EVIDENCE_MIN_USDC   = Number(process.env.EVIDENCE_MIN_USDC ?? "0.001");// 
 // verdict via x402 (paid into the persona's wallet) and settles by their tally
 // — multi-agent consensus, on-chain. Falls back to the solo verdict if too few
 // jurors vote. Off by default so a missing web server never blocks settlement.
-const COUNCIL_SETTLEMENT  = process.env.COUNCIL_SETTLEMENT === "1";
+const COUNCIL_SETTLEMENT  = process.env.COUNCIL_SETTLEMENT === "1" || isFeatureEnabled("council_settlement");
 const COUNCIL_BASE_URL    = process.env.MIMIR_BASE_URL ?? "http://localhost:3000";
 const COUNCIL_QUORUM      = Number(process.env.COUNCIL_QUORUM ?? "3");
 const COUNCIL_VOTE_CAP    = Number(process.env.COUNCIL_VOTE_CAP_USDC ?? "0.005");
@@ -106,7 +107,7 @@ const COUNCIL_VOTE_CAP    = Number(process.env.COUNCIL_VOTE_CAP_USDC ?? "0.005")
 // order seeing prior reports, the market stops with probability ALPHA per vote
 // once quorum is met, and positive cross-entropy scorers (judged against the
 // oracle's terminal, history-informed assessment) split a bonus pool.
-const COUNCIL_SELF_RESOLVING = COUNCIL_SETTLEMENT && process.env.COUNCIL_SELF_RESOLVING === "1";
+const COUNCIL_SELF_RESOLVING = COUNCIL_SETTLEMENT && (process.env.COUNCIL_SELF_RESOLVING === "1" || isFeatureEnabled("council_self_resolving"));
 const COUNCIL_ALPHA          = Number(process.env.COUNCIL_ALPHA ?? "0.25");
 const COUNCIL_BONUS_USDC     = Number(process.env.COUNCIL_BONUS_USDC ?? "0.01");
 const SETTLEMENT_DELAY_MS = Number(process.env.ORACLE_SETTLEMENT_DELAY_MS ?? "900000");
@@ -683,7 +684,7 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
 
 // ── ROLE 2: Challenge mispriced open claim ────────────────────────────────────
 async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
-  if (!AUTO_CHALLENGE) return;
+  if (!AUTO_CHALLENGE || isPaused("stake")) return;
 
   const oracleAddress = ORACLE_ADDR.toLowerCase();
 
@@ -839,6 +840,10 @@ async function poll(): Promise<void> {
   // paces the oracle as a whole rather than per network.
   // The cooldown is a timestamp, not a sleep: a poll never blocks for minutes,
   // so the next one cannot start on top of it and settle the same claim twice.
+  if (isPaused("oracle_settlement") && expiredActive.length > 0) {
+    console.log(`[oracle] Settlement paused (MIMIR_PAUSE_ORACLE_SETTLEMENT): ${expiredActive.length} claim(s) waiting.`);
+    expiredActive.length = 0;
+  }
   expiredActive.sort((a, b) => Number(a.deadline - b.deadline));
   for (let i = 0; i < expiredActive.length; i++) {
     const claim = expiredActive[i];

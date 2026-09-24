@@ -27,6 +27,7 @@ import { registerBatchScheme } from "@circle-fin/x402-batching/client";
 import { createChainPublicClient } from "./arc";
 import { chainByEvmId, getChain, type ChainKey } from "./chains";
 import { signTypedDataW3S, type Eip712TypedData } from "./circle-w3s";
+import { assertNotPaused } from "./ops/flags";
 
 export interface PayingAgent {
   /** W3S wallet id that signs (and funds) the payment. The Arc wallet. */
@@ -184,6 +185,8 @@ export async function fetchWithBudget(
   maxAtomic: bigint,
   init?: RequestInit,
 ): Promise<PaidFetchResult> {
+  assertNotPaused("x402_buying");
+
   // Redirects are refused on both requests: the paid retry must hit the exact
   // resource that was quoted, not wherever the seller bounces it.
   init = { ...init, redirect: "error" };

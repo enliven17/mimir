@@ -21,6 +21,7 @@ import {
 } from "./circle-w3s";
 import { MIMIR_ABI } from "./mimir-abi";
 import { MIMIR_V3_ABI } from "./mimir-v3-abi";
+import { assertNotPaused, capabilityForEscrowCall } from "./ops/flags";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -107,6 +108,10 @@ async function ensureW3SAllowance(a: EscrowWriteArgs, need: bigint): Promise<voi
 
 /** Submit an escrow call through W3S and wait for the tx hash. */
 export async function w3sEscrowWrite(a: EscrowWriteArgs): Promise<Hex> {
+  // Every agent write funnels through here, so the pause switches bite before
+  // anything is signed, whichever worker asked.
+  const capability = capabilityForEscrowCall(a.functionName);
+  if (capability) assertNotPaused(capability);
   const cfg = getChain(a.chain);
   const stake = a.stakeUsdc ?? 0;
   if (stake > 0 && cfg.stakeMode === "erc20") {

@@ -6,6 +6,7 @@
  * database outage must never stop an agent from settling markets.
  */
 import { getSyncMeta, setSyncMeta } from "../db";
+import { capabilityForWorker, isPaused } from "./flags";
 
 export type WorkerName = "oracle" | "market_creator" | "council";
 
@@ -68,7 +69,13 @@ export function reportingPoll(
 ): () => Promise<void> {
   const intervalSec = Math.round(intervalMs / 1000);
   void beat(worker, intervalSec, true);
+  const pauseSwitch = capabilityForWorker(worker);
   return async () => {
+    if (pauseSwitch && isPaused(pauseSwitch)) {
+      console.log(`[${worker}] paused (MIMIR_PAUSE_${pauseSwitch.toUpperCase()}), skipping this cycle.`);
+      await beat(worker, intervalSec, true);
+      return;
+    }
     try {
       await poll();
       await beat(worker, intervalSec, true);

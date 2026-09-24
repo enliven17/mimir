@@ -48,3 +48,16 @@ test("withdrawing and reading are never pausable", () => {
     assert.equal((PAUSABLE as readonly string[]).includes(cap), false);
   }
 });
+
+test("escrow writes map to the pause switch that guards them", async () => {
+  const { capabilityForEscrowCall, capabilityForWorker } = await import("../../lib/ops/flags");
+  assert.equal(capabilityForEscrowCall("createClaim"), "create_market");
+  assert.equal(capabilityForEscrowCall("createRematch"), "create_market");
+  assert.equal(capabilityForEscrowCall("challengeClaim"), "stake");
+  assert.equal(capabilityForEscrowCall("resolveClaim"), "oracle_settlement");
+  for (const exit of ["withdraw", "cancelClaim", "claimFees"]) {
+    assert.equal(capabilityForEscrowCall(exit), null);
+  }
+  assert.equal(capabilityForWorker("council"), "council_worker");
+  assert.equal(capabilityForWorker("oracle"), null);
+});

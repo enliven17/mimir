@@ -56,6 +56,31 @@ export function assertNotPaused(capability: Pausable): void {
   }
 }
 
+/**
+ * Which pause switch guards an escrow write. Withdrawing, cancelling your own
+ * open claim and pulling fees get money out, so nothing pauses them.
+ */
+export function capabilityForEscrowCall(functionName: string): Pausable | null {
+  switch (functionName) {
+    case "createClaim":
+    case "createRematch":
+      return "create_market";
+    case "challengeClaim":
+      return "stake";
+    case "resolveClaim":
+      return "oracle_settlement";
+    default:
+      return null;
+  }
+}
+
+/** Worker-level switches: a paused worker skips its whole cycle. */
+export function capabilityForWorker(worker: string): Pausable | null {
+  if (worker === "market_creator") return "market_creator_worker";
+  if (worker === "council") return "council_worker";
+  return null;
+}
+
 export function isFeatureEnabled(feature: Feature): boolean {
   return envTrue(`MIMIR_FEATURE_${feature.toUpperCase()}`);
 }
