@@ -90,14 +90,99 @@ async function fetchCmcPrice(symbol: string): Promise<PriceReading | null> {
   }
 }
 
+/** Window searched around a historical moment, each side. */
+const HISTORY_WINDOW_MS = 30 * 60 * 1000;
+
+/** The sample closest in time to `atMs`, or null when there is none. */
+export function closestSample(samples: Array<[number, number]>, atMs: number): [number, number] | null {
+  let best: [number, number] | null = null;
+  for (const s of samples) {
+    if (!Number.isFinite(s[0]) || !Number.isFinite(s[1]) || s[1] <= 0) continue;
+    if (!best || Math.abs(s[0] - atMs) < Math.abs(best[0] - atMs)) best = s;
+  }
+  return best;
+}
+
+async function fetchCoinGeckoPriceAt(symbol: string, atMs: number): Promise<PriceReading | null> {
+  const id = coingeckoIdFor(symbol);
+  if (!id) return null;
+  const from = Math.floor((atMs - HISTORY_WINDOW_MS) / 1000);
+  const to = Math.ceil((atMs + HISTORY_WINDOW_MS) / 1000);
+  try {
+    const res = await fetch(
+      `${COINGECKO_BASE}/coins/${encodeURIComponent(id)}/market_chart/range?vs_currency=usd&from=${from}&to=${to}`,
+      { headers: { accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { prices?: Array<[number, number]> };
+    const best = closestSample(body.prices ?? [], atMs);
+    return best ? { source: "coingecko", priceUsd: best[1], at: best[0] } : null;
+  } catch {
+    return null;
+  }
+}
+
+interface CmcHistoricalQuote {
+  timestamp?: string;
+  quote?: { USD?: { price?: number; timestamp?: string } };
+}
+
+/**
+ * CMC historical quotes. Needs a CMC plan that includes historical data; on a
+ * plan without it the call fails and the settlement proceeds on one source.
+ */
+async function fetchCmcPriceAt(symbol: string, atMs: number): Promise<PriceReading | null> {
+  const key = process.env.CMC_API_KEY?.trim();
+  if (!key) return null;
+  const start = new Date(atMs - HISTORY_WINDOW_MS).toISOString();
+  const end = new Date(atMs + HISTORY_WINDOW_MS).toISOString();
+  try {
+    const res = await fetch(
+      `https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/historical?symbol=${encodeURIComponent(symbol)}` +
+        `&time_start=${encodeURIComponent(start)}&time_end=${encodeURIComponent(end)}&interval=5m&convert=USD`,
+      {
+        headers: { "X-CMC_PRO_API_KEY": key, accept: "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      },
+    );
+    if (!res.ok) {
+      console.warn(`[price-sources] CMC historical ${symbol} → HTTP ${res.status} (plan may not include historical quotes)`);
+      return null;
+    }
+    const body = (await res.json()) as {
+      data?: Record<string, Array<{ quotes?: CmcHistoricalQuote[] }> | { quotes?: CmcHistoricalQuote[] }>;
+    };
+    const entry = body.data?.[symbol.toUpperCase()];
+    const quotes = (Array.isArray(entry) ? entry[0]?.quotes : entry?.quotes) ?? [];
+    const samples = quotes.map((q): [number, number] => [
+      Date.parse(q.quote?.USD?.timestamp ?? q.timestamp ?? ""),
+      Number(q.quote?.USD?.price),
+    ]);
+    const best = closestSample(samples, atMs);
+    return best ? { source: "coinmarketcap", priceUsd: best[1], at: best[0] } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Read the price from every configured source, in parallel.
+ *
+ * With `atMs` (a claim's deadline) far enough in the past, the sources are
+ * asked for the price at that moment instead of now: a claim settled late must
+ * be judged on the price at its deadline.
  *
  * Returns whatever came back. The caller decides what to do with one reading,
  * two that agree, or two that do not.
  */
-export async function fetchPriceReadings(symbol: string): Promise<PriceReading[]> {
-  const results = await Promise.all([fetchCoinGeckoPrice(symbol), fetchCmcPrice(symbol)]);
+export async function fetchPriceReadings(symbol: string, atMs?: number): Promise<PriceReading[]> {
+  const historical = atMs !== undefined && Date.now() - atMs > 5 * 60 * 1000;
+  const results = await Promise.all(
+    historical
+      ? [fetchCoinGeckoPriceAt(symbol, atMs), fetchCmcPriceAt(symbol, atMs)]
+      : [fetchCoinGeckoPrice(symbol), fetchCmcPrice(symbol)],
+  );
   return results.filter((r): r is PriceReading => r !== null);
 }
 

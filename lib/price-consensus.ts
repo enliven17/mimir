@@ -48,27 +48,32 @@ export interface ConsensusResult {
  */
 export const MAX_SOURCE_SPREAD = 0.02;
 
-/** A quote older than this is not evidence about the deadline. */
+/** A quote further than this from the deadline, either side, is not evidence about it. */
 export const MAX_READING_AGE_MS = 15 * 60 * 1000;
 
 /** Confidence added when two independent sources agree. */
 export const AGREEMENT_CONFIDENCE_BONUS = 8;
 
-function usable(reading: PriceReading, now: number): boolean {
+function usable(reading: PriceReading, at: number): boolean {
   return (
     Number.isFinite(reading.priceUsd) &&
     reading.priceUsd > 0 &&
     Number.isFinite(reading.at) &&
-    now - reading.at <= MAX_READING_AGE_MS
+    Math.abs(at - reading.at) <= MAX_READING_AGE_MS
   );
 }
 
+/**
+ * @param at the moment the claim is about (its deadline), not when the oracle
+ *           happens to run: a settlement queued behind others must still be
+ *           judged on the price at the deadline.
+ */
 export function crossCheckThreshold(
   readings: PriceReading[],
   threshold: number,
-  now = Date.now(),
+  at = Date.now(),
 ): ConsensusResult {
-  const fresh = readings.filter((r) => usable(r, now));
+  const fresh = readings.filter((r) => usable(r, at));
 
   // One source can still settle a market; it just does not earn the bonus.
   if (fresh.length < 2 || !Number.isFinite(threshold) || threshold <= 0) {
@@ -231,3 +236,34 @@ export function priceCheckTarget(
 
   return { symbol, threshold: thresholds[0] };
 }
+
+/**
+ * Which side two agreeing sources say won, when the claim's wording makes that
+ * unambiguous: a strict above/below question, and positions phrased Yes/No.
+ *
+ * Returns null whenever that mapping would be a guess ("reach", "at least",
+ * free-form positions). The oracle then leaves the model's verdict alone rather
+ * than boosting or vetoing it on a misread direction.
+ */
+export function consensusWinner(
+  question: string,
+  creatorPosition: string,
+  counterPosition: string,
+  verdict: ConsensusVerdict,
+): "CREATOR_WINS" | "CHALLENGERS_WIN" | null {
+  if (verdict !== "agree_above" && verdict !== "agree_below") return null;
+
+  const above = /\b(above|over|exceeds?|exceeding|higher than|more than|surpass(es)?)\b|>(?!=)/i.test(question);
+  const below = /\b(below|under|less than|lower than)\b|<(?!=)/i.test(question);
+  if (above === below) return null;
+
+  const yes = /^\s*yes\b/i;
+  const no = /^\s*no\b/i;
+  const creatorIsYes = yes.test(creatorPosition) && no.test(counterPosition);
+  const creatorIsNo = no.test(creatorPosition) && yes.test(counterPosition);
+  if (!creatorIsYes && !creatorIsNo) return null;
+
+  const conditionMet = above ? verdict === "agree_above" : verdict === "agree_below";
+  return conditionMet === creatorIsYes ? "CREATOR_WINS" : "CHALLENGERS_WIN";
+}
+

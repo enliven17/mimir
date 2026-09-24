@@ -166,3 +166,34 @@ test("only single-asset, single-threshold claims are cross-checked", () => {
   assert.equal(priceCheckTarget("Will BTC beat ETH this month?"), null);
   assert.equal(priceCheckTarget("Will the Fed cut rates in December?"), null);
 });
+
+test("consensusWinner maps agreeing sources to a side only when the wording is unambiguous", async () => {
+  const { consensusWinner } = await import("../../lib/price-consensus");
+  const q = "Will BTC close above $100,000 on Friday?";
+  assert.equal(consensusWinner(q, "Yes — momentum", "No — resistance", "agree_above"), "CREATOR_WINS");
+  assert.equal(consensusWinner(q, "Yes — momentum", "No — resistance", "agree_below"), "CHALLENGERS_WIN");
+  assert.equal(consensusWinner(q, "No — resistance", "Yes — momentum", "agree_above"), "CHALLENGERS_WIN");
+  assert.equal(consensusWinner("Will ETH drop below $2,000?", "Yes", "No", "agree_below"), "CREATOR_WINS");
+  // Inclusive or ambiguous wording, free-form positions, or no agreement: no call.
+  assert.equal(consensusWinner("Will BTC reach $100,000?", "Yes", "No", "agree_above"), null);
+  assert.equal(consensusWinner(q, "Bulls", "Bears", "agree_above"), null);
+  assert.equal(consensusWinner(q, "Yes", "No", "disagree"), null);
+});
+
+test("readings are judged against the deadline, on either side of it", () => {
+  const deadline = NOW - 3 * 60 * 60 * 1000; // settled three hours late
+  const atDeadline = (source: "coingecko" | "coinmarketcap", priceUsd: number, offsetMs: number): PriceReading => ({
+    source,
+    priceUsd,
+    at: deadline + offsetMs,
+  });
+  assert.equal(
+    crossCheckThreshold([atDeadline("coingecko", 101_000, -60_000), atDeadline("coinmarketcap", 101_100, 120_000)], 100_000, deadline).verdict,
+    "agree_above",
+  );
+  // A quote from "now" says nothing about a deadline three hours ago.
+  assert.equal(
+    crossCheckThreshold([reading("coingecko", 101_000), reading("coinmarketcap", 101_100)], 100_000, deadline).verdict,
+    "insufficient",
+  );
+});
