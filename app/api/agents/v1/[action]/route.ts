@@ -21,6 +21,7 @@ import {
   isAuthorityLevel,
   isCapability,
   grantableCapabilities,
+  SELF_SERVICE_MAX_AUTHORITY,
   type AgentCapability,
   type AgentRecord,
   type AuthorityLevel,
@@ -219,6 +220,7 @@ async function handleRegister(env: AgentEnvelope): Promise<Handled> {
     displayName: str(env.body, "displayName") || env.agentId,
     authorityLevel: authorityLevel as AuthorityLevel,
     capabilities,
+    status: authorityLevel > SELF_SERVICE_MAX_AUTHORITY ? "pending" : "active",
   });
 
   await recordRequest(env.agentId, "register", true, null).catch(() => undefined);

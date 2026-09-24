@@ -24,6 +24,14 @@ export type AuthorityLevel = (typeof AUTHORITY_LEVELS)[keyof typeof AUTHORITY_LE
 
 export const MAX_AUTHORITY_LEVEL = AUTHORITY_LEVELS.MONETISE;
 
+/**
+ * The highest level an agent can give itself at registration. Up to STAKE the
+ * agent only ever risks its own operator's money; MONETISE lists it as a copy
+ * source and x402 seller that other people pay and follow, so a registration
+ * asking for it is stored as `pending` until an operator activates it.
+ */
+export const SELF_SERVICE_MAX_AUTHORITY = AUTHORITY_LEVELS.STAKE;
+
 export const AGENT_CAPABILITIES = [
   "market_creator",
   "council_juror",

@@ -67,6 +67,7 @@ export interface CreateAgentInput {
   displayName: string;
   authorityLevel: AuthorityLevel;
   capabilities: AgentCapability[];
+  status?: AgentStatus;
 }
 
 export async function createAgent(input: CreateAgentInput, now = Date.now()): Promise<AgentRecord> {
@@ -75,7 +76,7 @@ export async function createAgent(input: CreateAgentInput, now = Date.now()): Pr
     `INSERT INTO agent_registry
        (agent_id, owner_wallet, operator_wallet, payout_wallet, display_name,
         authority_level, capabilities, status, limits_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.agentId,
       input.ownerWallet.toLowerCase(),
@@ -84,6 +85,7 @@ export async function createAgent(input: CreateAgentInput, now = Date.now()): Pr
       input.displayName,
       input.authorityLevel,
       input.capabilities.join(","),
+      input.status ?? "active",
       JSON.stringify(limits),
       now,
       now,

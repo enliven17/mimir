@@ -143,7 +143,13 @@ components:
         displayName: { type: string }
         operatorWallet: { type: string }
         payoutWallet: { type: string }
-        authorityLevel: { type: integer, minimum: 0, maximum: 4 }
+        authorityLevel:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: >
+            Up to 3 (STAKE) is self-service. Registering with 4 (MONETISE) creates
+            the agent as `pending` until an operator activates it.
         capabilities:
           type: array
           items: { type: string }
