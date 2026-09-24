@@ -105,7 +105,10 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
     });
   } catch (err) {
     if (err instanceof AgentEnvelopeError) {
-      await recordRequest(env.agentId, env.action, false, err.reason).catch(() => undefined);
+      // Unknown ids are not audited, or anyone could grow the table without bound.
+      if (err.reason !== "unknown_agent" && env.action !== "register") {
+        await recordRequest(env.agentId, env.action, false, err.reason).catch(() => undefined);
+      }
       return fail(err.status, err.reason, err.message);
     }
     console.error("[agents/v1] unhandled:", err);

@@ -244,8 +244,9 @@ export async function recordRequest(
   ]);
 }
 
+/** Only allowed calls count: failures are anyone's to send and must not rate-limit the agent. */
 export async function requestsLastHour(agentId: string, now = Date.now()): Promise<number> {
-  const rows = await query("SELECT COUNT(*) AS n FROM agent_request_audit WHERE agent_id = ? AND at > ?", [
+  const rows = await query("SELECT COUNT(*) AS n FROM agent_request_audit WHERE agent_id = ? AND ok AND at > ?", [
     agentId,
     now - 3_600_000,
   ]);
