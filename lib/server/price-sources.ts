@@ -11,6 +11,7 @@
  */
 
 import type { PriceReading } from "../price-consensus";
+import { CHAINLINK_FEEDS, fetchChainlinkPrice } from "./chainlink";
 
 const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
 const CMC_BASE = "https://pro-api.coinmarketcap.com/v1";
@@ -180,12 +181,14 @@ export async function fetchPriceReadings(symbol: string, atMs?: number): Promise
   const historical = atMs !== undefined && Date.now() - atMs > 5 * 60 * 1000;
   const results = await Promise.all(
     historical
-      ? [fetchCoinGeckoPriceAt(symbol, atMs), fetchCmcPriceAt(symbol, atMs)]
-      : [fetchCoinGeckoPrice(symbol), fetchCmcPrice(symbol)],
+      ? [fetchCoinGeckoPriceAt(symbol, atMs), fetchCmcPriceAt(symbol, atMs), fetchChainlinkPrice(symbol, atMs)]
+      : [fetchCoinGeckoPrice(symbol), fetchCmcPrice(symbol), fetchChainlinkPrice(symbol)],
   );
   return results.filter((r): r is PriceReading => r !== null);
 }
 
-export function hasSecondPriceSource(): boolean {
-  return Boolean(process.env.CMC_API_KEY?.trim());
+/** CMC needs a key; Chainlink is keyless but only covers some assets. */
+export function hasSecondPriceSource(symbol?: string): boolean {
+  if (process.env.CMC_API_KEY?.trim()) return true;
+  return symbol !== undefined && symbol.toUpperCase() in CHAINLINK_FEEDS;
 }

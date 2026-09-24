@@ -539,7 +539,7 @@ async function applyPriceConsensus(
   verdict: OracleVerdict,
   prices: DeadlinePrices | null,
 ): Promise<{ verdict: OracleVerdict; note: string | null }> {
-  if (!prices || !hasSecondPriceSource()) return { verdict, note: null };
+  if (!prices || !hasSecondPriceSource(prices.symbol)) return { verdict, note: null };
   const target = prices;
   const deadlineMs = Number(claim.deadline) * 1000;
   const readings = prices.readings;
