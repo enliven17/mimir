@@ -22,6 +22,7 @@ import type { PersonaSpec } from "@/agents/council/personas";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { openPeepsAvatar } from "@/lib/avatars";
 import { shortenAddress } from "@/lib/constants";
+import { cachedFor } from "@/lib/server/ttl-cache";
 
 /**
  * Rendered per request, not prerendered.
@@ -57,6 +58,10 @@ interface PersonaStats {
   totalStakedUsdc: number;
   recentBets:      CouncilBet[];
 }
+
+// force-dynamic makes `revalidate` a no-op, so without this every view re-ran
+// a full log scan on every chain plus a balance read per persona.
+const cachedCouncilStats = cachedFor(fetchCouncilStats, 30_000);
 
 async function fetchCouncilStats(): Promise<PersonaStats[]> {
   const personas  = getActiveCouncilPersonas();
@@ -261,7 +266,7 @@ const TRACKS: Array<{ track: "classic" | "philosopher"; title: string; blurb: st
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function CouncilPage() {
-  const stats = await fetchCouncilStats();
+  const stats = await cachedCouncilStats();
 
   const totalStakes       = stats.reduce((acc, s) => acc + s.stakesPlaced, 0);
   const totalStakedUsdc   = stats.reduce((acc, s) => acc + s.totalStakedUsdc, 0);

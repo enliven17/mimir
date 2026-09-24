@@ -20,8 +20,20 @@ export function cachedFor<Args extends unknown[], T>(
       return hit.value;
     }
 
+    // Expired entries go when a new one comes in, so a long-lived instance
+    // does not keep every argument combination it ever saw.
+    const now = Date.now();
+    for (const [k, entry] of cache) {
+      if (entry.expiresAt <= now) cache.delete(k);
+    }
+
     const value = fn(...args);
-    cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+    cache.set(key, { value, expiresAt: now + ttlMs });
+    // A failure is not cached: the next caller retries instead of being served
+    // the same rejection for the whole TTL.
+    value.catch(() => {
+      if (cache.get(key)?.value === value) cache.delete(key);
+    });
     return value;
   };
 }
