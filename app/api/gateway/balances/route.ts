@@ -14,7 +14,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-const CIRCLE_GATEWAY = "https://gateway-api-sandbox.circle.com/v1/balances";
+// Sandbox by default; point CIRCLE_GATEWAY_API_URL at the production host at mainnet cutover.
+const CIRCLE_GATEWAY_BASE = (process.env.CIRCLE_GATEWAY_API_URL?.trim() || "https://gateway-api-sandbox.circle.com").replace(/\/$/, "");
+const CIRCLE_GATEWAY = `${CIRCLE_GATEWAY_BASE}/v1/balances`;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,14 +57,13 @@ export async function GET(req: NextRequest) {
         token:   "USDC",
         sources: [{ depositor: address }],
       }),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json(
-        { error: `Gateway upstream ${res.status}`, detail: text.slice(0, 500) },
-        { status: 502 },
-      );
+      // Upstream bodies go to the log, not the client.
+      console.error("[gateway/balances] upstream", res.status, (await res.text().catch(() => "")).slice(0, 500));
+      return NextResponse.json({ error: `Gateway upstream ${res.status}` }, { status: 502 });
     }
 
     const json = (await res.json()) as CircleBalancesResponse;
@@ -80,10 +81,8 @@ export async function GET(req: NextRequest) {
     }, {
       headers: { "Cache-Control": "private, max-age=15" },
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: "Gateway proxy failed", detail: err?.message ?? "unknown" },
-      { status: 500 },
-    );
+  } catch (err) {
+    console.error("[gateway/balances] proxy failed:", err);
+    return NextResponse.json({ error: "Gateway proxy failed" }, { status: 502 });
   }
 }

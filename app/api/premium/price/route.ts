@@ -19,17 +19,17 @@ const COINGECKO = "https://api.coingecko.com/api/v3";
 const PRICE_USDC = priceOf("premiumPrice");
 
 export async function GET(req: Request): Promise<Response> {
-  // 1. Gate behind payment. 402 until the caller pays.
-  const gate = await requirePayment(req, PRICE_USDC);
-  if (!gate.paid) return gate.response;
-
-  // 2. Paid — serve the data.
+  // 1. Validate before charging: a malformed request is refused for free.
   const symbol = (new URL(req.url).searchParams.get("symbol") ?? "bitcoin")
     .toLowerCase()
     .trim();
-  if (!/^[a-z0-9-]+$/.test(symbol)) {
-    return json({ error: "invalid symbol" }, { status: 400, headers: gate.responseHeaders });
+  if (!/^[a-z0-9-]{1,64}$/.test(symbol)) {
+    return json({ error: "invalid symbol" }, { status: 400 });
   }
+
+  // 2. Gate behind payment. 402 until the caller pays.
+  const gate = await requirePayment(req, PRICE_USDC);
+  if (!gate.paid) return gate.response;
 
   try {
     const apiKey = process.env.COINGECKO_API_KEY?.trim();
@@ -65,7 +65,7 @@ export async function GET(req: Request): Promise<Response> {
       { headers: gate.responseHeaders },
     );
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "fetch failed";
-    return json({ error: msg }, { status: 502, headers: gate.responseHeaders });
+    console.error("[premium/price] upstream fetch failed:", err);
+    return json({ error: "price source unavailable" }, { status: 502, headers: gate.responseHeaders });
   }
 }

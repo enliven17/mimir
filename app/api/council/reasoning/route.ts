@@ -94,8 +94,9 @@ export async function GET(req: Request): Promise<Response> {
     sideA = String(base[2]);
     sideB = String(base[3]);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "read failed";
-    return json({ error: msg }, { status: 502, headers: responseHeaders });
+    // viem errors carry the RPC URL, which can embed a provider token.
+    console.error("[council/reasoning] claim read failed:", err);
+    return json({ error: "claim read failed" }, { status: 502, headers: responseHeaders });
   }
 
   const prompt = `${persona.promptBias}

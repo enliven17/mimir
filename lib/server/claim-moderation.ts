@@ -169,12 +169,9 @@ async function callGemini(prompt: string) {
   );
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(
-      `Moderation request failed (${response.status}): ${
-        errorText || "Unknown error"
-      }`
-    );
+    // The upstream body can echo request details; it goes to the log, not the client.
+    console.error("[claim-moderation] Gemini error body:", (await response.text().catch(() => "")).slice(0, 500));
+    throw new Error(`Moderation request failed (${response.status})`);
   }
 
   const payload = await response.json();
