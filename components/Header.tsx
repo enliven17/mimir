@@ -8,6 +8,7 @@ import { useWallet } from "@/lib/wallet";
 import { shortenAddress } from "@/lib/constants";
 import { explorerAddressUrl } from "@/lib/chains";
 import NetworkSelector from "@/components/NetworkSelector";
+import NotificationBell from "@/components/NotificationBell";
 import { Copy, ExternalLink, LogOut, Menu, X } from "lucide-react";
 import { isXmtpFeatureEnabled } from "@/lib/xmtp/config";
 
@@ -261,6 +262,7 @@ export default function Header() {
                 );
               })}
 
+              <NotificationBell />
               <NetworkSelector />
               {isConnected && address ? (
                 <WalletAccountMenu
@@ -285,6 +287,7 @@ export default function Header() {
 
             {/* Mobile */}
             <div className="flex items-center gap-2 xl:hidden">
+              <NotificationBell />
               <NetworkSelector />
               {isConnected && address ? (
                 <WalletAccountMenu

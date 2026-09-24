@@ -10,6 +10,8 @@ import {
   type VSData,
 } from "@/lib/contract";
 import { claimKey, enabledChainKeys, type ChainKey } from "@/lib/chains";
+import { claimEvents } from "@/lib/notifications";
+import { recordNotifications } from "@/lib/server/notifications";
 import {
   getAllVSFast as getVsFeedFromCache,
   getUserVSFast as getUserVsFromCache,
@@ -476,7 +478,12 @@ export async function refreshIndexedClaim(options: {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const claim = await fetchClaimForIndex(options.claimId, options.chain ?? "arc", options.inviteKey);
     if (claim) {
+      // The row as it was, so the change can be turned into notifications.
+      const before = await getClaimById(options.claimId, options.chain ?? "arc").catch(() => null);
       await persistIndexedClaim(claim);
+      await recordNotifications(
+        claimEvents(before ? { state: before.state, challenger_count: before.challenger_count } : null, claim),
+      ).catch((err) => console.warn("[vs-index] notifications failed:", err instanceof Error ? err.message : err));
       return claim;
     }
 

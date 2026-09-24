@@ -391,6 +391,25 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     created_at BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (chain, claim_id, forecaster)
   )` },
+  // In-app notifications and their optional webhooks (lib/server/notifications.ts).
+  { sql: `CREATE TABLE IF NOT EXISTS notifications (
+    id BIGSERIAL PRIMARY KEY,
+    recipient TEXT NOT NULL,
+    chain TEXT NOT NULL,
+    claim_id BIGINT NOT NULL,
+    kind TEXT NOT NULL,
+    dedupe TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at BIGINT NOT NULL DEFAULT 0,
+    UNIQUE (recipient, chain, claim_id, kind, dedupe)
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient, created_at DESC)" },
+  { sql: `CREATE TABLE IF NOT EXISTS notification_webhooks (
+    address TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    created_at BIGINT NOT NULL DEFAULT 0
+  )` },
   // Fixed-window counters for public routes that spend LLM quota (lib/server/rate-limit.ts).
   { sql: `CREATE TABLE IF NOT EXISTS rate_limits (
     bucket_key TEXT NOT NULL,
