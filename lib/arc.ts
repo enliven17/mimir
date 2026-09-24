@@ -295,40 +295,6 @@ export function createArcWalletClientWithKey(privateKey: string, key: ChainKey =
   });
 }
 
-// ── MetaMask chain-switch helper ──────────────────────────────────────────────
-export async function ensureArcChain(ethereum: {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-}, key: ChainKey = "arc"): Promise<void> {
-  const target = getChain(key);
-  const chainIdHex = `0x${target.chain.id.toString(16)}`;
-  const currentChainId = (await ethereum.request({ method: "eth_chainId" })) as string;
-
-  if (currentChainId === chainIdHex) return;
-
-  try {
-    await ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: chainIdHex }],
-    });
-  } catch (err: any) {
-    if (err?.code !== 4902) throw err;
-    await ethereum.request({
-      method: "wallet_addEthereumChain",
-      params: [
-        {
-          chainId: chainIdHex,
-          chainName: target.chain.name,
-          rpcUrls: target.chain.rpcUrls.default.http,
-          nativeCurrency: target.chain.nativeCurrency,
-          blockExplorerUrls: [target.explorerUrl],
-        },
-      ],
-    });
-  }
-}
-
-export const ensureChain = ensureArcChain;
-
 // ── Unit helpers (Arc only — use usdcToStakeUnits/stakeUnitsToUsdc in lib/chains for others) ──────────────────────────────────────────────────────────
 // Arc USDC: 18 decimals at EVM level (like ETH on Ethereum)
 // Display: 6 significant decimal places (standard USDC display)

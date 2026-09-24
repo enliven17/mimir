@@ -8,14 +8,15 @@
 import {
   createPublicClient,
   createWalletClient,
-  custom,
   http,
+  parseEventLogs,
+  type Log,
   type PublicClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 import { erc20Abi } from "viem";
-import { getContractAddress, ensureChain, RPC_BATCH_SIZE } from "./arc";
+import { getContractAddress, RPC_BATCH_SIZE } from "./arc";
 import {
   getChain,
   enabledChainKeys,
@@ -621,25 +622,50 @@ async function ensureAllowance(
   if (receipt.status === "reverted") throw new Error("USDC approval reverted");
 }
 
-// ── Write: browser (wagmi / injected wallet) ──────────────────────────────────
+/**
+ * The id a createClaim/createRematch receipt minted, read from its
+ * ClaimCreated event. Reading claimCount() afterwards races every other
+ * creator (the market-creator agent opens claims constantly) and returns
+ * someone else's id.
+ */
+export function claimIdFromReceipt(receipt: unknown, escrowAddress: string): number | null {
+  const logs = (receipt as { logs?: unknown } | null | undefined)?.logs;
+  if (!Array.isArray(logs)) return null;
+  const escrow = escrowAddress.toLowerCase();
+  const events = parseEventLogs({
+    abi: MIMIR_ABI,
+    eventName: "ClaimCreated",
+    logs: logs as Log[],
+  }).filter((e) => e.address.toLowerCase() === escrow);
+  const id = events[0]?.args.id;
+  return id === undefined ? null : Number(id);
+}
+
+// ── Write: browser (the wallet connected through wagmi) ──────────────────────
 async function sendBrowserTx(
   chain: ChainKey,
   functionName: string,
   args: unknown[],
   valueUsdc: number
 ): Promise<ContractWriteResult> {
-  const ethereum =
-    typeof window !== "undefined" ? (window as any).ethereum : undefined;
-  if (!ethereum) throw new Error("No wallet connected. Please connect a wallet first.");
-
-  await ensureChain(ethereum, chain);
-
-  const accounts: string[] = await ethereum.request({ method: "eth_accounts" });
-  if (!accounts.length) throw new Error("Wallet not connected");
-  const account = accounts[0] as `0x${string}`;
+  if (typeof window === "undefined") throw new Error("Browser writes need a browser.");
   const cfg = getChain(chain);
 
-  const wc = createWalletClient({ chain: cfg.chain, transport: custom(ethereum), account });
+  // The wallet the user actually connected (injected, WalletConnect, Coinbase),
+  // not whatever happens to sit on window.ethereum. Loaded lazily: this module
+  // is also imported server-side, where the connectors must not load.
+  const [{ getAccount, getWalletClient, switchChain }, { wagmiConfig }] = await Promise.all([
+    import("wagmi/actions"),
+    import("./wagmi-config"),
+  ]);
+  if (!getAccount(wagmiConfig).address) {
+    throw new Error("No wallet connected. Please connect a wallet first.");
+  }
+  if (getAccount(wagmiConfig).chainId !== cfg.chain.id) {
+    await switchChain(wagmiConfig, { chainId: cfg.chain.id });
+  }
+  const wc = await getWalletClient(wagmiConfig, { chainId: cfg.chain.id });
+  const account = wc.account.address;
 
   await ensureAllowance(chain, account, valueUsdc, (amount) =>
     wc.writeContract({
@@ -754,8 +780,7 @@ export async function createClaim(
   }
 
   const result = await sendBrowserTx(chain, "createClaim", args, params.stake_amount);
-  const count  = await getClaimCount(chain).catch(() => null);
-  return { ...result, claimId: count };
+  return { ...result, claimId: claimIdFromReceipt(result.receipt, requireContractAddress(chain)) };
 }
 
 export async function challengeClaim(
@@ -820,8 +845,7 @@ export async function createRematch(
     [BigInt(parentId), BigInt(params.deadline), usdcToStakeUnits(chain, params.stake_amount), params.invite_key ?? ""],
     params.stake_amount
   );
-  const count = await getClaimCount(chain).catch(() => null);
-  return { ...result, claimId: count };
+  return { ...result, claimId: claimIdFromReceipt(result.receipt, requireContractAddress(chain)) };
 }
 
 // ── Server-side demo write ────────────────────────────────────────────────────
@@ -837,8 +861,7 @@ export async function executeDemoWrite(
     const p = params as unknown as CreateClaimParams;
     const args = buildCreateArgs(p);
     const result = await sendServerTx(chain, privateKey, "createClaim", args, p.stake_amount);
-    const count  = await getClaimCount(chain).catch(() => null);
-    return { ...result, claimId: count };
+    return { ...result, claimId: claimIdFromReceipt(result.receipt, requireContractAddress(chain)) };
   }
 
   if (action === "challenge_claim") {
@@ -871,8 +894,7 @@ export async function executeDemoWrite(
       [BigInt(parentId), BigInt(deadline), usdcToStakeUnits(chain, stake_amount), invite_key],
       stake_amount
     );
-    const count = await getClaimCount(chain).catch(() => null);
-    return { ...result, claimId: count };
+    return { ...result, claimId: claimIdFromReceipt(result.receipt, requireContractAddress(chain)) };
   }
 
   throw new Error(`Unknown demo action: ${action}`);

@@ -114,3 +114,26 @@ test("mapClaimToVS preserves fixed-odds winner information", () => {
   assert.equal(vs.odds_mode, "fixed");
   assert.equal(vs.challenger_payout_bps, 18000);
 });
+
+test("claimIdFromReceipt reads the id from this escrow's ClaimCreated event", async () => {
+  const { encodeEventTopics, encodeAbiParameters, pad } = await import("viem");
+  const { claimIdFromReceipt } = await import("../../lib/contract");
+  const { MIMIR_ABI } = await import("../../lib/mimir-abi");
+  const escrow = "0x50036154a3bc51f2e7d604a2fbc596f02bb555a1";
+
+  const log = (address: string, id: bigint) => ({
+    address,
+    topics: encodeEventTopics({
+      abi: MIMIR_ABI,
+      eventName: "ClaimCreated",
+      args: { id, creator: pad("0xa1", { size: 20 }) },
+    }),
+    data: encodeAbiParameters([{ type: "string" }], ["crypto"]),
+    blockHash: null, blockNumber: null, logIndex: null, transactionHash: null, transactionIndex: null, removed: false,
+  });
+
+  const receipt = { logs: [log("0x0000000000000000000000000000000000000bad", 7n), log(escrow, 42n)] };
+  assert.equal(claimIdFromReceipt(receipt, escrow), 42);
+  assert.equal(claimIdFromReceipt({ logs: [] }, escrow), null);
+  assert.equal(claimIdFromReceipt(null, escrow), null);
+});
