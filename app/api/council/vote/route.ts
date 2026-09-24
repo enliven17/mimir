@@ -18,6 +18,7 @@ import { COUNCIL_PERSONAS } from "@/agents/council/personas";
 import { createChainPublicClient, getContractAddress } from "@/lib/arc";
 import { parseChainParam } from "@/lib/server/api-validation";
 import { fetchDecodedClaim } from "@/lib/claim-codec";
+import { MIMIR_ABI } from "@/lib/mimir-abi";
 import { evaluateClaimAsPersona } from "@/agents/council/shared/persona-llm";
 import { fetchEvidence } from "@/lib/server/evidence-fetcher";
 import type { ClaimOnChain } from "@/agents/council/shared/types";
@@ -72,22 +73,36 @@ export async function GET(req: Request): Promise<Response> {
   const payTo = personaAddress(slug);
   if (!payTo) return json({ error: `persona '${slug}' has no wallet configured` }, { status: 503 });
 
+  // Read the claim from chain, still before charging.
+  let claim: ClaimOnChain;
+  let staked: boolean;
+  try {
+    const client = createChainPublicClient(chain);
+    const decoded = await fetchDecodedClaim(client, getContractAddress(chain), claimId);
+    if (!decoded) return json({ error: `claim ${claimId} not found` }, { status: 404 });
+    claim = { ...decoded, chain };
+    staked =
+      claim.creator.toLowerCase() === payTo.toLowerCase() ||
+      Boolean(await client.readContract({
+        address: getContractAddress(chain),
+        abi: MIMIR_ABI,
+        functionName: "hasChallenged",
+        args: [BigInt(claimId), payTo as `0x${string}`],
+      }));
+  } catch (err) {
+    // viem errors carry the RPC URL, which can embed a provider token.
+    console.error("[council/vote] claim read failed:", err);
+    return json({ error: "claim read failed" }, { status: 502 });
+  }
+
+  // A persona with money on this claim does not sit on its jury.
+  if (staked) {
+    return json({ error: `persona '${slug}' holds a position on claim ${claimId} and cannot vote on it` }, { status: 409 });
+  }
+
   // Payment gate — revenue lands in the persona's own wallet.
   const gate = await requirePayment(req, PRICE, { payTo });
   if (!gate.paid) return gate.response;
-
-  // Read the claim from chain.
-  let claim: ClaimOnChain;
-  try {
-    const decoded = await fetchDecodedClaim(createChainPublicClient(chain), getContractAddress(chain), claimId);
-    if (!decoded) {
-      return json({ error: `claim ${claimId} not found` }, { status: 404, headers: gate.responseHeaders });
-    }
-    claim = { ...decoded, chain };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "read failed";
-    return json({ error: msg }, { status: 502, headers: gate.responseHeaders });
-  }
 
   // Specialists only vote within their category — otherwise abstain.
   if (
@@ -111,7 +126,7 @@ export async function GET(req: Request): Promise<Response> {
     }
   }
 
-  const verdict = await evaluateClaimAsPersona(persona, claim, evidenceText, history);
+  const verdict = await evaluateClaimAsPersona(persona, claim, evidenceText, history, "judge");
 
   return json(
     {
