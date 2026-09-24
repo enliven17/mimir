@@ -1,4 +1,5 @@
 import { Pool, neonConfig, type PoolConfig } from "@neondatabase/serverless";
+import { createHash } from "node:crypto";
 import ws from "ws";
 
 import type { ChallengeOpportunity } from "@/lib/claimDrafts";
@@ -425,10 +426,33 @@ async function execute(
   return { rows: result.rows as Array<Record<string, unknown>> };
 }
 
+/** Changes whenever a schema statement does, so a deploy that edits DDL re-runs it. */
+const SCHEMA_FINGERPRINT = createHash("sha256")
+  .update(JSON.stringify(SCHEMA_STATEMENTS))
+  .digest("hex")
+  .slice(0, 16);
+
+/**
+ * Run the DDL once per schema version rather than on every cold start: one
+ * SELECT on the hot path instead of ~40 statements.
+ */
 async function ensureSchema(pool: Pool): Promise<void> {
+  try {
+    const { rows } = await execute(pool, {
+      sql: "SELECT value FROM sync_meta WHERE key = ?",
+      args: ["schema_fingerprint"],
+    });
+    if (rows[0]?.value === SCHEMA_FINGERPRINT) return;
+  } catch {
+    // sync_meta does not exist yet: a fresh database, run everything.
+  }
   for (const stmt of SCHEMA_STATEMENTS) {
     await execute(pool, stmt);
   }
+  await execute(pool, {
+    sql: "INSERT INTO sync_meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    args: ["schema_fingerprint", SCHEMA_FINGERPRINT],
+  });
 }
 
 async function batchWrite(pool: Pool, statements: SqlStatement[]): Promise<void> {
@@ -700,6 +724,12 @@ export async function getDb(): Promise<Pool> {
   if (!globalThis.__mimirDbReady) {
     globalThis.__mimirDbReady = ensureSchema(globalThis.__mimirDbPool).then(
       () => globalThis.__mimirDbPool as Pool,
+      (err) => {
+        // Do not cache the failure: the next call retries instead of every
+        // request on this instance failing until it is recycled.
+        globalThis.__mimirDbReady = undefined;
+        throw err;
+      },
     );
   }
   return globalThis.__mimirDbReady;
