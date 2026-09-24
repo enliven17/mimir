@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { generateClaimDrafts } from "@/lib/server/source-claim-generator";
 import { createApiError } from "@/lib/server/api-validation";
+import { allowRequest, clientIp, tooManyRequests } from "@/lib/server/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,11 @@ export async function POST(request: Request) {
       createApiError("feature_disabled", "Source drafting is not enabled"),
       { status: 404 }
     );
+  }
+
+  // Each draft is a fetch plus a Gemini call; ten a minute per IP is plenty for a human.
+  if (!(await allowRequest("claim-draft", clientIp(request), 10, 60_000))) {
+    return tooManyRequests(60);
   }
 
   try {

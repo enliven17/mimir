@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { pruneAgentTables } from "@/lib/agents/store";
 import { createApiError } from "@/lib/server/api-validation";
 import { isCronAuthorized } from "@/lib/server/cron-auth";
+import { pruneRateLimits } from "@/lib/server/rate-limit";
 import { reconcileVsIndex } from "@/lib/server/vs-index";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export async function GET(request: Request) {
 
     const summary = await reconcileVsIndex();
     await pruneAgentTables().catch((err) => console.warn("[cron/sync] agent table prune failed:", err));
+    await pruneRateLimits().catch((err) => console.warn("[cron/sync] rate limit prune failed:", err));
 
     return NextResponse.json(
       {

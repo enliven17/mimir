@@ -370,6 +370,13 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     at BIGINT NOT NULL DEFAULT 0
   )` },
   { sql: "CREATE INDEX IF NOT EXISTS idx_agent_request_audit_agent_at ON agent_request_audit(agent_id, at DESC)" },
+  // Fixed-window counters for public routes that spend LLM quota (lib/server/rate-limit.ts).
+  { sql: `CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket_key TEXT NOT NULL,
+    window_start BIGINT NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (bucket_key, window_start)
+  )` },
   {
     sql: "INSERT INTO sync_meta(key, value) VALUES($1, $2) ON CONFLICT(key) DO NOTHING",
     args: ["last_claim_count", "0"],
