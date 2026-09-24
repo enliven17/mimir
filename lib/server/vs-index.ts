@@ -591,7 +591,16 @@ async function reconcileChain(chain: ChainKey): Promise<ReconcileResult> {
 
   // 2. Refresh claims the index believes are open/active by reading only
   //    those ids, instead of re-scanning the entire chain to find them.
-  const rowsToRefresh = activeRows.slice(0, RECONCILE_MAX_ACTIVE_REFRESHES);
+  //    Past-deadline claims first (they are the ones about to resolve), then the
+  //    least recently refreshed. Taking the 25 newest ids every run meant older
+  //    open claims were never refreshed by the cron at all.
+  const nowSec = Math.floor(now / 1000);
+  const rowsToRefresh = [...activeRows]
+    .sort((a, b) => {
+      const expired = Number(b.deadline <= nowSec) - Number(a.deadline <= nowSec);
+      return expired !== 0 ? expired : a.updated_at - b.updated_at;
+    })
+    .slice(0, RECONCILE_MAX_ACTIVE_REFRESHES);
   for (const row of rowsToRefresh) {
     const fresh = await refreshIndexedClaim({ claimId: row.id, chain });
     if (!fresh) continue;
