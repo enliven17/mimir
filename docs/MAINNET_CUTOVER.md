@@ -42,6 +42,9 @@ but slow: `queueFeePolicy` then `executeFeePolicy` after the two-day timelock.
 - [ ] An independent audit of `MimirV3.sol`. The forge suite is repo evidence,
       not an audit, and this is the point where that distinction starts costing
       real money.
+- [ ] A multisig to own the contract (`MIMIR_V3_OWNER`). The owner can queue an
+      oracle change (2-day timelock) and pause new positions, so it must not
+      be the market-creator hot wallet that also trades.
 
 ## 2. Deploy
 
@@ -49,13 +52,15 @@ but slow: `queueFeePolicy` then `executeFeePolicy` after the two-day timelock.
 # Point the deploy at mainnet, then:
 V3_PLATFORM_FEE_BPS=50 V3_AGENT_OWNER_FEE_BPS=50 \
 PLATFORM_FEE_RECIPIENT=0x<treasury> \
+MIMIR_V3_OWNER=0x<multisig> \
 npm run deploy:v3
 ```
 
 The script refuses to run twice against a populated
 `NEXT_PUBLIC_V3_CONTRACT_ADDRESS`, verifies the deployed runtime bytecode
-against the local artifact, transfers ownership to the W3S address, and reads
-the live fee policy back rather than trusting the constructor arguments.
+against the local artifact, starts the two-step ownership transfer to the
+multisig (which then calls `acceptOwnership()`), and reads the live fee policy
+back rather than trusting the constructor arguments.
 
 Record: contract address, deploy block, deploy tx, the runtime bytecode hash,
 and the fee policy as read back from the chain.
@@ -122,8 +127,11 @@ Within the window where no real money has entered the new contract: revert the
 four environment variables, rebuild the index, done.
 
 After that, there is no rollback, only a stop. Pause `create_market` and `stake`
-so no new positions open, let the open ones settle on their own deadlines, and
-leave `withdraw` and the read paths alone. They are deliberately not pausable
+so no new positions open (the owner can also call `setPaused(true)` on the
+contract, which stops direct callers too), let the open ones settle on their
+own deadlines, and leave `withdraw` and the read paths alone. If the oracle
+itself is gone, any ACTIVE claim becomes refundable by anyone through
+`refundExpired(id)` seven days after its deadline. They are deliberately not pausable
 for exactly this case: whatever else is wrong, people must be able to see their
 positions and take their money out.
 

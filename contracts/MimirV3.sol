@@ -30,6 +30,15 @@ interface IERC20Like {
  *     can take a meaningful share of a winner's profit by surprise.
  *   - Fees accrue to a pull balance. A push to a recipient that reverts would
  *     take the whole settlement down with it.
+ *   - Settlement pushes carry a fixed gas stipend, so a recipient contract
+ *     cannot burn the resolve transaction's gas; anything it refuses is parked.
+ *   - An escape hatch: an ACTIVE claim the oracle has not resolved within
+ *     RESOLUTION_GRACE_SECONDS of its deadline can be refunded by anyone.
+ *   - Two-step ownership, a timelocked oracle change and a pause switch that
+ *     stops new positions but never settlement, refunds or withdrawals.
+ *
+ * Known limit: invite keys travel in calldata, so a private claim hides its
+ * link from the UI, not from someone reading the chain.
  */
 contract MimirV3 {
     // ── State constants ───────────────────────────────────────────────────────
@@ -63,6 +72,13 @@ contract MimirV3 {
     uint16  public constant MAX_TOTAL_FEE_BPS   = 1_000;
     /// A queued policy cannot take effect for this long, so participants can leave.
     uint256 public constant FEE_TIMELOCK_SECONDS = 2 days;
+    /// An oracle change waits this long, so participants can react to a new settler.
+    uint256 public constant ORACLE_TIMELOCK_SECONDS = 2 days;
+    /// After deadline + this, an unresolved ACTIVE claim can be refunded by anyone.
+    uint256 public constant RESOLUTION_GRACE_SECONDS = 7 days;
+    /// Gas forwarded with each settlement push: enough for a plain receive or a
+    /// USDC transfer, not enough for one recipient to starve the payout loop.
+    uint256 public constant PUSH_GAS = 50_000;
 
     // ── Storage ───────────────────────────────────────────────────────────────
     struct Claim {
@@ -133,7 +149,13 @@ contract MimirV3 {
     uint256 public lifetimeFeesClaimed;
 
     address public owner;
+    address public pendingOwner;
     address public oracle; // off-chain AI oracle agent
+    address public pendingOracle;
+    /// Timestamp from which pendingOracle may be installed. 0 = nothing queued.
+    uint256 public pendingOracleEta;
+    /// Stops new claims and challenges. Never stops settlement or withdrawals.
+    bool public paused;
 
     FeePolicy public feePolicy;
     FeePolicy public pendingFeePolicy;
@@ -147,14 +169,20 @@ contract MimirV3 {
     event ClaimCancelled(uint256 indexed id);
     event OracleChanged(address indexed previous, address indexed next);
     event WithdrawalPending(address indexed to, uint256 amount);
-    event Withdrawal(address indexed to, uint256 amount);
+    event Withdrawal(address indexed account, address indexed to, uint256 amount);
     event AgentAttributed(uint256 indexed id, address indexed participant, address indexed agentOwner);
     event FeePolicyQueued(uint16 platformFeeBps, uint16 agentOwnerFeeBps, address platformRecipient, uint256 eta);
     event FeePolicyCancelled();
     event FeePolicyUpdated(uint16 platformFeeBps, uint16 agentOwnerFeeBps, address platformRecipient);
     event FeeAccrued(uint256 indexed id, address indexed recipient, uint256 amount);
-    event FeeClaimed(address indexed recipient, uint256 amount);
+    event FeeClaimed(address indexed recipient, address indexed to, uint256 amount);
     event MarketSettled(uint256 indexed id, uint256 totalPaid, uint256 totalFees);
+    event ClaimExpiredRefund(uint256 indexed id, address indexed caller);
+    event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event OracleChangeQueued(address indexed next, uint256 eta);
+    event OracleChangeCancelled(address indexed next);
+    event Paused(bool paused);
 
     // ── Modifiers ─────────────────────────────────────────────────────────────
     modifier onlyOwner() {
@@ -167,6 +195,11 @@ contract MimirV3 {
         _;
     }
 
+    modifier whenNotPaused() {
+        require(!paused, "Mimir: paused");
+        _;
+    }
+
     // ── Constructor ───────────────────────────────────────────────────────────
     constructor(
         address _oracle,
@@ -175,6 +208,7 @@ contract MimirV3 {
         address _platformRecipient,
         address _usdc
     ) {
+        require(_oracle != address(0), "Mimir: zero oracle");
         owner  = msg.sender;
         oracle = _oracle;
         usdc   = _usdc;
@@ -187,18 +221,56 @@ contract MimirV3 {
             agentOwnerFeeBps:  _agentOwnerFeeBps,
             platformRecipient: _platformRecipient
         });
+        emit OwnershipTransferred(address(0), msg.sender);
         emit OracleChanged(address(0), _oracle);
         emit FeePolicyUpdated(_platformFeeBps, _agentOwnerFeeBps, _platformRecipient);
     }
 
     // ── Admin ─────────────────────────────────────────────────────────────────
-    function setOracle(address _oracle) external onlyOwner {
-        emit OracleChanged(oracle, _oracle);
-        oracle = _oracle;
+    /// Queue a new oracle, installable after ORACLE_TIMELOCK_SECONDS, so a
+    /// compromised owner key cannot make itself the settler and resolve open
+    /// markets before anyone notices.
+    function queueOracle(address _oracle) external onlyOwner {
+        require(_oracle != address(0), "Mimir: zero oracle");
+        pendingOracle = _oracle;
+        pendingOracleEta = block.timestamp + ORACLE_TIMELOCK_SECONDS;
+        emit OracleChangeQueued(_oracle, pendingOracleEta);
     }
 
+    function cancelOracle() external onlyOwner {
+        require(pendingOracleEta != 0, "Mimir: nothing queued");
+        emit OracleChangeCancelled(pendingOracle);
+        pendingOracle = address(0);
+        pendingOracleEta = 0;
+    }
+
+    /// Permissionless once the timelock has elapsed, like executeFeePolicy.
+    function executeOracle() external {
+        require(pendingOracleEta != 0, "Mimir: nothing queued");
+        require(block.timestamp >= pendingOracleEta, "Mimir: timelocked");
+        emit OracleChanged(oracle, pendingOracle);
+        oracle = pendingOracle;
+        pendingOracle = address(0);
+        pendingOracleEta = 0;
+    }
+
+    /// Step one of two: the new owner must accept, so a typo cannot brick admin.
     function transferOwnership(address _owner) external onlyOwner {
-        owner = _owner;
+        require(_owner != address(0), "Mimir: zero owner");
+        pendingOwner = _owner;
+        emit OwnershipTransferStarted(owner, _owner);
+    }
+
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "Mimir: not pending owner");
+        emit OwnershipTransferred(owner, msg.sender);
+        owner = msg.sender;
+        pendingOwner = address(0);
+    }
+
+    function setPaused(bool _paused) external onlyOwner {
+        paused = _paused;
+        emit Paused(_paused);
     }
 
     // ── Fee governance ────────────────────────────────────────────────────────
@@ -260,19 +332,35 @@ contract MimirV3 {
 
     /// Send that reports failure instead of reverting. A blacklisted USDC
     /// recipient reverts rather than returning false, so both are caught.
-    function _trySend(address to, uint256 amount) internal returns (bool ok) {
+    /// `gasLimit` 0 forwards all gas (withdrawals, where the caller pays for
+    /// their own receiver); settlement pushes pass PUSH_GAS.
+    function _trySend(address to, uint256 amount, uint256 gasLimit) internal returns (bool ok) {
+        uint256 g = gasLimit == 0 ? gasleft() : gasLimit;
         if (usdc == address(0)) {
-            (ok,) = payable(to).call{value: amount}("");
+            // Assembly so no returndata is copied: a recipient cannot answer
+            // with a huge revert payload and make the copy itself run out of gas.
+            assembly ("memory-safe") {
+                ok := call(g, to, amount, 0, 0, 0, 0)
+            }
         } else {
-            bytes memory ret;
-            (ok, ret) = usdc.call(abi.encodeWithSelector(IERC20Like.transfer.selector, to, amount));
-            ok = ok && (ret.length == 0 || abi.decode(ret, (bool)));
+            bytes memory data = abi.encodeWithSelector(IERC20Like.transfer.selector, to, amount);
+            address token = usdc;
+            uint256 retSize;
+            uint256 retWord;
+            assembly ("memory-safe") {
+                ok := call(g, token, 0, add(data, 0x20), mload(data), 0, 0x20)
+                retSize := returndatasize()
+                retWord := mload(0)
+            }
+            // No return value, or a true one. Anything else is a failed send,
+            // never a revert of the whole settlement.
+            ok = ok && (retSize == 0 || (retSize >= 32 && retWord == 1));
         }
     }
 
     function _transfer(address to, uint256 amount) internal {
         if (amount == 0) return;
-        if (!_trySend(to, amount)) {
+        if (!_trySend(to, amount, PUSH_GAS)) {
             // Failed push (recipient rejected funds) → park for pull-withdrawal
             // so a single uncooperative recipient can't revert the settlement.
             pendingWithdrawals[to] += amount;
@@ -341,18 +429,28 @@ contract MimirV3 {
         uint256 amount = pendingWithdrawals[msg.sender];
         require(amount > 0, "Mimir: nothing to withdraw");
         pendingWithdrawals[msg.sender] = 0; // effects before interaction (reentrancy-safe)
-        require(_trySend(to, amount), "Mimir: withdraw failed");
-        emit Withdrawal(msg.sender, amount);
+        require(_trySend(to, amount, 0), "Mimir: withdraw failed");
+        emit Withdrawal(msg.sender, to, amount);
     }
 
     // ── Claim accrued fees ────────────────────────────────────────────────────
     function claimFees() external {
+        _claimFeesTo(msg.sender);
+    }
+
+    /// Claim to another address: a blocklisted fee recipient could never be paid otherwise.
+    function claimFeesTo(address to) external {
+        require(to != address(0), "Mimir: zero recipient");
+        _claimFeesTo(to);
+    }
+
+    function _claimFeesTo(address to) internal {
         uint256 amount = accruedFees[msg.sender];
         require(amount > 0, "Mimir: no fees");
         accruedFees[msg.sender] = 0;
         lifetimeFeesClaimed += amount;
-        require(_trySend(msg.sender, amount), "Mimir: fee claim failed");
-        emit FeeClaimed(msg.sender, amount);
+        require(_trySend(to, amount, 0), "Mimir: fee claim failed");
+        emit FeeClaimed(msg.sender, to, amount);
     }
 
     function _grossPayout(uint256 stake, uint256 bps) internal pure returns (uint256) {
@@ -398,7 +496,7 @@ contract MimirV3 {
         bool             isPrivate,
         string  calldata inviteKey,
         address          agentOwnerRecipient
-    ) external payable returns (uint256 id) {
+    ) external payable whenNotPaused returns (uint256 id) {
         return _createClaim(CreateArgs({
             question:            question,
             creatorPosition:     creatorPosition,
@@ -424,6 +522,9 @@ contract MimirV3 {
         require(a.stakeAmount >= MIN_STAKE, "Mimir: stake too small");
         require(a.deadline > block.timestamp, "Mimir: deadline in past");
         require(bytes(a.question).length > 0, "Mimir: empty question");
+        // A private claim with no key would silently be public (a rematch of a
+        // private parent included).
+        require(!a.isPrivate || bytes(a.inviteKey).length > 0, "Mimir: private claim needs invite key");
         _pullStake(a.stakeAmount);
 
         // Normalise odds params
@@ -479,7 +580,7 @@ contract MimirV3 {
             emit AgentAttributed(id, msg.sender, a.agentOwnerRecipient);
         }
 
-        emit ClaimCreated(id, msg.sender, a.category);
+        emit ClaimCreated(id, msg.sender, claims[id].category);
     }
 
     // Rematch: a new claim inheriting fields from a parent. An internal call,
@@ -489,7 +590,7 @@ contract MimirV3 {
         uint256 deadline,
         uint256 stakeAmount,
         string  calldata inviteKey
-    ) external payable returns (uint256 id) {
+    ) external payable whenNotPaused returns (uint256 id) {
         Claim storage parent = claims[parentId];
         require(parent.creator != address(0), "Mimir: parent not found");
 
@@ -522,7 +623,7 @@ contract MimirV3 {
         uint256 stakeAmount,
         string  calldata inviteKey,
         address agentOwnerRecipient
-    ) external payable {
+    ) external payable whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.creator != address(0), "Mimir: claim not found");
         require(claim.state == ST_OPEN || claim.state == ST_ACTIVE, "Mimir: not open");
@@ -591,7 +692,34 @@ contract MimirV3 {
             winnerSide == SIDE_UNRESOLVABLE,
             "Mimir: invalid verdict"
         );
+        _settle(claimId, winnerSide, summary, confidence, evidenceHash);
+    }
 
+    /**
+     * Escape hatch. If the oracle has not resolved an ACTIVE claim within
+     * RESOLUTION_GRACE_SECONDS of its deadline (lost key, custody outage,
+     * a settlement that keeps reverting), anyone can refund it: every
+     * participant gets their stake back, exactly as an UNRESOLVABLE verdict
+     * would pay, and no fee is taken. Without this, the oracle going away
+     * would lock every open stake forever.
+     */
+    function refundExpired(uint256 claimId) external {
+        Claim storage claim = claims[claimId];
+        require(claim.creator != address(0), "Mimir: claim not found");
+        require(claim.state == ST_ACTIVE, "Mimir: not active");
+        require(block.timestamp >= claim.deadline + RESOLUTION_GRACE_SECONDS, "Mimir: oracle grace not over");
+        emit ClaimExpiredRefund(claimId, msg.sender);
+        _settle(claimId, SIDE_UNRESOLVABLE, "Refunded: not resolved within the grace period", 0, bytes32(0));
+    }
+
+    function _settle(
+        uint256 claimId,
+        uint8   winnerSide,
+        string memory summary,
+        uint8   confidence,
+        bytes32 evidenceHash
+    ) internal {
+        Claim storage claim = claims[claimId];
         claim.state             = ST_RESOLVED;
         claim.winnerSide        = winnerSide;
         claim.resolutionSummary = summary;

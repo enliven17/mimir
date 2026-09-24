@@ -31,6 +31,7 @@ import { createWalletClient, http, parseAbi, parseEther, formatEther, getAddress
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import {
+  executeContract,
   transferNative,
   getMarketCreatorAddress,
   getOracleAddress,
@@ -234,16 +235,34 @@ async function main(): Promise<void> {
     console.log("  runtime bytecode matches the local artifact exactly");
   }
 
-  console.log("\nTransferring ownership to the W3S address…");
+  // Ownership is two-step. The final owner should be a multisig
+  // (MIMIR_V3_OWNER), not the market-creator hot wallet that also trades:
+  // the owner can queue an oracle change and pause new positions. Without
+  // MIMIR_V3_OWNER the W3S market-creator wallet is used and accepts here.
+  const finalOwner = process.env.MIMIR_V3_OWNER?.trim()
+    ? getAddress(process.env.MIMIR_V3_OWNER.trim())
+    : ownerAddr;
+  console.log(`\nStarting the ownership transfer to ${finalOwner}…`);
   const ownerTx = await deployWallet.writeContract({
     address: contractAddress,
     abi: MIMIR_V3_ABI,
     functionName: "transferOwnership",
-    args: [ownerAddr],
+    args: [finalOwner],
     chain: cfg.chain,
   });
   await arcPublic.waitForTransactionReceipt({ hash: ownerTx });
-  console.log(`  ownership tx: ${explorerTxUrl(chain, ownerTx)}`);
+  console.log(`  transferOwnership tx: ${explorerTxUrl(chain, ownerTx)}`);
+  if (finalOwner === ownerAddr) {
+    const acceptTx = await executeContract({
+      walletId: ownerWallet,
+      contractAddress,
+      abiFunctionSignature: "acceptOwnership()",
+      abiParameters: [],
+    });
+    console.log(`  acceptOwnership tx: ${explorerTxUrl(chain, acceptTx)}`);
+  } else {
+    console.log("  Pending: call acceptOwnership() from the multisig to finish the transfer.");
+  }
 
   // Read the live policy back rather than trusting the constructor arguments.
   const [livePlatformBps, liveAgentBps, liveRecipient] = (await arcPublic.readContract({
