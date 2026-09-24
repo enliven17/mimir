@@ -6,13 +6,6 @@ import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { ChevronDown, CirclePlus, Compass } from "lucide-react";
 import {
-  DASHBOARD_STAKE_HOLDING_IDS,
-  DASHBOARD_STAKE_HOLDING_META,
-  dashboardStakeHoldingDetailHref,
-  getDashboardHoldingFooterPoolPill,
-  type DashboardStakeHoldingId,
-} from "@/lib/dashboardStakeHoldingsMock";
-import {
   DASHBOARD_EXPOSURE_LOAD_MORE,
   DASHBOARD_EXPOSURE_PAGE_SIZE,
   summarizeDashboardFilteredExposure,
@@ -102,41 +95,6 @@ function toRiskProfilePct(wins: number, losses: number): Array<{ key: RiskProfil
   return rounded;
 }
 
-/** Campos traducidos usados para la búsqueda (misma `q` que el filtro VS del dashboard). */
-const HOLDING_SEARCH_FIELDS = [
-  "title",
-  "meta",
-  "bodyLead",
-  "body",
-  "stake",
-  "winEstimate",
-  "returnMultiple",
-] as const;
-
-function holdingMatchesDashboardSearch(
-  id: DashboardStakeHoldingId,
-  rawQuery: string,
-  t: (key: string) => string
-): boolean {
-  const q = rawQuery.trim().toLowerCase();
-  if (!q) return true;
-  const meta = DASHBOARD_STAKE_HOLDING_META[id];
-  const parts = [
-    id,
-    meta.visibility,
-    String(meta.participantCount),
-    meta.maxParticipants != null ? String(meta.maxParticipants) : "",
-    t(`holdings.status.${meta.status}` as never),
-    ...HOLDING_SEARCH_FIELDS.map((field) =>
-      t(`holdings.items.${id}.${field}` as never)
-    ),
-    t("holdings.visibilityPublic"),
-    t("holdings.visibilityPrivate"),
-    t("holdings.poolPill.closed"),
-  ];
-  return parts.some((p) => p.toLowerCase().includes(q));
-}
-
 /** Mismo trazo que `public/icons/verify.svg`, con `currentColor` para `text-pv-emerald`. */
 function StakeHoldingVerifyIcon({ className }: { className?: string }) {
   return (
@@ -154,215 +112,6 @@ function StakeHoldingVerifyIcon({ className }: { className?: string }) {
         fill="currentColor"
       />
     </svg>
-  );
-}
-
-function StakeHoldingRow({
-  id,
-  isOpen,
-  onToggle,
-}: {
-  id: DashboardStakeHoldingId;
-  isOpen: boolean;
-  onToggle: () => void;
-}) {
-  const t = useTranslations("dashboard");
-  const tCat = useTranslations("categories");
-  const tDetail = useTranslations("vsDetail");
-  const base = `holdings.items.${id}` as const;
-  const panelId = `holding-panel-${id}`;
-  const buttonId = `holding-trigger-${id}`;
-  const detailHref = dashboardStakeHoldingDetailHref[id];
-  const meta = DASHBOARD_STAKE_HOLDING_META[id];
-  const marketLabel = tDetail(`marketTypes.${meta.marketType}` as never);
-  const oddsLabel = tDetail(`oddsModes.${meta.oddsMode}` as never);
-  const footerPoolPill = getDashboardHoldingFooterPoolPill(meta);
-  const participantsLine =
-    meta.visibility === "private" && meta.maxParticipants != null
-      ? t("holdings.footerParticipantsCapped", {
-          current: meta.participantCount,
-          max: meta.maxParticipants,
-        })
-      : t("holdings.footerParticipants", { count: meta.participantCount });
-  const visibilityLine =
-    meta.visibility === "private"
-      ? t("holdings.visibilityPrivate")
-      : t("holdings.visibilityPublic");
-
-  return (
-    <div className={DASHBOARD_CARD_SURFACE}>
-      <div className="flex items-stretch gap-3 px-3 sm:gap-4 sm:px-4">
-        <div className="flex shrink-0 items-center justify-center self-center py-3 sm:py-4">
-          <StakeHoldingVerifyIcon className="h-9 w-9 text-pv-emerald sm:h-10 sm:w-10" />
-        </div>
-        <button
-          id={buttonId}
-          type="button"
-          aria-expanded={isOpen}
-          aria-controls={panelId}
-          onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center justify-between gap-3 py-3 pr-3 text-left sm:py-4 sm:pr-4"
-        >
-          <div className="min-w-0 flex-1">
-            <h3 className="font-display text-[13px] font-bold uppercase leading-snug tracking-tight text-pv-text sm:text-sm">
-              {t(`${base}.title` as never)}
-            </h3>
-            <p className="mt-1 font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-pv-muted sm:text-[11px]">
-              {t(`${base}.meta` as never)}
-            </p>
-          </div>
-          <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-pv-muted transition-[transform,color,border-color] duration-300 ${
-              isOpen ? "text-pv-emerald border-pv-emerald/25" : ""
-            }`}
-          >
-            <ChevronDown
-              size={18}
-              className={`transition-transform duration-300 ${isOpen ? "-rotate-180" : ""}`}
-              aria-hidden
-            />
-          </span>
-        </button>
-      </div>
-
-      <AnimatePresence initial={false}>
-        {isOpen ? (
-          <motion.div
-            id={panelId}
-            role="region"
-            aria-labelledby={buttonId}
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.28, ease }}
-            className="overflow-hidden border-t border-white/[0.08]"
-          >
-            <div className="space-y-4 px-3 pb-4 pt-3 sm:space-y-5 sm:px-4 sm:pb-5 sm:pt-4">
-              <div
-                className="flex flex-wrap items-center gap-2"
-                role="group"
-                aria-label={t("holdings.chipsGroupAria")}
-              >
-                <span className="inline-flex shrink-0 items-center rounded-md border border-white/[0.1] bg-white/[0.03] px-2 py-1 font-display text-[10px] font-bold uppercase tracking-[0.12em] text-pv-text">
-                  {tCat(meta.categoryId)}
-                </span>
-                <span className="inline-flex min-w-0 items-center rounded-md bg-white/[0.03] px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-pv-muted ring-1 ring-white/[0.1]">
-                  {meta.idCode}
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-2 border-b border-white/[0.06] pb-4 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-6 sm:gap-y-1">
-                <p className="min-w-0 flex-1 sm:max-w-[14rem]">
-                  <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-pv-muted">
-                    {t("holdings.marketTypeShort")}
-                  </span>
-                  <span className="mt-0.5 block font-display text-xs font-bold uppercase leading-snug tracking-tight text-pv-text sm:text-[13px]">
-                    {marketLabel}
-                  </span>
-                </p>
-                <p className="min-w-0 flex-1 sm:max-w-[14rem]">
-                  <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-pv-muted">
-                    {t("holdings.oddsModeShort")}
-                  </span>
-                  <span className="mt-0.5 block font-display text-xs font-bold uppercase leading-snug tracking-tight text-pv-text sm:text-[13px]">
-                    {oddsLabel}
-                  </span>
-                </p>
-              </div>
-
-              <div className="space-y-2 text-left">
-                <p className="text-sm font-semibold leading-snug text-pv-text sm:text-[15px] sm:leading-relaxed">
-                  {t(`${base}.bodyLead` as never)}
-                </p>
-                <p className="text-xs leading-relaxed text-pv-muted sm:text-[13px]">
-                  {t(`${base}.body` as never)}
-                </p>
-              </div>
-
-              <div>
-                <p className="mb-2 font-display text-[10px] font-bold uppercase tracking-[0.2em] text-pv-muted sm:mb-3 sm:text-[11px] sm:tracking-[0.22em]">
-                  {t("holdings.positionSummaryLabel")}
-                </p>
-                <div className="grid w-full max-w-xl grid-cols-1 gap-2 sm:max-w-2xl sm:grid-cols-3 sm:gap-2.5">
-                  <div className={DASHBOARD_STAT_CELL_SURFACE}>
-                    <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-pv-muted">
-                      {t("holdings.yourStake")}
-                    </span>
-                    <span className="mt-1 block font-mono text-sm font-bold tabular-nums text-pv-text sm:text-base">
-                      {t(`${base}.stake` as never)}
-                    </span>
-                  </div>
-                  <div
-                    className={`${DASHBOARD_STAT_CELL_SURFACE} border-pv-emerald/20 bg-pv-emerald/[0.06]`}
-                  >
-                    <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-pv-muted">
-                      {t("holdings.winEstimate")}
-                    </span>
-                    <span className="mt-1 block font-mono text-sm font-bold tabular-nums text-pv-emerald sm:text-base">
-                      {t(`${base}.winEstimate` as never)}
-                    </span>
-                  </div>
-                  <div className={DASHBOARD_STAT_CELL_SURFACE}>
-                    <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-pv-muted">
-                      {t("holdings.returnMultiple")}
-                    </span>
-                    <span className="mt-1 block font-mono text-sm font-bold tabular-nums text-pv-text sm:text-base">
-                      {t(`${base}.returnMultiple` as never)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      <div className="flex flex-col gap-3 border-t border-white/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4 sm:py-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 sm:gap-x-4">
-          {footerPoolPill === "live" ? (
-            <span className="inline-flex items-center gap-1.5 rounded border border-pv-emerald/25 bg-pv-emerald/[0.08] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-emerald sm:text-[10px]">
-              <span
-                className="relative flex h-2 w-2 shrink-0"
-                aria-hidden
-              >
-                <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-pv-emerald/50 opacity-60" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-pv-emerald" />
-              </span>
-              {t("holdings.status.accepted")}
-            </span>
-          ) : footerPoolPill === "open" ? (
-            <span className="inline-flex items-center rounded border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
-              {t("holdings.status.open")}
-            </span>
-          ) : footerPoolPill === "closed" ? (
-            <span className="inline-flex items-center rounded border border-pv-gold/30 bg-pv-gold/[0.08] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-gold sm:text-[10px]">
-              {t("holdings.poolPill.closed")}
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded border border-white/[0.1] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
-              {t("holdings.status.resolved")}
-            </span>
-          )}
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 sm:gap-x-4">
-            <span className="font-mono text-[10px] font-semibold tabular-nums text-pv-text sm:text-[11px]">
-              {participantsLine}
-            </span>
-            <span className="inline-flex items-center rounded border border-white/[0.1] bg-white/[0.03] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-text sm:text-[10px]">
-              {visibilityLine}
-            </span>
-            <span className="inline-flex items-center rounded border border-white/[0.14] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
-              {t("holdings.demoBadge")}
-            </span>
-          </div>
-        </div>
-        <Link
-          href={detailHref}
-          className="shrink-0 self-end font-display text-[10px] font-bold uppercase tracking-[0.18em] text-pv-emerald transition-colors hover:text-pv-emerald/90 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/40 focus-visible:ring-offset-2 focus-visible:ring-offset-pv-surface sm:self-auto sm:text-[11px]"
-        >
-          {t("holdings.viewDetails")}
-        </Link>
-      </div>
-    </div>
   );
 }
 
@@ -763,7 +512,7 @@ function StakeHoldingVSRow({
 }
 
 /** Real rows are keyed by claimKey (`chain:id`): ids repeat across chains. */
-type StakeHoldingOpenKey = `mock:${DashboardStakeHoldingId}` | `vs:${string}`;
+type StakeHoldingOpenKey = `vs:${string}`;
 
 function ExposureListSkeleton({ count }: { count: number }) {
   return (
@@ -827,9 +576,7 @@ function StakeHoldingsColumn({
   openKey,
   setOpenKey,
   headerExtra,
-  stakeHoldingsSearchQuery,
   filteredVsList,
-  showStakeHoldingsMocks,
   exposureFilterKey,
   onResetFilters,
   totalDuelsCount,
@@ -840,9 +587,7 @@ function StakeHoldingsColumn({
   openKey: StakeHoldingOpenKey | null;
   setOpenKey: (key: StakeHoldingOpenKey | null) => void;
   headerExtra?: ReactNode;
-  stakeHoldingsSearchQuery: string;
   filteredVsList: VSData[];
-  showStakeHoldingsMocks: boolean;
   exposureFilterKey: string;
   onResetFilters: () => void;
   totalDuelsCount: number;
@@ -874,48 +619,11 @@ function StakeHoldingsColumn({
     [filteredVsList, viewerAddress]
   );
 
-  const visibleHoldingIds = useMemo(
-    () =>
-      DASHBOARD_STAKE_HOLDING_IDS.filter((id) =>
-        holdingMatchesDashboardSearch(id, stakeHoldingsSearchQuery, t)
-      ),
-    [stakeHoldingsSearchQuery, t]
-  );
-
-  useEffect(() => {
-    if (openKey?.startsWith("mock:")) {
-      const id = openKey.slice("mock:".length) as DashboardStakeHoldingId;
-      if (!visibleHoldingIds.includes(id)) {
-        setOpenKey(null);
-      }
-    }
-  }, [openKey, visibleHoldingIds, setOpenKey]);
-
-  const mockSearchEmpty =
-    !isInitialExposureLoad &&
-    stakeHoldingsSearchQuery.trim().length > 0 &&
-    visibleHoldingIds.length === 0;
-
   const noVsMatchFilters =
-    !isInitialExposureLoad &&
-    filteredVsList.length === 0 &&
-    totalDuelsCount > 0 &&
-    !mockSearchEmpty;
+    !isInitialExposureLoad && filteredVsList.length === 0 && totalDuelsCount > 0;
 
   const noDuelsAtAll =
-    !isInitialExposureLoad &&
-    filteredVsList.length === 0 &&
-    totalDuelsCount === 0 &&
-    !showStakeHoldingsMocks;
-
-  const mockOnlySearchEmpty =
-    !isInitialExposureLoad &&
-    mockSearchEmpty &&
-    showStakeHoldingsMocks &&
-    filteredVsList.length === 0;
-
-  const showMocksBlock =
-    !isInitialExposureLoad && showStakeHoldingsMocks && !mockSearchEmpty;
+    !isInitialExposureLoad && filteredVsList.length === 0 && totalDuelsCount === 0;
 
   const pagingSummary =
     !isInitialExposureLoad && filteredVsList.length > 0 ? (
@@ -967,15 +675,6 @@ function StakeHoldingsColumn({
             <span className="sr-only">{t("holdings.listLoadingAria")}</span>
             <ExposureListSkeleton count={DASHBOARD_EXPOSURE_PAGE_SIZE} />
           </div>
-        ) : null}
-
-        {!isInitialExposureLoad && mockOnlySearchEmpty ? (
-          <p
-            className={`${DASHBOARD_SURFACE_DASHED} px-4 py-6 text-center font-mono text-xs text-pv-muted sm:text-sm`}
-            role="status"
-          >
-            {t("holdings.searchEmpty")}
-          </p>
         ) : null}
 
         {!isInitialExposureLoad && noVsMatchFilters ? (
@@ -1053,27 +752,6 @@ function StakeHoldingsColumn({
           </button>
         ) : null}
 
-        {!isInitialExposureLoad && mockSearchEmpty && !mockOnlySearchEmpty ? (
-          <p
-            className={`${DASHBOARD_SURFACE_DASHED} px-4 py-6 text-center font-mono text-xs text-pv-muted sm:text-sm`}
-            role="status"
-          >
-            {t("holdings.searchEmpty")}
-          </p>
-        ) : null}
-
-        {showMocksBlock
-          ? visibleHoldingIds.map((id) => (
-              <StakeHoldingRow
-                key={id}
-                id={id}
-                isOpen={openKey === `mock:${id}`}
-                onToggle={() =>
-                  setOpenKey(openKey === `mock:${id}` ? null : `mock:${id}`)
-                }
-              />
-            ))
-          : null}
       </div>
     </section>
   );
@@ -1213,9 +891,7 @@ function RiskAndActionsColumn({
 
 export default function DashboardPortfolioSection({
   stakeHoldingsHeaderExtra,
-  stakeHoldingsSearchQuery = "",
   filteredVsList,
-  showStakeHoldingsMocks,
   exposureFilterKey,
   onResetFilters,
   totalDuelsCount,
@@ -1226,11 +902,8 @@ export default function DashboardPortfolioSection({
   viewerAddress,
 }: {
   stakeHoldingsHeaderExtra?: ReactNode;
-  /** Misma cadena que el input de búsqueda del filtro VS (filtra filas de tenencias mock). */
-  stakeHoldingsSearchQuery?: string;
   /** Lista de VS del usuario tras tabs + filtros Explore (fuente única Active Exposure). */
   filteredVsList: VSData[];
-  showStakeHoldingsMocks: boolean;
   /** Cambia cuando cambian filtros; resetea el paginado “Load more”. */
   exposureFilterKey: string;
   onResetFilters: () => void;
@@ -1249,9 +922,7 @@ export default function DashboardPortfolioSection({
         openKey={openKey}
         setOpenKey={setOpenKey}
         headerExtra={stakeHoldingsHeaderExtra}
-        stakeHoldingsSearchQuery={stakeHoldingsSearchQuery}
         filteredVsList={filteredVsList}
-        showStakeHoldingsMocks={showStakeHoldingsMocks}
         exposureFilterKey={exposureFilterKey}
         onResetFilters={onResetFilters}
         totalDuelsCount={totalDuelsCount}

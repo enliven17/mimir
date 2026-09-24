@@ -19,7 +19,6 @@ import { applyExploreFilters } from "@/lib/exploreFilters";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { LiveStat } from "@/components/ui";
-import { shouldShowDashboardStakeHoldingsMocks } from "@/lib/dashboardUiPolicy";
 import DashboardPortfolioSection, {
   RiskAllocationProfileCard,
 } from "@/components/dashboard/DashboardPortfolioSection";
@@ -151,11 +150,6 @@ export default function DashboardPageClient() {
   const exposureFilterKey = useMemo(
     () => `${tab}-${searchQuery}-${categoryFilter}-${minStakeFilter}`,
     [tab, searchQuery, categoryFilter, minStakeFilter]
-  );
-
-  const showStakeHoldingsMocks = useMemo(
-    () => shouldShowDashboardStakeHoldingsMocks(duels),
-    [duels]
   );
 
   if (!isConnected) {
@@ -420,14 +414,12 @@ export default function DashboardPageClient() {
       <AnimatedItem>
         <DashboardPortfolioSection
           filteredVsList={filtered}
-          showStakeHoldingsMocks={showStakeHoldingsMocks}
           exposureFilterKey={exposureFilterKey}
           onResetFilters={resetFilters}
           totalDuelsCount={duels.length}
           wins={won}
           losses={lost}
           viewerAddress={address ?? undefined}
-          stakeHoldingsSearchQuery={searchQuery}
           exposureLoading={loading && duels.length === 0}
           exposureRefreshing={refreshing}
           stakeHoldingsHeaderExtra={

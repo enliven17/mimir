@@ -66,17 +66,6 @@ export const DASHBOARD_EXPOSURE_PAGE_SIZE = 5;
 /** Filas añadidas en cada “Load more”. */
 export const DASHBOARD_EXPOSURE_LOAD_MORE = 5;
 
-/**
- * Muestra las filas demo de `DASHBOARD_STAKE_HOLDING_IDS` solo cuando no hay
- * exposición activa en open o accepted.
- */
-export function shouldShowDashboardStakeHoldingsMocks(duels: VSData[]): boolean {
-  const hasRealActive = duels.some(
-    (d) => d.state === "open" || d.state === "accepted"
-  );
-  return !hasRealActive;
-}
-
 export type DashboardFilteredExposureSummary = {
   filteredTotal: number;
   openCount: number;

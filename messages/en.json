@@ -702,15 +702,10 @@
       "friendsAria": "Friends",
       "friendsTitle": "Friends",
       "friendsHint": "Rivals and organizers — landing soon.",
-      "searchEmpty": "No stake holdings match your search. Try another name or keyword.",
       "visibilityPublic": "Public",
       "visibilityPrivate": "Private",
       "footerParticipants": "{count} participants",
       "footerParticipantsCapped": "{current} / {max} participants",
-      "poolPill": {
-        "closed": "Closed"
-      },
-      "demoBadge": "Sample",
       "loadMore": "Load more",
       "exposurePagingPartial": "Showing {visible} of {total} challenges",
       "exposurePagingAll": "All {total} challenges match your filters",
@@ -732,36 +727,7 @@
       "emptyCtaCreate": "Create a challenge",
       "emptyCtaExplore": "Browse the arena",
       "vsTitlePrivate": "Private challenge {id}",
-      "vsTitleOpen": "Challenge {id}",
-      "items": {
-        "canelo": {
-          "title": "Pereira vs Canelo · Over 7 rounds",
-          "meta": "UFC Seattle — 25/05/2026 18:30",
-          "bodyLead": "This position settles as a win if the bout exceeds seven completed rounds.",
-          "body": "Settlement is based on the official UFC result and round clock, including late-round stoppages or judges' decisions.",
-          "stake": "20 USDC",
-          "winEstimate": "27 USDC",
-          "returnMultiple": "1.35×"
-        },
-        "colapinto": {
-          "title": "Franco Colapinto · Finishes P17",
-          "meta": "F1 — Circuit of the Americas — 14/05/2026 08:45",
-          "bodyLead": "This position settles as a win if Franco Colapinto achieves a final classification of 17th (P17).",
-          "body": "Settlement is based exclusively on official FIA race results for the United States Grand Prix.",
-          "stake": "12 USDC",
-          "winEstimate": "18 USDC",
-          "returnMultiple": "1.50×"
-        },
-        "alvarez": {
-          "title": "Julián Álvarez · Over 7 goals · FIFA World Cup 2026",
-          "meta": "FIFA World Cup — Group stage window",
-          "bodyLead": "Position wins if Julián Álvarez records over 7 total goals during the 2026 World Cup.",
-          "body": "Settlement follows official FIFA tournament statistics for all active appearances.",
-          "stake": "35 USDC",
-          "winEstimate": "52 USDC",
-          "returnMultiple": "1.49×"
-        }
-      }
+      "vsTitleOpen": "Challenge {id}"
     },
     "statsSectionAria": "Performance summary: challenges won, challenges lost, win rate, and total winnings",
     "kpiStatsLoading": "Loading performance summary",
