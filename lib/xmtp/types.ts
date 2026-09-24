@@ -1,4 +1,4 @@
-import { Client } from "@xmtp/browser-sdk";
+import type { Client } from "@xmtp/browser-sdk";
 
 /**
  * Instancia devuelta por `Client.create` (codecs por defecto del SDK v7).

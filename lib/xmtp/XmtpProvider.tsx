@@ -21,7 +21,9 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Client, type XmtpEnv } from "@xmtp/browser-sdk";
+// Type-only: the SDK (WASM + workers) is loaded on demand when a wallet
+// connects with XMTP enabled, not on every page through the root layout.
+import type { Client as XmtpClient, XmtpEnv } from "@xmtp/browser-sdk";
 import { useConnectorClient } from "wagmi";
 import { useWallet } from "@/lib/wallet";
 import type { XmtpClientInstance } from "@/lib/xmtp/types";
@@ -29,10 +31,7 @@ import {
   getXmtpClientCreateOptions,
   isXmtpFeatureEnabled,
 } from "@/lib/xmtp/config";
-import {
-  createXmtpSignerFromEthereum,
-  type EthereumEip1193Provider,
-} from "@/lib/xmtp/signer";
+import type { EthereumEip1193Provider } from "@/lib/xmtp/signer";
 
 export type XmtpClientStatus =
   /** Sin wallet o aún no aplicable */
@@ -282,13 +281,17 @@ export function XmtpProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       let newClient: XmtpClientInstance | null = null;
       try {
+        const [{ Client }, { createXmtpSignerFromEthereum }] = await Promise.all([
+          import("@xmtp/browser-sdk"),
+          import("@/lib/xmtp/signer"),
+        ]);
         const signer = createXmtpSignerFromEthereum(ethereum, address);
         const opts = getXmtpClientCreateOptions();
         const XMTP_INIT_TIMEOUT_MS = 15_000;
         const clientOptions = {
           env: opts.env as XmtpEnv,
           appVersion: opts.appVersion,
-        } as Parameters<typeof Client.create>[1];
+        } as Parameters<typeof XmtpClient.create>[1];
         const clientPromise = Client.create(signer, clientOptions);
         try {
           newClient = await Promise.race([
@@ -309,7 +312,7 @@ export function XmtpProvider({ children }: { children: React.ReactNode }) {
             Client.create(signer, {
               ...clientOptions,
               dbPath: null,
-            } as Parameters<typeof Client.create>[1]),
+            } as Parameters<typeof XmtpClient.create>[1]),
             createXmtpInitTimeout(XMTP_INIT_TIMEOUT_MS),
           ]);
         }
