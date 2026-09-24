@@ -19,8 +19,9 @@ import {
   getDeployBlock,
   paginatedGetLogs,
 } from "@/lib/arc";
-import { stakeUnitsToUsdc } from "@/lib/chains";
+import { stakeUnitsToUsdc, type ChainKey } from "@/lib/chains";
 import { parseChainParam } from "@/lib/server/api-validation";
+import { cachedFor } from "@/lib/server/ttl-cache";
 import {
   COUNCIL_PERSONAS,
   personaAddressEnv,
@@ -50,13 +51,38 @@ interface CouncilResponse {
   votes:      PersonaVote[];
 }
 
+/**
+ * ClaimChallenged logs for one claim, scanned from the deploy block. Cached per
+ * instance for the same 20s the response is, so a burst of views (or random
+ * ids from a scraper) costs one scan per claim rather than one per request.
+ */
+const challengeLogs = cachedFor(async (chain: ChainKey, claimId: number): Promise<any[]> => {
+  return paginatedGetLogs(createChainPublicClient(chain), {
+    address: getContractAddress(chain),
+    event: {
+      type: "event",
+      name: "ClaimChallenged",
+      inputs: [
+        { name: "id",         type: "uint256", indexed: true },
+        { name: "challenger", type: "address", indexed: true },
+        { name: "stake",      type: "uint256", indexed: false },
+      ],
+    },
+    // `args` is a sibling of `event` in viem's getLogs filter — placing it
+    // inside the event object silently disables the indexed-topic filter
+    // and returns ChallengeChallenged logs across ALL claims, which then
+    // smear every persona's stakes onto whichever claim page is open.
+    args: { id: BigInt(claimId) },
+  } as any, getDeployBlock(chain));
+}, 20_000);
+
 export async function GET(
   req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id: rawId } = await ctx.params;
   const claimId = Number(rawId);
-  if (!Number.isFinite(claimId) || claimId <= 0) {
+  if (!Number.isInteger(claimId) || claimId <= 0) {
     return NextResponse.json({ error: "invalid claim id" }, { status: 400 });
   }
 
@@ -67,31 +93,16 @@ export async function GET(
 
   // Persona addresses are the same on every chain (W3S wallets are derived
   // from one wallet set), so only the escrow being scanned changes.
-  const client    = createChainPublicClient(chain);
-  const address   = getContractAddress(chain);
-  const fromBlock = getDeployBlock(chain);
-
-  let logs: any[] = [];
+  let logs: any[];
   try {
-    logs = await paginatedGetLogs(client, {
-      address,
-      event: {
-        type: "event",
-        name: "ClaimChallenged",
-        inputs: [
-          { name: "id",         type: "uint256", indexed: true },
-          { name: "challenger", type: "address", indexed: true },
-          { name: "stake",      type: "uint256", indexed: false },
-        ],
-      },
-      // `args` is a sibling of `event` in viem's getLogs filter — placing it
-      // inside the event object silently disables the indexed-topic filter
-      // and returns ChallengeChallenged logs across ALL claims, which then
-      // smear every persona's stakes onto whichever claim page is open.
-      args: { id: BigInt(claimId) },
-    } as any, fromBlock);
+    logs = await challengeLogs(chain, claimId);
   } catch (err) {
+    // An RPC failure is not "no persona staked": say so, and keep CDNs from caching it.
     console.error("[api/vs/council] log fetch failed:", err);
+    return NextResponse.json(
+      { error: "chain read failed" },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   const stakeByAddress = new Map<string, { stake: bigint; txHash: string; blockNumber: number }>();
