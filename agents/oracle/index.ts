@@ -59,7 +59,14 @@ import {
   type EvidencePayment,
 } from "../../lib/server/evidence-fetcher";
 import { fetchWithBudget, usdcToAtomic, atomicToUsdc, type PayingAgent } from "../../lib/x402";
-import { assertHopAllowed } from "../../lib/research/gateway";
+import { assertHopAllowed, gatewayFetch } from "../../lib/research/gateway";
+import {
+  evaluateJsonSpec,
+  evaluatePriceSpec,
+  parseResolverSpec,
+  winnerFor,
+  type ResolverOutcome,
+} from "../../lib/resolver-spec";
 import { chainTag, stakeBalanceUsdc, walletChains } from "../shared/chains";
 import {
   gatherCouncilVerdict,
@@ -527,6 +534,49 @@ async function deadlinePrices(claim: ClaimOnChain): Promise<DeadlinePrices | nul
   return { ...target, readings };
 }
 
+/**
+ * Settle from the claim's `resolver:` spec when it gives a determinate answer
+ * on Yes/No positions. Null means "not determined": the normal evidence + LLM
+ * path runs, so a resolver can only ever make a settlement more mechanical.
+ */
+async function tryStructuredResolver(claim: ClaimOnChain, prices: DeadlinePrices | null): Promise<SettlementDecision | null> {
+  const spec = parseResolverSpec(claim.settlementRule);
+  if (!spec) return null;
+  const tag = chainTag("settle", claim.chain);
+
+  let outcome: ResolverOutcome;
+  if (spec.kind === "price") {
+    const readings = prices && prices.symbol === spec.symbol
+      ? prices.readings
+      : await fetchPriceReadings(spec.symbol, Number(claim.deadline) * 1000).catch(() => []);
+    outcome = evaluatePriceSpec(spec, readings);
+  } else {
+    try {
+      // ponytail: read at settlement time, not at the deadline; fine for final
+      // results (scores, published figures), wrong for live values.
+      const res = await gatewayFetch(spec.url, { headers: { accept: "application/json", "user-agent": "Mimir-Oracle/1.0" } });
+      outcome = res.status === 200
+        ? evaluateJsonSpec(spec, JSON.parse(res.body))
+        : { determined: false, detail: `resolver source answered ${res.status}` };
+    } catch (err) {
+      outcome = { determined: false, detail: `resolver source unreadable: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
+  const side = outcome.determined ? winnerFor(outcome.conditionMet, claim.creatorPosition, claim.counterPosition) : null;
+  console.log(`${tag} Structured resolver (${spec.kind}): ${outcome.detail}${side ? ` → ${side}` : " → not determined, falling back"}`);
+  if (!outcome.determined || !side) return null;
+
+  const verdict: OracleVerdict = {
+    verdict: side,
+    confidence: 95,
+    explanation: `[RESOLVER] ${outcome.detail}`.slice(0, 500),
+    model: "structured-resolver",
+  };
+  const commit = `[resolver]${JSON.stringify(spec)}\n[resolver-result]${outcome.detail}`;
+  return { verdict, evidenceHash: hashEvidence(commit), bonusVotes: null };
+}
+
 function renderDeadlinePrices(claim: ClaimOnChain, prices: DeadlinePrices): string {
   const lines = prices.readings.map(
     (r) => `- ${r.source}: $${r.priceUsd.toLocaleString("en-US", { maximumFractionDigits: 6 })} at ${new Date(r.at).toISOString()}`,
@@ -698,6 +748,11 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
   const hasPrices = (prices?.readings.length ?? 0) > 0;
   let evidenceText = evidence.text;
   if (prices && hasPrices) evidenceText = `${evidenceText}\n\n${renderDeadlinePrices(claim, prices)}`;
+
+  // Structured resolver first: when the rule states in code what makes YES
+  // true and the data answers it, no model is asked at all.
+  const structured = await tryStructuredResolver(claim, prices);
+  if (structured) return structured;
 
   // No evidence at all: a model answering from memory is not a settlement.
   // Wait out a transient outage for a while, then refund rather than guess.

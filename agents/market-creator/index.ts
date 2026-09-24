@@ -58,6 +58,8 @@ import {
 } from "./polymarket";
 import { atomicToUsdc } from "../../lib/x402";
 import { reportingPoll } from "../../lib/ops/heartbeat";
+import { priceCheckTarget } from "../../lib/price-consensus";
+import { parseResolverSpec, priceSpecFromQuestion, resolverLine } from "../../lib/resolver-spec";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const CREATOR_STAKE_USDC  = Number(process.env.CREATOR_STAKE_USDC ?? "2");
@@ -669,6 +671,13 @@ Return a JSON array of ${MAX_CLAIMS_PER_RUN} candidates. Output JSON only.`;
       if (reason) {
         console.warn(`[market-creator] Drop crypto candidate - ${reason}: ${c.question.slice(0, 90)}`);
         return false;
+      }
+      // Make our own price markets deterministic: the oracle settles them from
+      // the deadline-time price sources before any model is consulted.
+      const target = priceCheckTarget(c.question, c.settlementRule);
+      const spec = target ? priceSpecFromQuestion(c.question, target.symbol, target.threshold) : null;
+      if (spec && !parseResolverSpec(c.settlementRule)) {
+        c.settlementRule = `${c.settlementRule}\n${resolverLine(spec)}`;
       }
       return true;
     }
