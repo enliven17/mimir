@@ -779,7 +779,7 @@ Key facts:
 | Database           | Neon Postgres via `@neondatabase/serverless`                                      | Serverless-friendly driver, works on both Vercel functions and Railway long-running workers                      |
 | i18n               | next-intl (English)                                                               | Locale-prefixed routing (`/en/*`), runtime message loading, ready for more locales                               |
 | Frontend hosting   | Vercel                                                                            | Native Next.js, `iad1` region, 30s function timeout for /api routes                                              |
-| Worker hosting     | Railway                                                                           | Long-lived processes; `npm run workers` runs the oracle + market-creator concurrently with auto-restart           |
+| Worker hosting     | Railway                                                                           | Long-lived processes; `npm run workers` runs the oracle, market-creator and council in one process with auto-restart           |
 
 ---
 
@@ -1018,7 +1018,7 @@ flowchart LR
    - `CIRCLE_CREATOR_WALLET_ID`, `CIRCLE_CREATOR_ADDRESS`
    - at least one LLM API key from `.env.example`
    - `AUTO_CHALLENGE=1` (optional - enables Kelly auto-staking)
-3. `railway.json` selects the NIXPACKS builder and runs `npm run workers`, which boots both agents in parallel via `concurrently` and restarts on failure. Logs are prefixed `oracle:` and `creator:`.
+3. `railway.json` selects the NIXPACKS builder and runs `npm run workers`, which boots the oracle, market-creator and council in one Node process (agents/all.ts) and restarts on failure. Logs are prefixed per worker, e.g. `[oracle]`.
 
 ### Neon Postgres (optional)
 
