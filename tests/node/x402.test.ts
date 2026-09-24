@@ -72,3 +72,16 @@ test("the preferred network is paid first, the rest stay as fallbacks", async ()
   );
   assert.deepEqual(orderByPreference(accepts, undefined), accepts);
 });
+
+test("withinBudget drops quotes above the cap and unpriced quotes", async () => {
+  const { withinBudget } = await import("../../lib/x402");
+  const reqs = [
+    { amount: "1000" },
+    { amount: "2000000" },
+    { maxAmountRequired: "500" },
+    {},
+    { amount: "1e9" },
+  ];
+  assert.deepEqual(withinBudget(reqs, 1000n), [{ amount: "1000" }, { maxAmountRequired: "500" }]);
+  assert.deepEqual(withinBudget(reqs, 0n), []);
+});

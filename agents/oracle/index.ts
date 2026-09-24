@@ -59,6 +59,7 @@ import {
   type EvidencePayment,
 } from "../../lib/server/evidence-fetcher";
 import { fetchWithBudget, usdcToAtomic, atomicToUsdc, type PayingAgent } from "../../lib/x402";
+import { assertHopAllowed } from "../../lib/research/gateway";
 import { chainTag, stakeBalanceUsdc, walletChains } from "../shared/chains";
 import {
   gatherCouncilVerdict,
@@ -218,6 +219,8 @@ async function fetchEvidence(claim: ClaimOnChain): Promise<EvidenceResult> {
   const maxAtomic = usdcToAtomic(budgetUsdc);
   const paidFetch = PAY_EVIDENCE
     ? async (u: string, init?: RequestInit) => {
+        // The creator picked this URL; re-check it (DNS may have changed since the free fetch).
+        await assertHopAllowed(u);
         const r = await fetchWithBudget(u, oraclePayer(claim.chain), maxAtomic, init);
         return {
           response: r.response,

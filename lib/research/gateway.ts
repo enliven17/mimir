@@ -35,7 +35,8 @@ export class GatewayRejectedError extends Error {
   }
 }
 
-async function assertHopAllowed(rawUrl: string): Promise<URL> {
+/** Throws GatewayRejectedError unless the URL and everything it resolves to are public. */
+export async function assertHopAllowed(rawUrl: string): Promise<URL> {
   const rejection = checkUrl(rawUrl);
   if (rejection) throw new GatewayRejectedError(rejection.message, rejection.reason, rawUrl);
 

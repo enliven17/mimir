@@ -90,15 +90,35 @@ function makeW3SSigner(agent: PayingAgent) {
 }
 
 /**
+ * Drop every requirement that asks for more than the cap. A requirement with no
+ * readable amount is dropped too: an unpriced quote is not a cheap one.
+ */
+export function withinBudget<T extends { amount?: string; maxAmountRequired?: string }>(
+  accepts: T[],
+  maxAtomic: bigint,
+): T[] {
+  return accepts.filter((r) => {
+    const raw = r.amount ?? r.maxAmountRequired;
+    if (raw === undefined || !/^\d+$/.test(String(raw))) return false;
+    return BigInt(raw) <= maxAtomic;
+  });
+}
+
+/**
  * A fetch that automatically pays any 402 it encounters, via Gateway-batched
  * nanopayments (falling back to standard exact-EVM when batching isn't offered).
- * No budget guard — use fetchWithBudget for the agentic, capped path.
+ * With `maxAtomic` it refuses to sign anything priced above it; without, it has
+ * no budget guard — use fetchWithBudget for the agentic, capped path.
  */
-export function createPayingFetch(agent: PayingAgent): typeof globalThis.fetch {
+export function createPayingFetch(agent: PayingAgent, maxAtomic?: bigint): typeof globalThis.fetch {
   const signer = makeW3SSigner(agent);
   const client = new x402Client();
   // Pay on the preferred network when the seller offers it; keep the rest as fallbacks.
-  client.registerPolicy((_version, reqs) => orderByPreference(reqs, agent.preferChain));
+  // The cap is enforced here, on the quote actually being signed, not only on the
+  // probe: a seller can quote cheap on the probe and dear on the paid retry.
+  client.registerPolicy((_version, reqs) =>
+    orderByPreference(maxAtomic === undefined ? reqs : withinBudget(reqs, maxAtomic), agent.preferChain),
+  );
   // Composite registration: handles BOTH Gateway-batched ("GatewayWalletBatched")
   // and standard exact-EVM payment requirements in one shot.
   registerBatchScheme(client, {
@@ -164,6 +184,10 @@ export async function fetchWithBudget(
   maxAtomic: bigint,
   init?: RequestInit,
 ): Promise<PaidFetchResult> {
+  // Redirects are refused on both requests: the paid retry must hit the exact
+  // resource that was quoted, not wherever the seller bounces it.
+  init = { ...init, redirect: "error" };
+
   // 1. Probe — unauthenticated request, see if payment is even required.
   const probe = await fetch(url, init);
   if (probe.status !== 402) {
@@ -212,7 +236,7 @@ export async function fetchWithBudget(
   }
 
   // 4. Pay + retry via the x402 client (signs EIP-3009 through W3S, batches via Gateway).
-  const payFetch = createPayingFetch(agent);
+  const payFetch = createPayingFetch(agent, maxAtomic);
   const paid = await payFetch(url, init);
 
   // 5. Surface the settlement receipt if the server attached one.
