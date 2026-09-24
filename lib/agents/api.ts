@@ -106,6 +106,10 @@ export class AgentEnvelopeError extends Error {
   }
 }
 
+const ENVELOPE_FIELDS = new Set([
+  "version", "agentId", "action", "idempotencyKey", "nonce", "signedAt", "body", "signature",
+]);
+
 function isAction(value: unknown): value is AgentAction {
   return typeof value === "string" && (AGENT_API_ACTIONS as readonly string[]).includes(value);
 }
@@ -129,8 +133,17 @@ export function validateAgentRequestEnvelope(
   if (!isAction(action)) {
     throw new AgentEnvelopeError(`unknown action ${action}`, 404, "unknown_action");
   }
-  if (env.action !== undefined && env.action !== action) {
+  // As the published schema says: `action` is required and nothing else rides
+  // along, so a typo'd field fails loudly instead of being silently ignored.
+  if (env.action === undefined) {
+    throw new AgentEnvelopeError("action is required", 400, "missing_action");
+  }
+  if (env.action !== action) {
     throw new AgentEnvelopeError("action does not match the URL", 400, "action_mismatch");
+  }
+  const unknown = Object.keys(env).filter((k) => !ENVELOPE_FIELDS.has(k));
+  if (unknown.length > 0) {
+    throw new AgentEnvelopeError(`unknown envelope field(s): ${unknown.join(", ")}`, 400, "unknown_field");
   }
   if (typeof env.agentId !== "string" || !AGENT_ID_PATTERN.test(env.agentId)) {
     throw new AgentEnvelopeError(

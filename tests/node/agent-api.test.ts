@@ -97,6 +97,8 @@ test("structural rejections carry an explicit reason", () => {
     [envelope({ nonce: "" }), "heartbeat", "bad_nonce"],
     [envelope({ nonce: "x".repeat(129) }), "heartbeat", "bad_nonce"],
     [envelope({ signedAt: "soon" }), "heartbeat", "bad_signed_at"],
+    [envelope({ action: undefined }), "heartbeat", "missing_action"],
+    [envelope({ sig: "0x00" }), "heartbeat", "unknown_field"],
   ];
   for (const [raw, action, reason] of cases) {
     try {
