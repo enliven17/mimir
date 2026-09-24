@@ -9,12 +9,9 @@ import {
   canOpenVsXmtpChat,
   getVsXmtpPeerAddress,
   getVsXmtpUnavailableReason,
-  isOneVsOneDemoVs,
-  shouldShowXmtpPeerUnreachableChatPreview,
 } from "@/lib/xmtp/vs-chat-eligibility";
 import { shortenAddress } from "@/lib/constants";
 import { Button, Input } from "@/components/ui";
-import VsXmtpChatPreviewShell from "@/components/xmtp/VsXmtpChatPreviewShell";
 import {
   isXmtpInstallationsLimitError,
   XMTP_INBOX_TOOLS_URL,
@@ -171,10 +168,6 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
   const innerThreadError =
     threadEligible && threadPhase === "error" && threadError;
 
-  const showPeerUnreachablePreview =
-    Boolean(threadError) &&
-    shouldShowXmtpPeerUnreachableChatPreview(vs, threadError?.kind);
-
   const xmtpProviderErrorMessage = xmtpError?.message ?? "";
   const showInboxToolsForInstallLimit = useMemo(
     () => isXmtpInstallationsLimitError(xmtpProviderErrorMessage),
@@ -315,30 +308,6 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
   }, [vs, t]);
 
   if (!featureEnabled) {
-    if (isOneVsOneDemoVs(vs)) {
-      return (
-        <div
-          className={`card border border-white/[0.08] p-5 ${vsPanelPageShell(embedded)}`}
-        >
-          <div className="flex min-w-0 gap-3 sm:gap-3.5">
-            <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pv-muted/15 text-pv-muted"
-              aria-hidden
-            >
-              <MessageCircle size={16} strokeWidth={2} />
-            </span>
-            <div className="min-w-0 space-y-1">
-              <h3 className="font-display text-xs font-bold uppercase tracking-[0.18em] text-pv-text sm:tracking-[0.2em]">
-                {t("featureOffTitle")}
-              </h3>
-              <p className="text-[10px] leading-relaxed text-pv-muted sm:text-[11px]">
-                {t("featureOffDesc")}
-              </p>
-            </div>
-          </div>
-        </div>
-      );
-    }
     return null;
   }
 
@@ -566,41 +535,7 @@ export default function VsXmtpPanel({ vs, embedded = false }: VsXmtpPanelProps) 
 
       {!isXmtpProviderError &&
         innerThreadError &&
-        threadErrorLabel &&
-        showPeerUnreachablePreview && (
-          <div className="mb-3 space-y-3">
-            <div className="rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2.5 sm:px-3.5 sm:py-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-200/85">
-                {t("chatPreviewEyebrow")}
-              </p>
-              <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-pv-muted">
-                  {t("chatPreviewBanner")}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    retryOpenThread();
-                    setSendError(null);
-                    setPendingSends([]);
-                  }}
-                  className="shrink-0 text-left text-xs font-semibold text-pv-emerald hover:underline sm:text-right"
-                >
-                  {t("retry")}
-                </button>
-              </div>
-            </div>
-            <VsXmtpChatPreviewShell
-              peerShort={shortenAddress(peerAddress)}
-              viewerShort={shortenAddress(address)}
-            />
-          </div>
-        )}
-
-      {!isXmtpProviderError &&
-        innerThreadError &&
-        threadErrorLabel &&
-        !showPeerUnreachablePreview && (
+        threadErrorLabel && (
           <div className="rounded-lg border border-pv-danger/25 bg-pv-danger/[0.06] px-3 py-2 text-xs text-pv-danger mb-3">
             <p>{threadErrorLabel}</p>
             <button

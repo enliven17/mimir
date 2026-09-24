@@ -228,9 +228,6 @@
     "sendThisPrivateLink": "Send this private link only to the people you want to invite.",
     "viewVS": "View Challenge",
     "createAnother": "Create another",
-    "mockSuccessBadge": "Demo",
-    "mockTxDisclaimer": "These hashes are simulated; no on-chain transaction was sent.",
-    "mockExplorerNote": "On a real creation you would open the explorer from here.",
     "errorCreating": "Error creating VS",
     "moderationCheckFailed": "Moderation check failed. Try again in a moment.",
     "moderationBlocked": "This claim can't be published under the current policy{codesLabel}.",
@@ -914,8 +911,6 @@
   },
   "xmtpVs": {
     "title": "XMTP MESSAGES",
-    "featureOffTitle": "Messaging is off in this build",
-    "featureOffDesc": "Enable NEXT_PUBLIC_FEATURE_XMTP in .env.local and restart the dev server. See docs/xmtp-integration.md.",
     "unavailableNotAccepted": "Private chat unlocks once the VS is accepted (1v1 only).",
     "unavailableWaitingOpponent": "Waiting for a fixed rival on-chain before the DM can open.",
     "unavailableMultiChallenger": "Multi-challenger VS — XMTP chat is 1v1 only for now.",
@@ -949,16 +944,7 @@
     "messageQueued": "Delivering…",
     "disclaimer": "Messages are delivered over XMTP (E2E encrypted). They are not stored on Mimir servers.",
     "blockedByTabTitle": "Chat open in another tab",
-    "blockedByTabDesc": "Close the other tab to use chat here. It will reconnect automatically.",
-    "chatPreviewEyebrow": "Layout preview",
-    "chatPreviewBanner": "Your rival hasn't joined XMTP yet. Once they sign in to Mimir (or any XMTP app) with their wallet, tap Retry.",
-    "chatPreviewAriaLabel": "Demo conversation layout",
-    "chatPreviewSrHint": "Sample messages between rival {peer} and you {you}.",
-    "chatPreviewBubblePeer": "Hey — we good to settle on the linked source at deadline?",
-    "chatPreviewBubbleYou": "Yes. Same rule for both sides.",
-    "chatPreviewBubblePeerShort": "👍",
-    "chatPreviewInputPlaceholder": "Unavailable until the thread opens",
-    "chatPreviewFootnote": "Sample layout only — nothing is sent over XMTP until the rival is reachable."
+    "blockedByTabDesc": "Close the other tab to use chat here. It will reconnect automatically."
   },
   "messagesHub": {
     "eyebrow": "End-to-end encrypted · XMTP",

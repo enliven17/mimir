@@ -10,36 +10,9 @@ import { ZERO_ADDRESS } from "@/lib/constants";
 /** Ancla en `/vs/[id]` para enlazar desde el hub de mensajes. */
 export const VS_XMTP_CHAT_ANCHOR_ID = "proven-xmtp-vs-chat";
 
-/**
- * Sample / demo VS were removed; no id is a sample anymore. Kept only until
- * `components/xmtp/MessagesHub.tsx` drops its call.
- */
-export function isSampleVsIdForXmtp(_vsId: number): boolean {
-  return false;
-}
-
-/**
- * The `/vs/create?demo=1` ticket was removed; no VS is a demo anymore. Kept only
- * until `components/xmtp/VsXmtpPanel.tsx` drops its call.
- */
-export function isOneVsOneDemoVs(_vs: VSData): boolean {
-  return false;
-}
-
 /** Montar `VsXmtpPanel` en `/vs/[id]`: solo VS on-chain. */
 export function shouldMountVsXmtpPanelOnDetailPage(vs: VSData): boolean {
   return vs.id >= 0;
-}
-
-/**
- * The peer-unreachable thread mock was demo-only; on-chain VS always use the
- * standard error + retry. Kept only until `VsXmtpPanel.tsx` drops its call.
- */
-export function shouldShowXmtpPeerUnreachableChatPreview(
-  _vs: VSData,
-  _errorKind: string | null | undefined
-): boolean {
-  return false;
 }
 
 /** Motivo por el que aún no hay chat XMTP en este VS (para copy en UI). */

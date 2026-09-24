@@ -46,7 +46,6 @@ export default function CreateSuccessScreen({
 
   const shareUrl = getShareUrl(createdId, inviteKey, chain);
   const network = getChain(chain);
-  const isMockSuccess = createdId < 0;
 
   async function copyLink() {
     await navigator.clipboard.writeText(shareUrl);
@@ -71,17 +70,11 @@ export default function CreateSuccessScreen({
                 >
                   ISSUED
                 </motion.div>
-                {!isMockSuccess ? (
-                  <div className="mb-2 flex justify-center">
-                    <ChainBadge chain={chain} />
-                  </div>
-                ) : null}
+                <div className="mb-2 flex justify-center">
+                  <ChainBadge chain={chain} />
+                </div>
                 <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-pv-emerald/90">
-                  {isMockSuccess
-                    ? t("mockSuccessBadge")
-                    : pending
-                      ? t("createSuccessBadgePending")
-                      : t("createSuccessBadgeLive")}
+                  {pending ? t("createSuccessBadgePending") : t("createSuccessBadgeLive")}
                 </p>
                 <h1 className="font-display text-2xl font-bold tracking-tight text-pv-text sm:text-3xl">
                   {pending
@@ -163,70 +156,45 @@ export default function CreateSuccessScreen({
 
               <div className="rounded-xl border border-white/[0.08] bg-pv-bg/35 px-4 py-3.5 sm:px-5">
                 <div className="space-y-2 text-left text-xs text-pv-muted">
-                  {isMockSuccess && (
-                    <p className="text-[11px] leading-relaxed text-pv-muted/90">
-                      {t("mockTxDisclaimer")}
-                    </p>
-                  )}
-                  {(pending || isMockSuccess) && txHash && (
+                  {pending && txHash && (
                     <p className="font-mono leading-relaxed">
                       {t("walletTx")}:{" "}
-                      {isMockSuccess ? (
-                        <span className="text-pv-text/90">
-                          {txHash.slice(0, 10)}…
-                          {txHash.slice(-8)}
-                        </span>
-                      ) : (
-                        <a
-                          href={explorerTxUrl(chain, txHash)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-pv-emerald underline-offset-2 transition-colors hover:underline"
-                        >
-                          {txHash.slice(0, 10)}…
-                          {txHash.slice(-8)}
-                        </a>
-                      )}
+                      <a
+                        href={explorerTxUrl(chain, txHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-pv-emerald underline-offset-2 transition-colors hover:underline"
+                      >
+                        {txHash.slice(0, 10)}…
+                        {txHash.slice(-8)}
+                      </a>
                     </p>
                   )}
                   {explorerTxHash &&
                     (!pending || explorerTxHash !== txHash) && (
                       <p className="font-mono leading-relaxed">
                         {pending ? t("consensusTx") : "Tx"}:{" "}
-                        {isMockSuccess ? (
-                          <span className="text-pv-text/90">
-                            {explorerTxHash.slice(0, 10)}…
-                            {explorerTxHash.slice(-8)}
-                          </span>
-                        ) : (
-                          <a
-                            href={explorerTxUrl(chain, explorerTxHash)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-pv-emerald underline-offset-2 transition-colors hover:underline"
-                          >
-                            {explorerTxHash.slice(0, 10)}…
-                            {explorerTxHash.slice(-8)}
-                          </a>
-                        )}
+                        <a
+                          href={explorerTxUrl(chain, explorerTxHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-pv-emerald underline-offset-2 transition-colors hover:underline"
+                        >
+                          {explorerTxHash.slice(0, 10)}…
+                          {explorerTxHash.slice(-8)}
+                        </a>
                       </p>
                     )}
-                  {isMockSuccess ? (
-                    <p className="text-[11px] leading-relaxed text-pv-muted/85">
-                      {t("mockExplorerNote")}
-                    </p>
-                  ) : (
-                    <p>
-                      <a
-                        href={network.explorerUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-pv-emerald underline-offset-2 transition-colors hover:underline"
-                      >
-                        {t("openExplorer")}
-                      </a>
-                    </p>
-                  )}
+                  <p>
+                    <a
+                      href={network.explorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-pv-emerald underline-offset-2 transition-colors hover:underline"
+                    >
+                      {t("openExplorer")}
+                    </a>
+                  </p>
                 </div>
               </div>
 

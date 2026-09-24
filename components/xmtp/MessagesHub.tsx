@@ -18,7 +18,6 @@ import {
   canOpenVsXmtpChat,
   getVsXmtpPeerAddress,
   getVsXmtpUnavailableReason,
-  isSampleVsIdForXmtp,
 } from "@/lib/xmtp/vs-chat-eligibility";
 import { getVSTotalPot } from "@/lib/contract";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
@@ -120,7 +119,7 @@ export default function MessagesHub() {
     const el: VSData[] = [];
     const rest: VSData[] = [];
     for (const vs of duels) {
-      if (!isSampleVsIdForXmtp(vs.id) && canOpenVsXmtpChat(vs)) {
+      if (canOpenVsXmtpChat(vs)) {
         el.push(vs);
       } else {
         rest.push(vs);

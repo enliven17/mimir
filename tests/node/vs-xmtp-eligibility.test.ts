@@ -7,7 +7,6 @@ import {
   canOpenVsXmtpChat,
   getVsXmtpUnavailableReason,
   shouldMountVsXmtpPanelOnDetailPage,
-  shouldShowXmtpPeerUnreachableChatPreview,
 } from "../../lib/xmtp/vs-chat-eligibility";
 
 const OPP = "0x2222222222222222222222222222222222222222" as const;
@@ -55,15 +54,6 @@ test("getVsXmtpUnavailableReason: accepted multi-challenger", () => {
     challenger_count: 3,
   });
   assert.equal(getVsXmtpUnavailableReason(vs), "multi_challenger");
-});
-
-test("shouldShowXmtpPeerUnreachableChatPreview: never for on-chain VS", () => {
-  const vs = baseVs({ id: 2, max_challengers: 1 });
-  assert.equal(
-    shouldShowXmtpPeerUnreachableChatPreview(vs, "peer_unreachable"),
-    false
-  );
-  assert.equal(shouldShowXmtpPeerUnreachableChatPreview(vs, "network"), false);
 });
 
 test("canOpenVsXmtpChat: accepted 1v1", () => {
