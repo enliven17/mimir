@@ -148,7 +148,7 @@ export default function Header() {
 
   const NAV_ITEMS = useMemo(() => {
     const items: Array<{
-      href: "/vs/create" | "/explorer" | "/dashboard" | "/messages" | "/stats" | "/bridge" | "/agents" | "/council" | "/baskets" | "/revenue";
+      href: "/vs/create" | "/explorer" | "/dashboard" | "/messages" | "/stats" | "/bridge" | "/agents" | "/council" | "/baskets" | "/revenue" | "/copy";
       label: string;
       accent: boolean;
       mobileLabel?: string;
@@ -162,6 +162,7 @@ export default function Header() {
       { href: "/baskets", label: "Baskets", accent: false },
       { href: "/stats", label: "Stats", accent: false },
       { href: "/revenue", label: "Revenue", accent: false },
+      { href: "/copy", label: "Copy", accent: false },
     ];
     if (xmtpNavEnabled) {
       items.push({
