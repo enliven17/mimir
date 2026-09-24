@@ -246,6 +246,23 @@ export function worstCaseCopySpend(p: CopyPermission): number {
   return Math.min(p.maxWeeklyUsdc, p.maxOpenExposureUsdc + p.maxRealizedLossUsdc);
 }
 
+/** How far a follower proof's timestamp may be from the server clock. */
+export const FOLLOWER_PROOF_MAX_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * What a follower signs to read or revoke their own permissions. Short-lived
+ * (a timestamp, not a nonce) because neither action moves money: it only has
+ * to stop a stranger listing a wallet's limits or cancelling its copies.
+ */
+export function followerProofMessage(action: "list" | "revoke", follower: string, at: number, id = ""): string {
+  return [
+    `Mimir copy ${action}`,
+    `follower: ${follower.toLowerCase()}`,
+    ...(id ? [`id: ${id}`] : []),
+    `at: ${at}`,
+  ].join("\n");
+}
+
 /**
  * The message a follower signs to grant a copy permission. Every bound appears
  * in the text: what is approved should be readable in the wallet prompt, not

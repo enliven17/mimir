@@ -597,9 +597,9 @@ Some details that decide whether this is safe:
 
 | Route | Does |
 | --- | --- |
-| `GET /api/copy/permissions?follower=0x…` | what this wallet has granted, with recent decisions |
+| `GET /api/copy/permissions?follower=0x…&at=…&signature=…` | what this wallet has granted, with recent decisions (follower-signed, 5 min window) |
 | `POST /api/copy/permissions` | grant one, signed over the human-readable terms |
-| `DELETE /api/copy/permissions?id=…&follower=0x…` | revoke, immediately |
+| `DELETE /api/copy/permissions?id=…&follower=0x…&at=…&signature=…` | revoke, immediately (follower-signed, no gas) |
 
 **Mimir does not place the copy.** Arc has no spend permission an operator could draw on, and inventing one would mean holding a follower's key, which is the thing the whole agent design refuses to do. Instead the follower's own registered execution agent calls `POST /api/copy/signals`, gets a gated answer with a size attached, stakes it from the follower's wallet with its own key, and reports the result back into the audit ledger. Policy stays with Mimir, execution stays with the agent, and the only thing that can move the follower's money is the follower's own wallet.
 

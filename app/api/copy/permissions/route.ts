@@ -5,6 +5,10 @@
  *   POST   /api/copy/permissions                grant one (follower-signed)
  *   DELETE /api/copy/permissions?id=…&follower=0x…   revoke, immediately
  *
+ * GET and DELETE also take `at` (ms timestamp) and `signature`, the follower's
+ * signature over followerProofMessage, so a stranger can neither list a
+ * wallet's limits nor cancel its copies.
+ *
  * The surface is behind `MIMIR_FEATURE_COPY_TRADING` and, while it is off,
  * returns 404 rather than accepting grants it cannot act on. Execution lands
  * with the funded agent actions; the policy layer ships first because it is
@@ -12,6 +16,8 @@
  */
 import {
   copyPermissionMessage,
+  followerProofMessage,
+  FOLLOWER_PROOF_MAX_SKEW_MS,
   validateCopyPermission,
   InvalidCopyPermissionError,
   type CopyPermission,
@@ -39,6 +45,25 @@ function disabled(): Response {
   return fail(404, "feature_disabled", "copy trading is not enabled on this deployment");
 }
 
+/** Checks the follower signed this action within the skew window. Null when fine. */
+async function followerProofError(
+  url: URL,
+  action: "list" | "revoke",
+  follower: string,
+  id = "",
+): Promise<Response | null> {
+  const at = Number(url.searchParams.get("at"));
+  if (!Number.isFinite(at) || Math.abs(Date.now() - at) > FOLLOWER_PROOF_MAX_SKEW_MS) {
+    return fail(401, "stale_proof", "at must be a ms timestamp within 5 minutes of now");
+  }
+  const ok = await verifyAgentSignature({
+    address: follower,
+    message: followerProofMessage(action, follower, at, id),
+    signature: url.searchParams.get("signature") ?? "",
+  });
+  return ok ? null : fail(401, "bad_signature", "the follower signature does not match");
+}
+
 function numberOr(value: unknown, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -54,6 +79,8 @@ export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const follower = normalizeAddress(url.searchParams.get("follower"));
   if (!follower) return fail(400, "bad_wallet", "follower must be an address");
+  const proofError = await followerProofError(url, "list", follower);
+  if (proofError) return proofError;
 
   const permissions = await listPermissions(follower).catch(() => []);
   const withAudit = await Promise.all(
@@ -149,8 +176,11 @@ export async function DELETE(req: Request): Promise<Response> {
   const follower = normalizeAddress(url.searchParams.get("follower"));
   if (!id || !follower) return fail(400, "bad_request", "id and follower are required");
 
-  // Revocation takes no signature on purpose: stopping is never the dangerous
-  // direction, and needing a wallet prompt to stop losing money is a trap.
+  // A signature but no gas and no nonce: stopping stays one wallet prompt away,
+  // and a stranger who learned the id cannot cancel someone else's copies.
+  const proofError = await followerProofError(url, "revoke", follower, id);
+  if (proofError) return proofError;
+
   const revoked = await revokePermission(id, follower);
   if (revoked === 0) return fail(404, "not_found", "no active permission with that id");
 
