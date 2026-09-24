@@ -32,7 +32,8 @@
     "seed:dry": "DRY_RUN=1 npx tsx scripts/seed-claims.ts",
     "deploy:contract": "npx tsx deploy/deploy.ts",
     "test:smoke": "node scripts/run-node-tests.mjs",
-    "warm:vs-index": "tsx scripts/warm-vs-index.ts"
+    "warm:vs-index": "tsx scripts/warm-vs-index.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
@@ -66,6 +67,7 @@
     "ws": "^8.20.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

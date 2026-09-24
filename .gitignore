@@ -100,3 +100,7 @@ docs/BASE_PARITY_PLAN.md
 forge-out/
 forge-cache/
 cache/
+
+# Playwright
+/test-results/
+/playwright-report/
