@@ -7,13 +7,11 @@
  */
 import {
   createPublicClient,
-  createWalletClient,
   http,
   parseEventLogs,
   type Log,
   type PublicClient,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 
 import { erc20Abi } from "viem";
 import { getContractAddress, RPC_BATCH_SIZE } from "./arc";
@@ -720,65 +718,23 @@ async function sendBrowserTx(
   }
 }
 
-// ── Write: server (private key) ───────────────────────────────────────────────
-async function sendServerTx(
-  chain: ChainKey,
-  privateKey: string,
-  functionName: string,
-  args: unknown[],
-  valueUsdc: number
-): Promise<ContractWriteResult> {
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
-  const cfg = getChain(chain);
-  const walletClient = createWalletClient({ chain: cfg.chain, transport: http(cfg.rpcUrl), account });
-
-  await ensureAllowance(chain, account.address, valueUsdc, (amount) =>
-    walletClient.writeContract({
-      address: cfg.usdc,
-      abi: erc20Abi,
-      functionName: "approve",
-      args: [requireContractAddress(chain), amount],
-      account,
-      chain: cfg.chain,
-    }),
-  );
-
-  const call = writeCall(chain, functionName, args);
-  const txHash = await walletClient.writeContract({
-    address:      requireContractAddress(chain),
-    abi:          call.abi as any,
-    functionName: functionName as any,
-    args:         call.args as any,
-    value:        nativeValue(chain, valueUsdc) as any, // see sendBrowserTx
-    account,
-    chain:        cfg.chain,
-  });
-
-  const receipt = await getPublicClient(chain).waitForTransactionReceipt({ hash: txHash });
-  if (receipt.status === "reverted") throw new Error("Transaction reverted");
-  return { txHash, explorerUrl: explorerTxUrl(chain, txHash), receipt };
-}
-
-// ── Write: demo relay (via server API) ───────────────────────────────────────
-async function sendDemoTx(
-  action: string,
-  params: Record<string, unknown>
-): Promise<ContractWriteResult & { claimId: number | null }> {
-  const res = await fetch("/api/demo/write", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ action, params }),
-  });
-  if (!res.ok) throw new Error(`Demo relay error: ${res.status}`);
-  const data = await res.json();
-  const chain = (params.chain as ChainKey | undefined) ?? "arc";
-  return {
-    txHash:    data.txHash ?? "",
-    explorerUrl: data.txHash ? explorerTxUrl(chain, data.txHash) : undefined,
-    receipt:   null,
-    pending:   data.pending ?? false,
-    claimId:   data.claimId ?? null,
-  };
+/**
+ * Ask the read index to re-read one claim right after a confirmed write, so
+ * the page's next fetch shows the new state instead of waiting for the cron.
+ * Best-effort: the index catches up on its own if this fails.
+ */
+async function refreshIndexAfterWrite(chain: ChainKey, claimId: number | null, inviteKey?: string): Promise<void> {
+  if (claimId === null || typeof window === "undefined") return;
+  try {
+    await fetch("/api/vs/sync", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ claimId, chain, inviteKey: inviteKey || null }),
+      signal: AbortSignal.timeout(8_000),
+    });
+  } catch {
+    /* the cron reconcile covers it */
+  }
 }
 
 // ── Public write functions ────────────────────────────────────────────────────
@@ -789,12 +745,10 @@ export async function createClaim(
   const chain = params.chain ?? "arc";
   const args = buildCreateArgs(params);
 
-  if (isDemoMode()) {
-    return sendDemoTx("create_claim", params as unknown as Record<string, unknown>);
-  }
-
   const result = await sendBrowserTx(chain, "createClaim", args, params.stake_amount);
-  return { ...result, claimId: claimIdFromReceipt(result.receipt, requireContractAddress(chain)) };
+  const claimId = claimIdFromReceipt(result.receipt, requireContractAddress(chain));
+  await refreshIndexAfterWrite(chain, claimId, params.invite_key);
+  return { ...result, claimId };
 }
 
 export async function challengeClaim(
@@ -804,15 +758,13 @@ export async function challengeClaim(
   inviteKey = "",
   chain: ChainKey = "arc",
 ): Promise<ClaimWriteResult> {
-  if (isDemoMode()) {
-    return sendDemoTx("challenge_claim", { claimId, stakeAmount, inviteKey, chain });
-  }
   const result = await sendBrowserTx(
     chain,
     "challengeClaim",
     [BigInt(claimId), usdcToStakeUnits(chain, stakeAmount), inviteKey],
     stakeAmount
   );
+  if (!result.pending) await refreshIndexAfterWrite(chain, claimId, inviteKey);
   return { ...result, claimId };
 }
 
@@ -821,9 +773,6 @@ export async function resolveClaim(
   claimId: number,
   chain: ChainKey = "arc",
 ): Promise<ClaimWriteResult> {
-  if (isDemoMode()) {
-    return sendDemoTx("resolve_claim", { claimId, chain });
-  }
   // Browser resolution is not supported — resolution is oracle-only.
   throw new Error(
     "Claims are resolved by the Mimir oracle agent. Connect as oracle to resolve manually."
@@ -835,10 +784,8 @@ export async function cancelClaim(
   claimId: number,
   chain: ChainKey = "arc",
 ): Promise<ClaimWriteResult> {
-  if (isDemoMode()) {
-    return sendDemoTx("cancel_claim", { claimId, chain });
-  }
   const result = await sendBrowserTx(chain, "cancelClaim", [BigInt(claimId)], 0);
+  if (!result.pending) await refreshIndexAfterWrite(chain, claimId);
   return { ...result, claimId };
 }
 
@@ -882,68 +829,15 @@ export async function createRematch(
   // A rematch lives on its parent's chain: parentId means nothing elsewhere.
   const chain = params.chain ?? "arc";
   assertRematchSupported(chain);
-  if (isDemoMode()) {
-    return sendDemoTx("create_rematch", { parentId, ...params });
-  }
   const result = await sendBrowserTx(
     chain,
     "createRematch",
     [BigInt(parentId), BigInt(params.deadline), usdcToStakeUnits(chain, params.stake_amount), params.invite_key ?? ""],
     params.stake_amount
   );
-  return { ...result, claimId: claimIdFromReceipt(result.receipt, requireContractAddress(chain)) };
-}
-
-// ── Server-side demo write ────────────────────────────────────────────────────
-export async function executeDemoWrite(
-  action: string,
-  params: Record<string, unknown>
-): Promise<ClaimWriteResult> {
-  const privateKey = getDemoPrivateKey(action);
-  if (!privateKey) throw new Error(`No demo key configured for action: ${action}`);
-  const chain = (params.chain as ChainKey | undefined) ?? "arc";
-
-  if (action === "create_claim") {
-    const p = params as unknown as CreateClaimParams;
-    const args = buildCreateArgs(p);
-    const result = await sendServerTx(chain, privateKey, "createClaim", args, p.stake_amount);
-    return { ...result, claimId: claimIdFromReceipt(result.receipt, requireContractAddress(chain)) };
-  }
-
-  if (action === "challenge_claim") {
-    const { claimId, stakeAmount, inviteKey = "" } = params as any;
-    const result = await sendServerTx(
-      chain, privateKey, "challengeClaim",
-      [BigInt(claimId), usdcToStakeUnits(chain, stakeAmount), inviteKey],
-      stakeAmount
-    );
-    return { ...result, claimId: Number(claimId) };
-  }
-
-  if (action === "resolve_claim") {
-    // Demo resolve: oracle agent handles real resolution; demo just simulates
-    const { claimId } = params as any;
-    throw new Error(`Claim ${claimId}: use the oracle agent to resolve on ${getChain(chain).name}.`);
-  }
-
-  if (action === "cancel_claim") {
-    const { claimId } = params as any;
-    const result = await sendServerTx(chain, privateKey, "cancelClaim", [BigInt(claimId)], 0);
-    return { ...result, claimId: Number(claimId) };
-  }
-
-  if (action === "create_rematch") {
-    assertRematchSupported(chain);
-    const { parentId, deadline, stake_amount, invite_key = "" } = params as any;
-    const result = await sendServerTx(
-      chain, privateKey, "createRematch",
-      [BigInt(parentId), BigInt(deadline), usdcToStakeUnits(chain, stake_amount), invite_key],
-      stake_amount
-    );
-    return { ...result, claimId: claimIdFromReceipt(result.receipt, requireContractAddress(chain)) };
-  }
-
-  throw new Error(`Unknown demo action: ${action}`);
+  const claimId = claimIdFromReceipt(result.receipt, requireContractAddress(chain));
+  await refreshIndexAfterWrite(chain, claimId, params.invite_key);
+  return { ...result, claimId };
 }
 
 function assertRematchSupported(chain: ChainKey): void {
@@ -977,20 +871,6 @@ function buildCreateArgs(p: CreateClaimParams): unknown[] {
 }
 
 // ── Demo mode helpers ─────────────────────────────────────────────────────────
-function isDemoMode(): boolean {
-  return process.env.NEXT_PUBLIC_DEMO_MODE === "1";
-}
-
-function getDemoPrivateKey(action: string): string | undefined {
-  if (action === "create_claim" || action === "create_rematch") {
-    return process.env.DEMO_CREATOR_PRIVATE_KEY || process.env.DEMO_SIGNER_PRIVATE_KEY;
-  }
-  if (action === "challenge_claim") {
-    return process.env.DEMO_CHALLENGER_PRIVATE_KEY || process.env.DEMO_SIGNER_PRIVATE_KEY;
-  }
-  return process.env.DEMO_SIGNER_PRIVATE_KEY;
-}
-
 // ── Freshness helper ──────────────────────────────────────────────────────────
 function makeLiveFreshness(): VSCacheFreshness {
   return {
