@@ -2,23 +2,14 @@ import { NextResponse } from "next/server";
 
 import { createApiError } from "@/lib/server/api-validation";
 import { refreshChallengeOpportunitiesIndex } from "@/lib/server/challenge-opportunities";
+import { isCronAuthorized } from "@/lib/server/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function isAuthorized(request: Request) {
-  const expectedSecret = process.env.CRON_SECRET?.trim();
-  if (!expectedSecret) {
-    return false;
-  }
-
-  const authHeader = request.headers.get("authorization") ?? "";
-  return authHeader === `Bearer ${expectedSecret}`;
-}
-
 export async function GET(request: Request) {
   try {
-    if (!isAuthorized(request)) {
+    if (!isCronAuthorized(request)) {
       return NextResponse.json(
         createApiError("forbidden", "Invalid cron credentials"),
         { status: 403 }

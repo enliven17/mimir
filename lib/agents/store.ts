@@ -191,6 +191,17 @@ export async function pruneNonces(olderThanMs: number, now = Date.now()): Promis
   await query("DELETE FROM agent_api_nonces WHERE at < ?", [now - olderThanMs]);
 }
 
+/**
+ * Housekeeping for the append-only agent tables. Nonces outlive the 5 minute
+ * skew window by a wide margin, idempotent answers are kept a day, and the
+ * audit trail a month (the rate limiter only ever looks back an hour).
+ */
+export async function pruneAgentTables(now = Date.now()): Promise<void> {
+  await pruneNonces(3_600_000, now);
+  await query("DELETE FROM agent_api_responses WHERE at < ?", [now - 86_400_000]);
+  await query("DELETE FROM agent_request_audit WHERE at < ?", [now - 30 * 86_400_000]);
+}
+
 export interface StoredResponse {
   status: number;
   body: unknown;
