@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 /** A single signature must never authorise unbounded exposure. */
 const MAX_PER_MARKET_CAP_USDC = 100;
+const SIGNATURE_MAX_SKEW_MS = 5 * 60 * 1000;
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -39,8 +40,12 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
   const follower = normalizeAddress(body.follower);
   const signature = String(body.signature ?? "");
   const perMarketCapUsdc = Number(body.perMarketCapUsdc ?? 0);
+  const signedAt = Number(body.signedAt);
 
   if (!follower) return fail(400, "bad_wallet", "follower must be an address");
+  if (!Number.isFinite(signedAt) || Math.abs(Date.now() - signedAt) > SIGNATURE_MAX_SKEW_MS) {
+    return fail(401, "stale_signature", "signedAt must be a ms timestamp within 5 minutes of now");
+  }
   if (!Number.isFinite(perMarketCapUsdc) || perMarketCapUsdc < 0) {
     return fail(400, "bad_cap", "perMarketCapUsdc must be zero or positive");
   }
@@ -53,14 +58,19 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
 
   const signedOk = await verifyAgentSignature({
     address: follower,
-    message: followMessage({ basketId: id, follower, perMarketCapUsdc }),
+    message: followMessage({ basketId: id, follower, perMarketCapUsdc, signedAt }),
     signature,
   });
   if (!signedOk) {
     return fail(401, "bad_signature", "the follower signature does not match");
   }
 
-  await setSubscription({ basketId: id, follower, perMarketCapUsdc, signature });
+  const previous = await getSubscription(id, follower).catch(() => null);
+  if (previous && signedAt <= previous.updatedAt) {
+    return fail(409, "signature_replay", "a newer subscription signature is already on file");
+  }
+
+  await setSubscription({ basketId: id, follower, perMarketCapUsdc, signature, signedAt });
   const stored = await getSubscription(id, follower);
 
   return new Response(

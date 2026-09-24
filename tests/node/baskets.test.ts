@@ -193,7 +193,9 @@ test("the follow message names the basket, the follower and the cap", () => {
     basketId: "contrarian-mix",
     follower: "0xAbC0000000000000000000000000000000000001",
     perMarketCapUsdc: 5,
+    signedAt: 1_800_000_000_000,
   });
+  assert.match(message, /signedAt: 1800000000000/);
   assert.match(message, /basket: contrarian-mix/);
   assert.match(message, /follower: 0xabc0000000000000000000000000000000000001/);
   assert.match(message, /perMarketCapUsdc: 5/);

@@ -96,6 +96,8 @@ export async function setSubscription(args: {
   follower: string;
   perMarketCapUsdc: number;
   signature: string;
+  /** The signature's own timestamp; stored so an older one is refused later. */
+  signedAt: number;
 }): Promise<void> {
   await query(
     `INSERT INTO basket_subscriptions(basket_id, follower, per_market_cap_usdc, signature, updated_at)
@@ -109,7 +111,7 @@ export async function setSubscription(args: {
       args.follower.toLowerCase(),
       args.perMarketCapUsdc,
       args.signature,
-      Date.now(),
+      args.signedAt,
     ],
   );
 }

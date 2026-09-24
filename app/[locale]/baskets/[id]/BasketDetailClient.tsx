@@ -91,13 +91,14 @@ export default function BasketDetailClient({ basketId }: { basketId: string }) {
     setError(null);
     setBusy(true);
     try {
+      const signedAt = Date.now();
       const signature = await signMessageAsync({
-        message: followMessage({ basketId, follower: address, perMarketCapUsdc: nextCap }),
+        message: followMessage({ basketId, follower: address, perMarketCapUsdc: nextCap, signedAt }),
       });
       const res = await fetch(`/api/baskets/${basketId}/subscribe`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ follower: address, perMarketCapUsdc: nextCap, signature }),
+        body: JSON.stringify({ follower: address, perMarketCapUsdc: nextCap, signature, signedAt }),
       });
       const payload = (await res.json()) as Record<string, unknown>;
       if (!res.ok) throw new Error(String(payload.message ?? `HTTP ${res.status}`));

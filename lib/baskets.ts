@@ -258,17 +258,23 @@ export function composeMessage(id: string, name: string, members: BasketMember[]
  * The message a follower signs. It names the basket, the follower and the cap,
  * so what is approved is legible in the wallet prompt rather than encoded.
  * Unfollowing is the same signature with the cap set to zero.
+ *
+ * `signedAt` (ms) makes every signature single-use in practice: the server
+ * only accepts one inside a short window and newer than the last one it
+ * stored, so an old "cap 50" cannot be replayed after an unfollow.
  */
 export function followMessage(args: {
   basketId: string;
   follower: string;
   perMarketCapUsdc: number;
+  signedAt: number;
 }): string {
   return [
     "Mimir basket subscription",
     `basket: ${args.basketId}`,
     `follower: ${args.follower.toLowerCase()}`,
     `perMarketCapUsdc: ${args.perMarketCapUsdc}`,
+    `signedAt: ${args.signedAt}`,
     "Positions are staked from your own wallet with your own signature.",
     "Nothing is deposited and nothing is pooled.",
   ].join("\n");
