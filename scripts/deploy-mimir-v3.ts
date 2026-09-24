@@ -63,7 +63,7 @@ const DEPLOY_FUND: Record<"native-usdc" | "eth", { send: string; min: string; ne
 };
 
 const DEPLOY_ABI = parseAbi([
-  "constructor(address _oracle, uint16 _platformFeeBps, uint16 _agentOwnerFeeBps, address _platformRecipient, address _usdc)",
+  "constructor(address _oracle, uint16 _platformFeeBps, uint16 _agentOwnerFeeBps, address _platformRecipient, address _usdc, uint256 _disputeWindow)",
 ]);
 
 function targetChain(): ChainKey {
@@ -139,6 +139,8 @@ async function main(): Promise<void> {
 
   const platformFeeBps = envNumber("V3_PLATFORM_FEE_BPS", 50);
   const agentOwnerFeeBps = envNumber("V3_AGENT_OWNER_FEE_BPS", 50);
+  // How long a proposed verdict stays disputable before it pays out (max 7 days, 0 = instant).
+  const disputeWindowSeconds = envNumber("V3_DISPUTE_WINDOW_SECONDS", 86_400);
   const platformRecipient = getAddress(
     process.env.PLATFORM_FEE_RECIPIENT?.trim() ||
       process.env.X402_SELLER_ADDRESS?.trim() ||
@@ -209,7 +211,7 @@ async function main(): Promise<void> {
   const deployHash = await deployWallet.deployContract({
     abi: DEPLOY_ABI,
     bytecode,
-    args: [oracleAddr, platformFeeBps, agentOwnerFeeBps, platformRecipient, stakeToken],
+    args: [oracleAddr, platformFeeBps, agentOwnerFeeBps, platformRecipient, stakeToken, BigInt(disputeWindowSeconds)],
   });
   const receipt = await arcPublic.waitForTransactionReceipt({ hash: deployHash });
   if (receipt.status !== "success") throw new Error("Deploy reverted");

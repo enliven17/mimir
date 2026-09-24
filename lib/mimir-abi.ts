@@ -286,4 +286,8 @@ export const STATE = {
   ACTIVE:    1,
   RESOLVED:  2,
   CANCELLED: 3,
+  /** MimirV3 with a dispute window: verdict proposed, not yet final. */
+  PROPOSED:  4,
+  /** MimirV3: a participant disputed the proposal; the arbiter decides. */
+  DISPUTED:  5,
 } as const;

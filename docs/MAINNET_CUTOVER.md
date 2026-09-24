@@ -43,8 +43,13 @@ but slow: `queueFeePolicy` then `executeFeePolicy` after the two-day timelock.
       not an audit, and this is the point where that distinction starts costing
       real money.
 - [ ] A multisig to own the contract (`MIMIR_V3_OWNER`). The owner can queue an
-      oracle change (2-day timelock) and pause new positions, so it must not
-      be the market-creator hot wallet that also trades.
+      oracle change (2-day timelock), pause new positions, and is the arbiter
+      for disputed verdicts (`resolveDispute`), so it must not be the
+      market-creator hot wallet that also trades.
+- [ ] A dispute window (`V3_DISPUTE_WINDOW_SECONDS`, default 24h). The oracle
+      only proposes a verdict; participants can dispute it with a MIN_STAKE
+      bond, and the oracle worker finalizes undisputed ones when the window
+      closes. Someone must watch for `ResolutionDisputed` events and rule.
 
 ## 2. Deploy
 

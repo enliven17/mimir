@@ -42,7 +42,7 @@ contract MimirV3SafetyTest {
 
     function setUp() public {
         vm.warp(1_000_000);
-        mimir = new MimirV3(oracle, 50, 0, platform, address(0));
+        mimir = new MimirV3(oracle, 50, 0, platform, address(0), 0);
         vm.deal(creator, 1_000 * ONE);
         vm.deal(alice, 1_000 * ONE);
         vm.deal(bob, 1_000 * ONE);

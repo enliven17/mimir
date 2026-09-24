@@ -70,6 +70,7 @@ import ResolutionTerminal from "@/components/ResolutionTerminal";
 import VsXmtpPanel from "@/components/xmtp/VsXmtpPanel";
 import CouncilVoteWidget from "@/components/council/CouncilVoteWidget";
 import SettlementPreviewCard from "@/components/vs/SettlementPreviewCard";
+import DisputePanel from "@/components/vs/DisputePanel";
 import Stage from "@/components/Stage";
 import LiveDeadline from "@/components/LiveDeadline";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
@@ -1071,6 +1072,14 @@ export default function VSDetailPage() {
           <AnimatedItem>
             <div className="mb-6 sm:mb-8">
               <SettlementPreviewCard vs={display} chain={chain} />
+            </div>
+          </AnimatedItem>
+        )}
+
+        {vsId > 0 && (
+          <AnimatedItem>
+            <div className="mb-6 empty:hidden sm:mb-8">
+              <DisputePanel claimId={vsId} chain={chain} onChanged={fetchVS} />
             </div>
           </AnimatedItem>
         )}

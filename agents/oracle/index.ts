@@ -50,6 +50,7 @@ import { claimKey, getChain, stakeUnitsToUsdc, usdcToStakeUnits, type ChainKey }
 import { getOracleAddress } from "../../lib/circle-w3s";
 import { requireWalletIdFor, w3sEscrowWrite } from "../../lib/w3s-escrow";
 import { MIMIR_ABI, WINNER_SIDE, STATE, BPS_DIVISOR } from "../../lib/mimir-abi";
+import { MIMIR_V3_ABI } from "../../lib/mimir-v3-abi";
 import { fetchDecodedClaim, type DecodedClaim } from "../../lib/claim-codec";
 import {
   fetchEvidence as fetchEvidenceShared,
@@ -1046,6 +1047,30 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
   console.log(`${chainTag("challenge", claim.chain)} Oracle: "${verdict.explanation.slice(0, 120)}"`);
 }
 
+/**
+ * Pay out an undisputed proposal once its dispute window has closed. Anyone
+ * may call finalizeResolution; the oracle does so it never waits on a user.
+ */
+async function finalizeIfDue(claim: ClaimOnChain, now: bigint): Promise<void> {
+  const client = createChainPublicClient(claim.chain);
+  const address = getContractAddress(claim.chain);
+  const [window, proposal] = await Promise.all([
+    client.readContract({ address, abi: MIMIR_V3_ABI, functionName: "disputeWindow" }) as Promise<bigint>,
+    client.readContract({ address, abi: MIMIR_V3_ABI, functionName: "proposals", args: [BigInt(claim.id)] }) as Promise<readonly unknown[]>,
+  ]);
+  const proposedAt = BigInt(proposal[2] as bigint | number);
+  if (now < proposedAt + window) return;
+  const txHash = await w3sEscrowWrite({
+    chain:        claim.chain,
+    walletId:     requireWalletIdFor(ORACLE_WALLET_ENV, claim.chain),
+    owner:        ORACLE_ADDR,
+    functionName: "finalizeResolution",
+    args:         [BigInt(claim.id)],
+    refId:        `finalize-${claim.chain}-${claim.id}`,
+  });
+  console.log(`${chainTag("settle", claim.chain)} ✓ Finalized #${claim.id} after its dispute window — ${getExplorerTxUrl(txHash, claim.chain)}`);
+}
+
 // ── Main poll loop ────────────────────────────────────────────────────────────
 interface ChainScan {
   expiredActive: ClaimOnChain[];
@@ -1072,6 +1097,12 @@ async function scanChain(chain: ChainKey, now: bigint): Promise<ChainScan> {
     if (!claim) continue;
     if (claim.state === STATE.ACTIVE && claim.deadline <= now) {
       expiredActive.push(claim);
+      continue;
+    }
+    if (claim.state === STATE.PROPOSED) {
+      await finalizeIfDue(claim, now).catch((err) =>
+        console.warn(`${tag} finalize #${id} failed:`, err instanceof Error ? err.message : err),
+      );
       continue;
     }
 

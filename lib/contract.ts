@@ -181,6 +181,10 @@ function mapState(n: number): ClaimData["state"] {
     case STATE.ACTIVE:    return "active";
     case STATE.RESOLVED:  return "resolved";
     case STATE.CANCELLED: return "cancelled";
+    // Proposed or disputed verdicts are not final: the claim is still live
+    // money. The dispute panel reads the proposal itself.
+    case STATE.PROPOSED:
+    case STATE.DISPUTED:  return "active";
     default: return "open";
   }
 }
@@ -814,6 +818,69 @@ export async function getPendingWithdrawals(
     }),
   );
   return reads.filter((r): r is { chain: ChainKey; usdc: number } => r !== null && r.usdc > 0);
+}
+
+export interface DisputeStatus {
+  state: number;
+  deadline: number;
+  proposal: { winnerSide: number; confidence: number; proposedAt: number; disputer: string; summary: string } | null;
+  disputeWindow: number;
+  bondUsdc: number;
+  isParticipant: boolean;
+  /** Escrow build supports the dispute/refund functions (newer MimirV3 deploys). */
+  supported: boolean;
+}
+
+/** Proposal and dispute state for a claim on a MimirV3 escrow; null on v2 chains. */
+export async function getDisputeStatus(chain: ChainKey, claimId: number, viewer?: string | null): Promise<DisputeStatus | null> {
+  if (getChain(chain).abiVersion !== "v3") return null;
+  const client = getPublicClient(chain);
+  const address = requireContractAddress(chain);
+  const base = (await client.readContract({ address, abi: MIMIR_V3_ABI, functionName: "getClaim", args: [BigInt(claimId)] })) as readonly unknown[];
+  const creator = String(base[0]);
+  const state = Number(base[9]);
+  const deadline = Number(base[8] as bigint);
+  const [windowRes, proposalRes, minStake, challenged] = await Promise.all([
+    client.readContract({ address, abi: MIMIR_V3_ABI, functionName: "disputeWindow" }).catch(() => null),
+    client.readContract({ address, abi: MIMIR_V3_ABI, functionName: "proposals", args: [BigInt(claimId)] }).catch(() => null),
+    client.readContract({ address, abi: MIMIR_V3_ABI, functionName: "MIN_STAKE" }).catch(() => 0n),
+    viewer
+      ? client.readContract({ address, abi: MIMIR_V3_ABI, functionName: "hasChallenged", args: [BigInt(claimId), viewer as `0x${string}`] }).catch(() => false)
+      : Promise.resolve(false),
+  ]);
+  const p = proposalRes as readonly unknown[] | null;
+  return {
+    state,
+    deadline,
+    proposal: p && Number(p[2]) > 0
+      ? { winnerSide: Number(p[0]), confidence: Number(p[1]), proposedAt: Number(p[2]), disputer: String(p[4]), summary: String(p[7] ?? "") }
+      : null,
+    disputeWindow: windowRes === null ? 0 : Number(windowRes as bigint),
+    bondUsdc: stakeUnitsToUsdc(chain, minStake as bigint),
+    isParticipant: Boolean(viewer) && (viewer!.toLowerCase() === creator.toLowerCase() || Boolean(challenged)),
+    supported: windowRes !== null,
+  };
+}
+
+/** Dispute a proposed verdict, posting the MIN_STAKE bond. */
+export async function disputeResolution(chain: ChainKey, claimId: number, bondUsdc: number): Promise<ContractWriteResult> {
+  const result = await sendBrowserTx(chain, "disputeResolution", [BigInt(claimId)], bondUsdc);
+  if (!result.pending) await refreshIndexAfterWrite(chain, claimId);
+  return result;
+}
+
+/** Settle an undisputed proposal after its window (anyone may). */
+export async function finalizeResolution(chain: ChainKey, claimId: number): Promise<ContractWriteResult> {
+  const result = await sendBrowserTx(chain, "finalizeResolution", [BigInt(claimId)], 0);
+  if (!result.pending) await refreshIndexAfterWrite(chain, claimId);
+  return result;
+}
+
+/** Refund an ACTIVE (or unruled disputed) claim the oracle never settled. */
+export async function refundExpired(chain: ChainKey, claimId: number): Promise<ContractWriteResult> {
+  const result = await sendBrowserTx(chain, "refundExpired", [BigInt(claimId)], 0);
+  if (!result.pending) await refreshIndexAfterWrite(chain, claimId);
+  return result;
 }
 
 /** Pull this wallet's parked payout on one chain. */

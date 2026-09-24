@@ -57,7 +57,7 @@ export interface EscrowWriteArgs {
   walletId: string;
   /** The wallet's address; needed to check the ERC-20 allowance. */
   owner: `0x${string}`;
-  functionName: "createClaim" | "challengeClaim" | "resolveClaim" | "cancelClaim" | "createRematch" | "withdraw" | "claimFees";
+  functionName: "createClaim" | "challengeClaim" | "resolveClaim" | "cancelClaim" | "createRematch" | "withdraw" | "claimFees" | "finalizeResolution";
   /** Args as the v2 ABI takes them; v3 attribution is appended here. */
   args: readonly unknown[];
   /** Whole USDC the call stakes. 0 for non-staking calls. */

@@ -8,6 +8,10 @@ interface IERC20Like {
     function decimals() external view returns (uint8);
 }
 
+interface IERC20Permit {
+    function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
+}
+
 /**
  * MimirV3 — AI-settled prediction market, with fees. Runs on any EVM chain.
  *
@@ -46,6 +50,10 @@ contract MimirV3 {
     uint8 public constant ST_ACTIVE      = 1;
     uint8 public constant ST_RESOLVED    = 2;
     uint8 public constant ST_CANCELLED   = 3;
+    /// The oracle has proposed a verdict; it can be disputed until the window closes.
+    uint8 public constant ST_PROPOSED    = 4;
+    /// A participant disputed the proposal; the arbiter (owner) decides.
+    uint8 public constant ST_DISPUTED    = 5;
 
     // Winner side constants
     uint8 public constant SIDE_NONE          = 0;
@@ -79,6 +87,8 @@ contract MimirV3 {
     /// Gas forwarded with each settlement push: enough for a plain receive or a
     /// USDC transfer, not enough for one recipient to starve the payout loop.
     uint256 public constant PUSH_GAS = 50_000;
+    /// Upper bound on the dispute window, so a deploy cannot park payouts for weeks.
+    uint256 public constant MAX_DISPUTE_WINDOW = 7 days;
 
     // ── Storage ───────────────────────────────────────────────────────────────
     struct Claim {
@@ -157,6 +167,21 @@ contract MimirV3 {
     /// Stops new claims and challenges. Never stops settlement or withdrawals.
     bool public paused;
 
+    /// Seconds a proposed verdict stays disputable. 0 settles immediately (v3.0 behaviour).
+    uint256 public immutable disputeWindow;
+
+    struct Proposal {
+        uint8   winnerSide;
+        uint8   confidence;
+        uint64  proposedAt;
+        uint64  disputedAt;
+        address disputer;
+        uint256 bond;
+        bytes32 evidenceHash;
+        string  summary;
+    }
+    mapping(uint256 => Proposal) public proposals;
+
     FeePolicy public feePolicy;
     FeePolicy public pendingFeePolicy;
     /// Timestamp from which the pending policy may be executed. 0 = nothing queued.
@@ -183,6 +208,9 @@ contract MimirV3 {
     event OracleChangeQueued(address indexed next, uint256 eta);
     event OracleChangeCancelled(address indexed next);
     event Paused(bool paused);
+    event ResolutionProposed(uint256 indexed id, uint8 winnerSide, uint8 confidence, bytes32 evidenceHash, uint256 disputableUntil);
+    event ResolutionDisputed(uint256 indexed id, address indexed disputer, uint256 bond);
+    event DisputeResolved(uint256 indexed id, uint8 winnerSide, bool disputerRight);
 
     // ── Modifiers ─────────────────────────────────────────────────────────────
     modifier onlyOwner() {
@@ -206,9 +234,12 @@ contract MimirV3 {
         uint16 _platformFeeBps,
         uint16 _agentOwnerFeeBps,
         address _platformRecipient,
-        address _usdc
+        address _usdc,
+        uint256 _disputeWindow
     ) {
         require(_oracle != address(0), "Mimir: zero oracle");
+        require(_disputeWindow <= MAX_DISPUTE_WINDOW, "Mimir: dispute window too long");
+        disputeWindow = _disputeWindow;
         owner  = msg.sender;
         oracle = _oracle;
         usdc   = _usdc;
@@ -453,6 +484,34 @@ contract MimirV3 {
         emit FeeClaimed(msg.sender, to, amount);
     }
 
+    // ── One-signature staking (ERC-20 mode) ──────────────────────────────────
+    /// Approve this escrow through the token's EIP-2612 permit. Meant to be the
+    /// first call of a multicall whose second call stakes, so a position opens
+    /// in one transaction without a separate approve.
+    function usdcPermit(uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external {
+        require(usdc != address(0), "Mimir: native mode");
+        IERC20Permit(usdc).permit(msg.sender, address(this), value, deadline, v, r, s);
+    }
+
+    /**
+     * Batch calls to this contract in one transaction (msg.sender preserved).
+     * Non-payable and ERC-20 mode only: delegatecalls would otherwise all see
+     * the same msg.value, the classic multicall double-spend.
+     */
+    function multicall(bytes[] calldata data) external returns (bytes[] memory results) {
+        require(usdc != address(0), "Mimir: native mode");
+        results = new bytes[](data.length);
+        for (uint256 i = 0; i < data.length; i++) {
+            (bool ok, bytes memory ret) = address(this).delegatecall(data[i]);
+            if (!ok) {
+                assembly ("memory-safe") {
+                    revert(add(ret, 0x20), mload(ret))
+                }
+            }
+            results[i] = ret;
+        }
+    }
+
     function _grossPayout(uint256 stake, uint256 bps) internal pure returns (uint256) {
         return (stake * bps) / 10_000;
     }
@@ -692,7 +751,84 @@ contract MimirV3 {
             winnerSide == SIDE_UNRESOLVABLE,
             "Mimir: invalid verdict"
         );
+        if (disputeWindow == 0) {
+            _settle(claimId, winnerSide, summary, confidence, evidenceHash);
+            return;
+        }
+        // Optimistic: the verdict stands unless a participant disputes it in time.
+        claim.state = ST_PROPOSED;
+        proposals[claimId] = Proposal({
+            winnerSide:   winnerSide,
+            confidence:   confidence,
+            proposedAt:   uint64(block.timestamp),
+            disputedAt:   0,
+            disputer:     address(0),
+            bond:         0,
+            evidenceHash: evidenceHash,
+            summary:      summary
+        });
+        emit ResolutionProposed(claimId, winnerSide, confidence, evidenceHash, block.timestamp + disputeWindow);
+    }
+
+    /**
+     * A participant who believes the proposed verdict is wrong escalates it to
+     * the arbiter (the owner, a multisig in production) by posting a bond of
+     * MIN_STAKE. The bond comes back if the arbiter changes the verdict and is
+     * forfeited to the platform if it does not, so disputes cost something to
+     * spam and nothing to raise when right.
+     */
+    function disputeResolution(uint256 claimId) external payable {
+        Claim storage claim = claims[claimId];
+        Proposal storage p = proposals[claimId];
+        require(claim.state == ST_PROPOSED, "Mimir: nothing to dispute");
+        require(block.timestamp < p.proposedAt + disputeWindow, "Mimir: dispute window closed");
+        require(msg.sender == claim.creator || hasChallenged[claimId][msg.sender], "Mimir: not a participant");
+        _pullStake(MIN_STAKE);
+        claim.state  = ST_DISPUTED;
+        p.disputer   = msg.sender;
+        p.disputedAt = uint64(block.timestamp);
+        p.bond       = MIN_STAKE;
+        emit ResolutionDisputed(claimId, msg.sender, MIN_STAKE);
+    }
+
+    /// Anyone can settle an undisputed proposal once its window has closed.
+    function finalizeResolution(uint256 claimId) external {
+        Proposal storage p = proposals[claimId];
+        require(claims[claimId].state == ST_PROPOSED, "Mimir: not proposed");
+        require(block.timestamp >= p.proposedAt + disputeWindow, "Mimir: dispute window open");
+        _settle(claimId, p.winnerSide, p.summary, p.confidence, p.evidenceHash);
+    }
+
+    /// The arbiter's final word on a disputed claim.
+    function resolveDispute(
+        uint256 claimId,
+        uint8   winnerSide,
+        string  calldata summary,
+        uint8   confidence,
+        bytes32 evidenceHash
+    ) external onlyOwner {
+        Proposal storage p = proposals[claimId];
+        require(claims[claimId].state == ST_DISPUTED, "Mimir: not disputed");
+        require(winnerSide >= SIDE_CREATOR && winnerSide <= SIDE_UNRESOLVABLE, "Mimir: invalid verdict");
+        bool disputerRight = winnerSide != p.winnerSide;
+        _settleBond(claimId, p, disputerRight);
+        emit DisputeResolved(claimId, winnerSide, disputerRight);
         _settle(claimId, winnerSide, summary, confidence, evidenceHash);
+    }
+
+    /// Bond back to a disputer who was right (or when nobody ruled); to the platform otherwise.
+    function _settleBond(uint256 claimId, Proposal storage p, bool returnIt) internal {
+        uint256 bond = p.bond;
+        if (bond == 0) return;
+        p.bond = 0;
+        address platform = claimFeePolicy[claimId].platformRecipient;
+        if (returnIt || platform == address(0)) {
+            _transfer(p.disputer, bond);
+        } else {
+            accruedFees[platform] += bond;
+            lifetimeFeesAccrued += bond;
+            emit FeeAccrued(claimId, platform, bond);
+        }
     }
 
     /**
@@ -706,8 +842,14 @@ contract MimirV3 {
     function refundExpired(uint256 claimId) external {
         Claim storage claim = claims[claimId];
         require(claim.creator != address(0), "Mimir: claim not found");
-        require(claim.state == ST_ACTIVE, "Mimir: not active");
-        require(block.timestamp >= claim.deadline + RESOLUTION_GRACE_SECONDS, "Mimir: oracle grace not over");
+        // A disputed claim the arbiter never rules on gets the same escape hatch,
+        // counted from the dispute, and the disputer's bond comes back.
+        bool disputed = claim.state == ST_DISPUTED;
+        require(disputed || claim.state == ST_ACTIVE, "Mimir: not active");
+        uint256 start = claim.deadline;
+        if (disputed && proposals[claimId].disputedAt > start) start = proposals[claimId].disputedAt;
+        require(block.timestamp >= start + RESOLUTION_GRACE_SECONDS, "Mimir: oracle grace not over");
+        if (disputed) _settleBond(claimId, proposals[claimId], true);
         emit ClaimExpiredRefund(claimId, msg.sender);
         _settle(claimId, SIDE_UNRESOLVABLE, "Refunded: not resolved within the grace period", 0, bytes32(0));
     }

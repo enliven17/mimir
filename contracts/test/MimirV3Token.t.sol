@@ -62,7 +62,7 @@ contract MimirV3TokenTest {
     function setUp() public {
         vm.warp(1_000_000);
         usdc = new MockUSDC();
-        mimir = new MimirV3(oracle, 50, 50, platform, address(usdc));
+        mimir = new MimirV3(oracle, 50, 50, platform, address(usdc), 0);
         usdc.mint(creator, 1_000 * ONE);
         usdc.mint(challenger, 1_000 * ONE);
         vm.prank(creator);

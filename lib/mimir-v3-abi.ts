@@ -34,6 +34,11 @@ export const MIMIR_V3_ABI = [
         "internalType": "address",
         "name": "_usdc",
         "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_disputeWindow",
+        "type": "uint256"
       }
     ],
     "stateMutability": "nonpayable",
@@ -181,6 +186,31 @@ export const MIMIR_V3_ABI = [
       }
     ],
     "name": "ClaimResolved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "winnerSide",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "disputerRight",
+        "type": "bool"
+      }
+    ],
+    "name": "DisputeResolved",
     "type": "event"
   },
   {
@@ -427,6 +457,68 @@ export const MIMIR_V3_ABI = [
     "inputs": [
       {
         "indexed": true,
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "disputer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "bond",
+        "type": "uint256"
+      }
+    ],
+    "name": "ResolutionDisputed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "winnerSide",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "confidence",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "evidenceHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "disputableUntil",
+        "type": "uint256"
+      }
+    ],
+    "name": "ResolutionProposed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "address",
         "name": "account",
         "type": "address"
@@ -508,6 +600,19 @@ export const MIMIR_V3_ABI = [
   {
     "inputs": [],
     "name": "MAX_CHALLENGERS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_DISPUTE_WINDOW",
     "outputs": [
       {
         "internalType": "uint256",
@@ -676,7 +781,33 @@ export const MIMIR_V3_ABI = [
   },
   {
     "inputs": [],
+    "name": "ST_DISPUTED",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "ST_OPEN",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ST_PROPOSED",
     "outputs": [
       {
         "internalType": "uint8",
@@ -1197,6 +1328,32 @@ export const MIMIR_V3_ABI = [
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "claimId",
+        "type": "uint256"
+      }
+    ],
+    "name": "disputeResolution",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "disputeWindow",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "executeFeePolicy",
     "outputs": [],
@@ -1231,6 +1388,19 @@ export const MIMIR_V3_ABI = [
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "claimId",
+        "type": "uint256"
+      }
+    ],
+    "name": "finalizeResolution",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -1618,6 +1788,25 @@ export const MIMIR_V3_ABI = [
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "bytes[]",
+        "name": "data",
+        "type": "bytes[]"
+      }
+    ],
+    "name": "multicall",
+    "outputs": [
+      {
+        "internalType": "bytes[]",
+        "name": "results",
+        "type": "bytes[]"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "oracle",
     "outputs": [
@@ -1753,6 +1942,60 @@ export const MIMIR_V3_ABI = [
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "proposals",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "winnerSide",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint8",
+        "name": "confidence",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint64",
+        "name": "proposedAt",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "disputedAt",
+        "type": "uint64"
+      },
+      {
+        "internalType": "address",
+        "name": "disputer",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "bond",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "evidenceHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "string",
+        "name": "summary",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint16",
         "name": "platformFeeBps",
         "type": "uint16"
@@ -1835,6 +2078,39 @@ export const MIMIR_V3_ABI = [
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "claimId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "winnerSide",
+        "type": "uint8"
+      },
+      {
+        "internalType": "string",
+        "name": "summary",
+        "type": "string"
+      },
+      {
+        "internalType": "uint8",
+        "name": "confidence",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "evidenceHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "resolveDispute",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "bool",
         "name": "_paused",
         "type": "bool"
@@ -1882,6 +2158,39 @@ export const MIMIR_V3_ABI = [
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "deadline",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "v",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "r",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "s",
+        "type": "bytes32"
+      }
+    ],
+    "name": "usdcPermit",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

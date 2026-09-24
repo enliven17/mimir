@@ -220,6 +220,17 @@ async function main(): Promise<void> {
   });
   console.log(`   tx: ${explorerTxUrl(chain, settleTx)}`);
 
+  // A deploy with a dispute window only proposes the verdict here; the payout
+  // arithmetic can be checked once finalizeResolution runs after the window.
+  const disputeWindow = (await client.readContract({
+    address: mimir, abi: MIMIR_V3_ABI, functionName: "disputeWindow",
+  }).catch(() => 0n)) as bigint;
+  if (disputeWindow > 0n) {
+    console.log(`\n   Verdict proposed. It becomes final after the ${disputeWindow}s dispute window:`);
+    console.log(`   anyone can then call finalizeResolution(${claimId}) (the oracle worker does it automatically).`);
+    return;
+  }
+
   // ── 5. Verify the arithmetic ─────────────────────────────────────────────
   console.log("\n5. Checking what actually moved…");
   const creatorAfter = await withRetry("balance", () => usdcBalance(client, creatorAddr));
