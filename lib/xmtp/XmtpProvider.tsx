@@ -22,6 +22,7 @@ import React, {
   useState,
 } from "react";
 import { Client, type XmtpEnv } from "@xmtp/browser-sdk";
+import { useConnectorClient } from "wagmi";
 import { useWallet } from "@/lib/wallet";
 import type { XmtpClientInstance } from "@/lib/xmtp/types";
 import {
@@ -164,15 +165,12 @@ function getTabId(): string {
 }
 /* ── end tab-lock ── */
 
-function getInjectedEthereum(): EthereumEip1193Provider | null {
-  if (typeof window === "undefined") return null;
-  const eth = (window as unknown as { ethereum?: EthereumEip1193Provider })
-    .ethereum;
-  return eth ?? null;
-}
-
 export function XmtpProvider({ children }: { children: React.ReactNode }) {
   const { address, isConnected } = useWallet();
+  const { data: connectorClient } = useConnectorClient();
+  const connectorClientRef = useRef(connectorClient);
+  connectorClientRef.current = connectorClient;
+  const hasConnectorClient = Boolean(connectorClient);
   const featureEnabled = useMemo(() => isXmtpFeatureEnabled(), []);
 
   const [client, setClient] = useState<XmtpClientInstance | null>(null);
@@ -257,14 +255,13 @@ export function XmtpProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const ethereum = getInjectedEthereum();
-    if (!ethereum) {
-      setClient(null);
-      setActiveAddress(null);
-      setError(new Error("XMTP: no injected Ethereum provider"));
-      setStatus("error");
-      return;
-    }
+    // Sign with the wallet the user connected (WalletConnect, Coinbase, an
+    // EIP-6963 injected one), not whatever sits on window.ethereum.
+    const connector = connectorClientRef.current;
+    if (!connector) return; // wagmi has not handed over the client yet; the effect re-runs when it does
+    const ethereum: EthereumEip1193Provider = {
+      request: (args) => connector.request(args as never),
+    };
 
     // Check tab lock before attempting Client.create
     const lock = acquireTabLock(tabId);
@@ -367,6 +364,9 @@ export function XmtpProvider({ children }: { children: React.ReactNode }) {
     address,
     retryTrigger,
     tabId,
+    // A boolean on purpose: the client object changes on every chain switch,
+    // and re-creating the XMTP client each time would burn installations.
+    hasConnectorClient,
   ]);
 
   const value = useMemo<XmtpContextValue>(
