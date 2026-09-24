@@ -55,8 +55,10 @@ function categoryMatches(persona: PersonaSpec, claim: ClaimOnChain): boolean {
   if (!persona.categoryFilter || persona.categoryFilter.length === 0) {
     return true;
   }
+  // Exact match, the same rule the vote and preflight routes use, so a persona
+  // never trades a claim it would then refuse to judge (or the reverse).
   const c = (claim.category ?? "").toLowerCase();
-  return persona.categoryFilter.some((tag) => c.includes(tag.toLowerCase()));
+  return persona.categoryFilter.some((tag) => c === tag.toLowerCase());
 }
 
 /**

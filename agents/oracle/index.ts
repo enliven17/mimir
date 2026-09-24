@@ -852,7 +852,14 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
     return;
   }
 
-  const rawVerdict = await evaluateClaim(claim, evidence.text, "forecast");
+  let rawVerdict: OracleVerdict;
+  try {
+    rawVerdict = await evaluateClaim(claim, evidence.text, "forecast");
+  } catch (err) {
+    // An LLM hiccup is not a considered "no": let a later poll look again.
+    evaluatedClaimIds.delete(key);
+    throw err;
+  }
   const verdict = applyFetcherTrust(rawVerdict, evidence.fetcher);
 
   console.log(`${chainTag("challenge", claim.chain)} Early verdict: ${verdict.verdict} (${verdict.confidence}%) [fetcher=${evidence.fetcher}]`);
