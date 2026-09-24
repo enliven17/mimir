@@ -41,7 +41,7 @@ import { requireEnv, requireAnyLLMKey, applyWorkerGeminiKey, createThrottle } fr
 import { kellyFraction } from "../../lib/kelly";
 import { isVerdict, type Verdict } from "../../lib/verdict";
 import { INJECTION_GUARD, fenceUntrusted } from "../../lib/prompt-safety";
-import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson } from "../../lib/llm";
+import { callLLM, activeLLMProvider, activeLLMModel, activeLLMKeyFingerprint, pickGeminiModel, extractJson, lastLLMCall } from "../../lib/llm";
 import {
   createChainPublicClient,
   getContractAddress,
@@ -174,6 +174,8 @@ interface OracleVerdict {
   verdict:     Verdict;
   confidence:  number;
   explanation: string;
+  /** provider/model that produced it, committed into the evidence hash. */
+  model?:      string;
 }
 
 // Gemini responseSchema for evaluateClaim's verdict — see lib/llm.ts jsonSchema
@@ -343,6 +345,8 @@ Return JSON only:
       jsonOnly: true,
       model: pickGeminiModel("oracle"),
       jsonSchema: ORACLE_VERDICT_SCHEMA,
+      temperature: 0,
+      noFreeRouter: true,
     });
     const jsonStr = extractJson(lastText);
     if (!jsonStr) continue;
@@ -359,10 +363,12 @@ Return JSON only:
   if (!isVerdict(parsed.verdict)) {
     throw new Error(`Oracle verdict invalid: ${String(parsed.verdict).slice(0, 50)}`);
   }
+  const answeredBy = lastLLMCall();
   return {
     verdict: parsed.verdict,
     confidence: Math.max(0, Math.min(100, Math.round(parsed.confidence ?? 50))),
     explanation: (parsed.explanation ?? "").slice(0, 500),
+    model: answeredBy ? `${answeredBy.provider}/${answeredBy.model}` : undefined,
   };
 }
 
@@ -746,6 +752,8 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
   const consensus = await applyPriceConsensus(claim, rawVerdict, prices);
   if (consensus.note) commit = `${commit}
 [price-consensus]${consensus.note}`;
+  if (rawVerdict.model) commit = `${commit}\n[model]${rawVerdict.model}`;
+  console.log(`${chainTag("settle", claim.chain)} Decided by: ${rawVerdict.model ?? "council tally"}`);
 
   const evidenceHash = hashEvidence(commit);
   const trusted      = applyFetcherTrust(consensus.verdict, evidence.fetcher);

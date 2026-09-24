@@ -113,6 +113,8 @@ Return JSON only:
     jsonOnly: true,
     model: pickGeminiModel(persona.slug),
     jsonSchema: PERSONA_VERDICT_SCHEMA,
+    // A juror's vote settles money: no anonymous free-router fallback.
+    ...(mode === "judge" ? { noFreeRouter: true, temperature: 0 } : {}),
   });
 
   try {

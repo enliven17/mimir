@@ -33,9 +33,37 @@ export interface CallLLMOptions {
    * rate-limited. Pick a stable one per agent with `pickGeminiModel(seed)`.
    */
   model?: string;
+  /**
+   * Money decisions set this: skip the OpenRouter "free" router, which hands
+   * the prompt to whichever free model is up, so a settlement could be decided
+   * by an unknown model.
+   */
+  noFreeRouter?: boolean;
 }
 
-const DEFAULT_GEMINI_MODEL = process.env.ORACLE_LLM_MODEL || "gemini-2.5-flash";
+export interface LLMCallRecord {
+  provider: LLMProvider;
+  model: string;
+}
+
+let lastCall: LLMCallRecord | null = null;
+
+/** Which provider and model answered the most recent successful callLLM. */
+export function lastLLMCall(): LLMCallRecord | null {
+  return lastCall;
+}
+
+/**
+ * ORACLE_LLM_MODEL overrides the default of whichever provider the id belongs
+ * to. It used to feed every provider, so a Gemini id reached Anthropic as its
+ * model on fallback and every fallback call failed.
+ */
+function overrideFor(prefixes: string[]): string | undefined {
+  const id = process.env.ORACLE_LLM_MODEL?.trim();
+  return id && prefixes.some((p) => id.startsWith(p)) ? id : undefined;
+}
+
+const DEFAULT_GEMINI_MODEL = overrideFor(["gemini", "gemma"]) || "gemini-2.5-flash";
 
 /**
  * Gemini model pool for load-spreading. Free-tier limits are per-model, so
@@ -92,7 +120,7 @@ export function pickGeminiModel(seed: string): string {
   for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
   return pool[hash % pool.length];
 }
-const DEFAULT_ANTHROPIC_MODEL = process.env.ORACLE_LLM_MODEL || "claude-sonnet-4-6";
+const DEFAULT_ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL?.trim() || overrideFor(["claude"]) || "claude-sonnet-5";
 const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "openrouter/free";
 
@@ -259,7 +287,9 @@ export async function callLLM(prompt: string, opts: CallLLMOptions = {}): Promis
     model: opts.model,
     jsonSchema: opts.jsonSchema,
   };
-  const candidates = fallbackProviders(primary);
+  const candidates = fallbackProviders(primary).filter(
+    (p) => !(opts.noFreeRouter && p === "openrouter" && DEFAULT_OPENROUTER_MODEL === "openrouter/free"),
+  );
   let lastError: unknown = null;
 
   for (let index = 0; index < candidates.length; index++) {
@@ -276,10 +306,20 @@ export async function callLLM(prompt: string, opts: CallLLMOptions = {}): Promis
     }
 
     try {
-      if (candidate === "gemini") return await callGemini(prompt, options);
-      if (candidate === "groq") return await callGroq(prompt, options);
-      if (candidate === "openrouter") return await callOpenRouter(prompt, options);
-      return await callAnthropic(prompt, options);
+      const text =
+        candidate === "gemini" ? await callGemini(prompt, options) :
+        candidate === "groq" ? await callGroq(prompt, options) :
+        candidate === "openrouter" ? await callOpenRouter(prompt, options) :
+        await callAnthropic(prompt, options);
+      lastCall = {
+        provider: candidate,
+        model:
+          candidate === "gemini" ? (options.model ?? DEFAULT_GEMINI_MODEL) :
+          candidate === "groq" ? DEFAULT_GROQ_MODEL :
+          candidate === "openrouter" ? DEFAULT_OPENROUTER_MODEL :
+          DEFAULT_ANTHROPIC_MODEL,
+      };
+      return text;
     } catch (err) {
       lastError = err;
       if (next) {
