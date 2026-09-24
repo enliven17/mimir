@@ -541,14 +541,19 @@ function vsApiUrl(vsId: number, opts?: { inviteKey?: string; chain?: ChainKey })
   return `/api/vs/${vsId}${qs ? `?${qs}` : ""}`;
 }
 
-/** Returns VSData | null directly (backwards compatible). */
+/**
+ * Returns VSData, or null when the claim does not exist. A transient failure
+ * (429, 5xx) throws instead: treating it as "not found" used to wipe a live
+ * claim off the page mid-challenge.
+ */
 export async function getVS(
   vsId: number,
   opts?: { inviteKey?: string; viewerAddress?: string; chain?: ChainKey }
 ): Promise<VSData | null> {
   if (typeof window !== "undefined") {
     const res = await fetch(vsApiUrl(vsId, opts));
-    if (!res.ok) return null;
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Could not load this claim right now (HTTP ${res.status}). Please try again.`);
     const data = await res.json();
     return data.item ?? null;
   }
@@ -666,6 +671,15 @@ async function sendBrowserTx(
   }
   const wc = await getWalletClient(wagmiConfig, { chainId: cfg.chain.id });
   const account = wc.account.address;
+
+  // Native stakes (Arc) have no allowance step to catch a short balance, and a
+  // wallet's own error for it is an unreadable gas estimation failure.
+  if (cfg.stakeMode === "native" && valueUsdc > 0) {
+    const balance = await getPublicClient(chain).getBalance({ address: account });
+    if (balance < nativeValue(chain, valueUsdc)) {
+      throw new Error(`Not enough USDC on ${cfg.name}: need ${valueUsdc}, have ${stakeUnitsToUsdc(chain, balance)}`);
+    }
+  }
 
   await ensureAllowance(chain, account, valueUsdc, (amount) =>
     wc.writeContract({

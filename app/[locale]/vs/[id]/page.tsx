@@ -61,6 +61,7 @@ import {
   rememberPrivateInviteKey,
 } from "@/lib/private-links";
 import { toast } from "sonner";
+import { txErrorMessage } from "@/lib/tx-errors";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
 import {
   Badge,
@@ -823,11 +824,22 @@ export default function VSDetailPage() {
       return;
     }
 
-    const data = await getVS(vsId, {
-      inviteKey,
-      viewerAddress: address ?? undefined,
-      chain,
-    });
+    let data: VSData | null;
+    try {
+      data = await getVS(vsId, {
+        inviteKey,
+        viewerAddress: address ?? undefined,
+        chain,
+      });
+    } catch {
+      // Transient (429/5xx): keep what is on screen and let the next poll retry.
+      setFetchAttempts((prev) => {
+        const next = prev + 1;
+        if (next >= MAX_FETCH_ATTEMPTS) setLoading(false);
+        return next;
+      });
+      return;
+    }
     if (data) {
       setVS(data);
       setLoading(false);
@@ -1253,7 +1265,7 @@ export default function VSDetailPage() {
       );
       fetchVS();
     } catch (err: any) {
-      toast.error(err.message || t("errorAccepting"));
+      toast.error(txErrorMessage(err, t("errorAccepting")));
     }
     });
   }
@@ -1308,7 +1320,7 @@ export default function VSDetailPage() {
         await new Promise((r) => setTimeout(r, RESOLVE_ANIM_TOTAL_MS - elapsed));
       }
     } catch (err: any) {
-      toast.error(err.message || t("errorResolving"));
+      toast.error(txErrorMessage(err, t("errorResolving")));
     } finally {
       phaseTimers.forEach(clearTimeout);
       if (willTriggerResolution) {
@@ -1326,7 +1338,7 @@ export default function VSDetailPage() {
       toast.success(t("resetResolveRequestSuccess"), txToastOptions(result, chain));
       void fetchVS();
     } catch (err: any) {
-      toast.error(err.message || t("resetResolveRequestError"));
+      toast.error(txErrorMessage(err, t("resetResolveRequestError")));
     }
     });
   }
@@ -1343,7 +1355,7 @@ export default function VSDetailPage() {
       );
       fetchVS();
     } catch (err: any) {
-      toast.error(err.message || t("errorCancelling"));
+      toast.error(txErrorMessage(err, t("errorCancelling")));
     }
     });
   }

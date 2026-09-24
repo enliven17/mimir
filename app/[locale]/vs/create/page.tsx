@@ -54,6 +54,7 @@ import {
   writeCreateMockSnapshot,
 } from "@/lib/mockVsCreate";
 import { toast } from "sonner";
+import { txErrorMessage } from "@/lib/tx-errors";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
 import { GlassCard, Button, Input, ListboxField } from "@/components/ui";
 import ClaimStrengthCard from "@/components/ClaimStrengthCard";
@@ -1099,7 +1100,7 @@ export default function CreatePage() {
         setTimeout(() => setShowSealStamp(false), SEAL_STAMP_MS);
       }
     } catch (err: any) {
-      toast.error(err.message || t("errorCreating"));
+      toast.error(txErrorMessage(err, t("errorCreating")));
     } finally {
       releaseLock?.();
       setLoading(false);
