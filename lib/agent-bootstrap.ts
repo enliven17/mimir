@@ -50,8 +50,18 @@ export function createThrottle(ms: number): () => Promise<void> {
  * GEMINI_API_KEY for this process so each worker consumes from its own
  * free-tier RPM bucket. Trimmed on assignment so trailing whitespace pasted
  * into a dashboard env UI can't slip into the Authorization header.
+ *
+ * When several workers share one process (agents/all.ts) each call would
+ * overwrite the last, leaving only one worker's key in use. The key it
+ * displaces moves to the GEMINI_API_KEYS backup pool instead, so all of them
+ * stay in rotation.
  */
 export function applyWorkerGeminiKey(envVar: string): void {
   const k = process.env[envVar]?.trim();
-  if (k) process.env.GEMINI_API_KEY = k;
+  if (!k) return;
+  const prev = process.env.GEMINI_API_KEY?.trim();
+  process.env.GEMINI_API_KEY = k;
+  if (prev && prev !== k) {
+    process.env.GEMINI_API_KEYS = [prev, process.env.GEMINI_API_KEYS?.trim()].filter(Boolean).join(",");
+  }
 }
