@@ -448,11 +448,23 @@ function applyFetcherTrust(
 // outage can't lock funds forever. Override with SPORTS_SETTLE_GRACE_HOURS.
 const SPORTS_SETTLE_GRACE_SECS = Math.max(1, Number(process.env.SPORTS_SETTLE_GRACE_HOURS ?? 12)) * 3600;
 
+// UMA's liveness plus a dispute round fits comfortably inside three days.
+const POLYMARKET_SETTLE_GRACE_SECS = 72 * 3600;
+
+function isPolymarketUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "polymarket.com" || host.endsWith(".polymarket.com");
+  } catch {
+    return false;
+  }
+}
+
 // How long past the deadline an unreadable resolution source is retried before
 // the claim is refunded as UNRESOLVABLE.
 const NO_EVIDENCE_GRACE_SECS = 6 * 3600;
 
-/** True if the evidence shows the sports event has definitively concluded. */
+/** True if the evidence shows the event (a match, or a prediction market) has definitively concluded. */
 async function isSportsEventFinal(claim: ClaimOnChain, evidenceText: string): Promise<boolean> {
   const prompt = `Determine if the underlying match/event has DEFINITIVELY CONCLUDED with a final result.
 
@@ -467,7 +479,8 @@ ${fenceUntrusted("web-evidence", evidenceText)}
 
 Reply JSON only: { "final": true | false }
 - final=true ONLY if the evidence shows the event is over and a final result is available.
-- final=false if it is upcoming, scheduled, in progress, postponed, or the evidence does not confirm completion.`;
+- final=false if it is upcoming, scheduled, in progress, postponed, or the evidence does not confirm completion.
+- For a prediction-market page, final=true only if the market is shown as RESOLVED with a winning outcome; trading at extreme odds is not a result.`;
   try {
     const text = await throttledLLM(prompt, {
       maxTokens: 64,
@@ -657,13 +670,20 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
   const evidence     = await fetchEvidence(claim);
   console.log(`${chainTag("settle", claim.chain)} Evidence fetcher: ${evidence.fetcher}`);
 
-  // Sports: betting closed at kickoff, so don't resolve until the match is final
-  // (unless we're past the grace window, to avoid locking funds on a data outage).
-  if (claim.category.toLowerCase() === "sports") {
+  // Sports: betting closed at kickoff, so don't resolve until the match is final.
+  // Polymarket-borrowed claims: the market's end date is when trading stops,
+  // not when UMA resolves it, and a page trading at 97% is not a result.
+  // Both wait for a final outcome, bounded by a grace window so a data outage
+  // cannot lock funds forever.
+  const graceSecs =
+    claim.category.toLowerCase() === "sports" ? SPORTS_SETTLE_GRACE_SECS :
+    isPolymarketUrl(claim.resolutionUrl) ? POLYMARKET_SETTLE_GRACE_SECS :
+    0;
+  if (graceSecs > 0) {
     const now = BigInt(Math.floor(Date.now() / 1000));
-    const pastGrace = now > claim.deadline + BigInt(SPORTS_SETTLE_GRACE_SECS);
+    const pastGrace = now > claim.deadline + BigInt(graceSecs);
     if (!pastGrace && !(await isSportsEventFinal(claim, evidence.text))) {
-      console.log(`${chainTag("settle", claim.chain)} Claim #${claim.id}: match not final yet — deferring to a later poll.`);
+      console.log(`${chainTag("settle", claim.chain)} Claim #${claim.id}: outcome not final yet — deferring to a later poll.`);
       return null;
     }
   }
