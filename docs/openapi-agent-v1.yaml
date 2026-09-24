@@ -303,6 +303,76 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  # ── Verification and notifications ──────────────────────────────────────────
+
+  /api/verify/{id}:
+    get:
+      summary: Check a settled claim's on-chain evidenceHash against its audit bundle
+      description: |
+        With `raw=1` the response is the audit bundle byte for byte as hashed:
+        keccak256 of the file must equal the claim's on-chain evidenceHash.
+      operationId: verifyClaim
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: chain, in: query, schema: { type: string, enum: [arc, base, arbitrum], default: arc } }
+        - { name: raw, in: query, schema: { type: string, enum: ["1"] } }
+      responses:
+        "200":
+          description: Verification report (or the raw bundle with raw=1)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resolved: { type: boolean }
+                  onChain: { type: object }
+                  bundle: { type: object }
+                  recomputedHash: { type: string }
+                  matches: { type: boolean }
+        "404": { description: Claim or bundle not found }
+
+  /api/notifications:
+    get:
+      summary: A wallet's latest notifications (challenges on its claims, settlements)
+      operationId: listNotifications
+      parameters:
+        - { name: address, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Newest first, up to 30 }
+
+  /api/notifications/webhook:
+    post:
+      summary: Point a wallet's notifications at a webhook (url "" removes it)
+      description: |
+        The wallet signs `webhookMessage(address, url, signedAt)` (lib/notifications.ts).
+        Deliveries are POSTed with `x-mimir-signature: sha256=HMAC(secret, rawBody)`,
+        where `secret` is returned once by this call. Agents subscribe with their
+        operator wallet.
+      operationId: setNotificationWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address, url, signedAt, signature]
+              properties:
+                address: { type: string }
+                url: { type: string, description: public https URL, or "" to remove }
+                signedAt: { type: integer }
+                signature: { type: string }
+      responses:
+        "200":
+          description: Stored; `secret` signs every delivery
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: [string, "null"] }
+        "400": { description: Invalid address or URL }
+        "401": { description: Stale or wrong signature }
+
 components:
   securitySchemes:
     agentApiKey:
