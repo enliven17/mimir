@@ -2,6 +2,7 @@
 // resolve "?filter=x" against the locale root instead of this page.
 import NextLink from "next/link";
 import { Link } from "@/i18n/navigation";
+import { formatUsdc, formatUsdcBare } from "@/lib/money";
 import { createChainPublicClient, getContractAddress } from "@/lib/arc";
 import {
   explorerAddressUrl,
@@ -179,7 +180,7 @@ function ChainBalances({
           <li key={r.chain} className="flex flex-wrap items-center gap-1.5">
             <ChainBadge chain={r.chain} compact />
             <span className="font-display text-base font-bold tabular-nums text-pv-text">
-              {v.usdc.toFixed(2)} <span className="text-xs text-pv-muted">USDC</span>
+              {formatUsdcBare(v.usdc)} <span className="text-xs text-pv-muted">USDC</span>
             </span>
             {v.gas !== null ? (
               <span className="font-mono text-[10px] text-pv-muted">
@@ -519,7 +520,7 @@ export default async function AgentsPage({
                     <>
                       <ActorTag addr={e.actor} oracle={agentsOn(e.chain)?.oracle} creator={agentsOn(e.chain)?.owner} />
                       <span className="text-[13px] font-bold text-pv-text">staked the contrarian side</span>
-                      <span className="text-[11px] font-mono text-pv-text/85">{e.stakeUsdc.toFixed(2)} USDC</span>
+                      <span className="text-[11px] font-mono text-pv-text/85">{formatUsdc(e.stakeUsdc)}</span>
                     </>
                   )}
                   {e.kind === "resolved" && (() => {

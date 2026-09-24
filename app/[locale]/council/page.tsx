@@ -23,6 +23,7 @@ import { BlueprintHeading } from "@/components/BlueprintGrid";
 import { openPeepsAvatar } from "@/lib/avatars";
 import { shortenAddress } from "@/lib/constants";
 import { cachedFor } from "@/lib/server/ttl-cache";
+import { formatUsdc, formatUsdcBare } from "@/lib/money";
 
 /**
  * Rendered per request, not prerendered.
@@ -184,7 +185,7 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
         <div>
           <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-pv-muted">balance</dt>
           <dd className="mt-0.5 font-display text-sm font-bold tabular-nums text-pv-text">
-            {balanceUsdc.toFixed(2)}
+            {formatUsdcBare(balanceUsdc)}
           </dd>
         </div>
         <div>
@@ -196,7 +197,7 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
         <div>
           <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-pv-muted">at risk</dt>
           <dd className="mt-0.5 font-display text-sm font-bold tabular-nums text-pv-text">
-            {totalStakedUsdc.toFixed(2)}
+            {formatUsdcBare(totalStakedUsdc)}
           </dd>
         </div>
       </dl>
@@ -217,7 +218,7 @@ function PersonaCard({ stats }: { stats: PersonaStats }) {
                   claim #{b.claimId}
                 </Link>
               </span>
-              <span className="tabular-nums text-pv-text/85">{b.stakeUsdc.toFixed(2)} USDC</span>
+              <span className="tabular-nums text-pv-text/85">{formatUsdc(b.stakeUsdc)}</span>
               <a
                 href={explorerTxUrl(b.chain, b.txHash)}
                 target="_blank"
@@ -294,10 +295,10 @@ export default async function CouncilPage() {
               {totalStakes} stakes
             </span>
             <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
-              <span className="tabular-nums text-pv-text">{totalStakedUsdc.toFixed(2)}</span> usdc at risk
+              <span className="tabular-nums text-pv-text">{formatUsdcBare(totalStakedUsdc)}</span> usdc at risk
             </span>
             <span className="rounded-md border border-pv-border/40 bg-pv-surface2/40 px-2 py-1 text-pv-muted">
-              bankroll <span className="tabular-nums text-pv-text">{totalBankrollUsdc.toFixed(2)}</span> usdc
+              bankroll <span className="tabular-nums text-pv-text">{formatUsdcBare(totalBankrollUsdc)}</span> usdc
             </span>
           </div>
         )}
