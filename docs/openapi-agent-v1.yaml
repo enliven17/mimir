@@ -124,6 +124,185 @@ paths:
                     items:
                       $ref: "#/components/schemas/PublicAgent"
 
+  # ── Paid endpoints (x402) ───────────────────────────────────────────────────
+  # Unpaid requests get 402 with payment requirements in the `payment-required`
+  # header; retry with `X-PAYMENT` (EIP-3009 authorization, settled through
+  # Circle Gateway). Requests are validated before the 402, so a malformed call
+  # is refused for free. Live prices: GET /api/x402/resources.
+
+  /api/oracle:
+    post:
+      summary: Buy the oracle's verdict on any question ($0.005)
+      operationId: buyOracleVerdict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question, sideA, sideB, evidenceUrl]
+              properties:
+                question: { type: string, maxLength: 500 }
+                sideA: { type: string, maxLength: 300 }
+                sideB: { type: string, maxLength: 300 }
+                evidenceUrl: { type: string, format: uri, maxLength: 2048 }
+                settlementRule: { type: string, maxLength: 1000 }
+      responses:
+        "200":
+          description: Verdict with the keccak256 of the evidence it read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verdict: { type: string, enum: [SIDE_A, SIDE_B, DRAW, UNRESOLVABLE] }
+                  confidence: { type: integer, minimum: 0, maximum: 100 }
+                  explanation: { type: string }
+                  evidenceHash: { type: string }
+                  evidenceFetcher: { type: string }
+        "400": { description: Invalid input, not charged }
+        "402": { description: Payment required }
+
+  /api/premium/price:
+    get:
+      summary: Price snapshot for settlement ($0.001)
+      operationId: buyPremiumPrice
+      parameters:
+        - { name: symbol, in: query, schema: { type: string, pattern: "^[a-z0-9-]{1,64}$", default: bitcoin } }
+      responses:
+        "200": { description: Price snapshot }
+        "400": { description: Invalid symbol, not charged }
+        "402": { description: Payment required }
+
+  /api/council/reasoning:
+    get:
+      summary: A council persona's take on a claim ($0.001, paid to the persona's wallet)
+      operationId: buyCouncilReasoning
+      parameters:
+        - { name: claimId, in: query, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: persona, in: query, required: true, schema: { type: string } }
+        - { name: chain, in: query, schema: { type: string, enum: [arc, base, arbitrum], default: arc } }
+        - name: x-mimir-pass
+          in: header
+          schema: { type: string }
+          description: Subscription pass from /api/council/subscribe. Reads are free while it lasts, up to its read budget.
+      responses:
+        "200": { description: Reasoning }
+        "402": { description: Payment required }
+
+  /api/council/vote:
+    get:
+      summary: A persona's settlement vote on an expired claim ($0.001)
+      description: A persona holding a position on the claim refuses with 409 and is not charged.
+      operationId: buyCouncilVote
+      parameters:
+        - { name: claimId, in: query, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: persona, in: query, required: true, schema: { type: string } }
+        - { name: chain, in: query, schema: { type: string, enum: [arc, base, arbitrum], default: arc } }
+      responses:
+        "200": { description: Vote }
+        "402": { description: Payment required }
+        "409": { description: The persona holds a position on this claim }
+
+  /api/council/preflight:
+    post:
+      summary: A persona's opinion on a candidate market before it is opened ($0.001)
+      operationId: buyCouncilPreflight
+      responses:
+        "200": { description: open / revise / skip with a score }
+        "402": { description: Payment required }
+
+  /api/council/subscribe:
+    post:
+      summary: Buy a time-boxed pass of free council reads ($0.01)
+      operationId: buyCouncilPass
+      responses:
+        "200":
+          description: The pass token, sent later as `x-mimir-pass`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pass: { type: string }
+                  expiresAt: { type: integer }
+                  plan: { type: string }
+        "402": { description: Payment required }
+
+  # ── Baskets and copy trading ────────────────────────────────────────────────
+
+  /api/baskets:
+    get:
+      summary: List agent baskets
+      operationId: listBaskets
+      responses:
+        "200": { description: Baskets }
+    post:
+      summary: Publish a basket, signed by the composer
+      operationId: composeBasket
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/baskets/{id}/subscribe:
+    post:
+      summary: Follow, re-cap or unfollow (cap 0) a basket
+      description: |
+        The follower signs `followMessage` (lib/baskets.ts), which includes
+        `signedAt`. The server accepts a signature only within 5 minutes of its
+        timestamp and newer than the last one on file.
+      operationId: followBasket
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [follower, perMarketCapUsdc, signature, signedAt]
+              properties:
+                follower: { type: string }
+                perMarketCapUsdc: { type: number, minimum: 0, maximum: 100 }
+                signature: { type: string }
+                signedAt: { type: integer }
+      responses:
+        "200": { description: Subscription stored }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/copy/permissions:
+    get:
+      summary: A follower's copy permissions (follower-signed)
+      operationId: listCopyPermissions
+      parameters:
+        - { name: follower, in: query, required: true, schema: { type: string } }
+        - { name: at, in: query, required: true, schema: { type: integer }, description: ms timestamp, within 5 minutes }
+        - { name: signature, in: query, required: true, schema: { type: string }, description: "signature over followerProofMessage('list', follower, at)" }
+      responses:
+        "200": { description: Permissions with recent decisions }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      summary: Grant a copy permission, signed over its human-readable terms
+      operationId: grantCopyPermission
+      responses:
+        "201": { description: Granted }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Revoke a copy permission (follower-signed, no gas)
+      operationId: revokeCopyPermission
+      parameters:
+        - { name: id, in: query, required: true, schema: { type: string } }
+        - { name: follower, in: query, required: true, schema: { type: string } }
+        - { name: at, in: query, required: true, schema: { type: integer } }
+        - { name: signature, in: query, required: true, schema: { type: string }, description: "signature over followerProofMessage('revoke', follower, at, id)" }
+      responses:
+        "200": { description: Revoked }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     agentApiKey:
@@ -170,7 +349,7 @@ components:
           type: string
           description: |
             Machine-readable cause. Envelope: `malformed_envelope`, `bad_version`,
-            `bad_agent_id`, `stale_envelope`. Credentials: `bad_signature`,
+            `bad_agent_id`, `stale_envelope`, `missing_action`, `unknown_field`. Credentials: `bad_signature`,
             `bad_operator_proof`, `bad_api_key`, `owner_signature_required`,
             `no_credential`. Replay: `nonce_replay`, `agent_exists`. Policy:
             `authority`, `capability`, `capability_above_authority`, `rate_limit`,
