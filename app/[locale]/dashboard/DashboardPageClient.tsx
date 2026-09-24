@@ -25,6 +25,7 @@ import DashboardPortfolioSection, {
 import DashboardWalletGate from "@/components/dashboard/DashboardWalletGate";
 import DashboardKpiSkeletonRow from "@/components/dashboard/DashboardKpiSkeletonRow";
 import DashboardVSFilterBar from "@/components/dashboard/DashboardVSFilterBar";
+import OnboardingChecklist from "@/components/onboarding/OnboardingChecklist";
 import { useDashboardFilterUrlState } from "@/hooks/useDashboardFilterUrlState";
 import {
   DASHBOARD_CARD_HOVER,
@@ -154,7 +155,10 @@ export default function DashboardPageClient() {
 
   if (!isConnected) {
     return (
-      <DashboardWalletGate onConnect={connect} isConnecting={isConnecting} />
+      <>
+        <OnboardingChecklist className="mb-6" />
+        <DashboardWalletGate onConnect={connect} isConnecting={isConnecting} />
+      </>
     );
   }
 
@@ -214,6 +218,10 @@ export default function DashboardPageClient() {
 
   return (
     <PageTransition>
+      <AnimatedItem>
+        <OnboardingChecklist className="mb-6" />
+      </AnimatedItem>
+
       <AnimatedItem>
         <div className="mb-8 sm:mb-10">
           <BlueprintHeading>{t("title")}</BlueprintHeading>

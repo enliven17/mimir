@@ -46,6 +46,7 @@ import ExploreFilteredEmptyState from "@/components/explorer/ExploreFilteredEmpt
 import { ChevronDown, ListFilter, RefreshCw, Search, X } from "lucide-react";
 import ChallengeOpportunityCard from "@/components/explorer/ChallengeOpportunityCard";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
+import OnboardingChecklist from "@/components/onboarding/OnboardingChecklist";
 import type { VSCacheFreshness } from "@/lib/vs-freshness";
 
 const SECONDS_PER_DAY = 86_400;
@@ -1257,6 +1258,10 @@ export default function ExploreClient() {
           </div>
           </div>
         </section>
+      </AnimatedItem>
+
+      <AnimatedItem className="relative z-0">
+        <OnboardingChecklist className="mb-6" />
       </AnimatedItem>
 
       <AnimatedItem className="relative z-0">
