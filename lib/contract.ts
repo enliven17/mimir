@@ -828,6 +828,38 @@ export async function cancelClaim(
   return { ...result, claimId };
 }
 
+/**
+ * Payouts that could not be pushed at settlement (a reverting receiver, a
+ * blocklisted address) wait in the escrow's pendingWithdrawals. Per chain,
+ * in whole USDC; chains whose read fails are left out.
+ */
+export async function getPendingWithdrawals(
+  address: `0x${string}`,
+  chains: ChainKey[] = enabledChainKeys(),
+): Promise<Array<{ chain: ChainKey; usdc: number }>> {
+  const reads = await Promise.all(
+    chains.map(async (chain) => {
+      try {
+        const units = (await getPublicClient(chain).readContract({
+          address: requireContractAddress(chain),
+          abi: MIMIR_ABI,
+          functionName: "pendingWithdrawals",
+          args: [address],
+        })) as bigint;
+        return { chain, usdc: stakeUnitsToUsdc(chain, units) };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return reads.filter((r): r is { chain: ChainKey; usdc: number } => r !== null && r.usdc > 0);
+}
+
+/** Pull this wallet's parked payout on one chain. */
+export async function withdrawPending(chain: ChainKey): Promise<ContractWriteResult> {
+  return sendBrowserTx(chain, "withdraw", [], 0);
+}
+
 export async function createRematch(
   wallet: string,
   parentId: number,

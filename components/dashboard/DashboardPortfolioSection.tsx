@@ -31,6 +31,7 @@ import {
 } from "@/lib/contract";
 import { claimKey, vsPath } from "@/lib/chains";
 import ChainBadge from "@/components/ui/ChainBadge";
+import WithdrawPendingButton from "@/components/dashboard/WithdrawPendingButton";
 import { isSampleVsIdForXmtp } from "@/lib/xmtp/vs-chat-eligibility";
 import {
   DASHBOARD_CARD_SURFACE,
@@ -1195,22 +1196,9 @@ function RiskAndActionsColumn({
             />
             <span>{t("holdings.actionAnalysis")}</span>
           </Link>
-          <button
-            type="button"
-            className={`flex min-h-[3.75rem] w-full cursor-not-allowed items-center justify-center gap-3 ${DASHBOARD_SURFACE_DASHED} px-4 py-3.5 text-center font-display text-xs font-bold uppercase leading-snug tracking-wide text-pv-muted opacity-90 sm:col-span-2 sm:min-h-[4rem] sm:px-5 sm:text-sm`}
-            disabled
-            title={t("holdings.withdrawSoon")}
-          >
-            <img
-              src="/icons/wallet.svg"
-              alt=""
-              width={22}
-              height={22}
-              className="h-[22px] w-[22px] shrink-0 object-contain opacity-90 [filter:invert(1)]"
-              aria-hidden
-            />
-            <span>{t("holdings.actionWithdraw")}</span>
-          </button>
+          <WithdrawPendingButton
+            className={`flex min-h-[3.75rem] w-full items-center justify-center gap-3 ${DASHBOARD_SURFACE_DASHED} px-4 py-3.5 text-center font-display text-xs font-bold uppercase leading-snug tracking-wide text-pv-muted transition-colors duration-300 sm:col-span-2 sm:min-h-[4rem] sm:px-5 sm:text-sm`}
+          />
         </div>
       </section>
 
