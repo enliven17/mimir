@@ -132,3 +132,15 @@ test("sanitizeGeneratedDrafts keeps deadline-based event claims even with time w
   );
 });
 
+
+test("wall-clock deadlines are read in the timezone the draft names", async () => {
+  const { parseDeadlineInZone } = await import("../../lib/server/source-claim-generator");
+  assert.equal(parseDeadlineInZone("2030-01-15T18:00:00Z", "America/New_York"), Date.UTC(2030, 0, 15, 18));
+  assert.equal(parseDeadlineInZone("2030-01-15T18:00:00+03:00", "UTC"), Date.UTC(2030, 0, 15, 15));
+  assert.equal(parseDeadlineInZone("2030-01-15T18:00:00", "UTC"), Date.UTC(2030, 0, 15, 18));
+  // New York is UTC-5 in January, UTC-4 in July.
+  assert.equal(parseDeadlineInZone("2030-01-15T18:00:00", "America/New_York"), Date.UTC(2030, 0, 15, 23));
+  assert.equal(parseDeadlineInZone("2030-07-15T18:00:00", "America/New_York"), Date.UTC(2030, 6, 15, 22));
+  assert.equal(parseDeadlineInZone("2030-01-15", "Europe/Istanbul"), Date.UTC(2030, 0, 14, 21));
+  assert.ok(Number.isNaN(parseDeadlineInZone("2030-01-15T18:00:00", "Not/AZone")));
+});
