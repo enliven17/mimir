@@ -60,6 +60,8 @@ async function encryptEntitySecret(): Promise<string> {
   return cipher.toString("base64");
 }
 
+const CIRCLE_TIMEOUT_MS = 20_000;
+
 async function circleFetch<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${CIRCLE_BASE}${path}`, {
     method,
@@ -69,6 +71,8 @@ async function circleFetch<T>(method: "GET" | "POST" | "PUT", path: string, body
       Accept: "application/json",
     },
     body: body ? JSON.stringify(body) : undefined,
+    // A hung Circle call used to hang the whole worker poll with it.
+    signal: AbortSignal.timeout(CIRCLE_TIMEOUT_MS),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${path} → ${res.status}: ${text}`);

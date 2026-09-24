@@ -33,7 +33,7 @@ interface BlockscoutTx {
 async function chainActivity(chain: ChainKey) {
   const res = await fetch(
     `${BLOCKSCOUT_API[chain]}/addresses/${GATEWAY_WALLET_ADDRESS}/transactions`,
-    { next: { revalidate: 30 } },
+    { next: { revalidate: 30 }, signal: AbortSignal.timeout(10_000) },
   );
   if (!res.ok) throw new Error(`${chain} explorer ${res.status}`);
   const body = (await res.json()) as { items?: BlockscoutTx[] };
