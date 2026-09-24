@@ -42,15 +42,58 @@ export function isPrivateIpv4(ip: string): boolean {
   return false;
 }
 
+/**
+ * The eight 16-bit groups of an IPv6 address, or null when it does not parse.
+ * Handles `::` compression and a dotted IPv4 tail (`::ffff:1.2.3.4`).
+ */
+export function ipv6Hextets(ip: string): number[] | null {
+  let s = ip.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
+  let tail: number[] = [];
+  const dotted = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (dotted) {
+    const b = dotted.slice(1).map(Number);
+    if (b.some((n) => n > 255)) return null;
+    tail = [(b[0] << 8) | b[1], (b[2] << 8) | b[3]];
+    s = s.slice(0, -dotted[0].length);
+    if (s.endsWith(":") && !s.endsWith("::")) s = s.slice(0, -1);
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const parse = (part: string) => (part === "" ? [] : part.split(":"));
+  const head = parse(halves[0]);
+  const rest = halves.length === 2 ? parse(halves[1]) : [];
+  const groups = [...head, ...rest];
+  if (!groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+  const explicit = groups.length + tail.length;
+  if (halves.length === 1 ? explicit !== 8 : explicit > 7) return null;
+  const zeros = new Array(8 - explicit).fill(0);
+  return [...head.map((g) => parseInt(g, 16)), ...(halves.length === 2 ? zeros : []), ...rest.map((g) => parseInt(g, 16)), ...tail];
+}
+
+function embeddedIpv4(hi: number, lo: number): string {
+  return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+}
+
 export function isPrivateIpv6(ip: string): boolean {
-  const normalized = ip.toLowerCase().replace(/^\[|\]$/g, "");
-  if (normalized === "::1" || normalized === "::") return true;
-  // IPv4-mapped (::ffff:127.0.0.1) inherits the IPv4 verdict.
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
-  if (mapped) return isPrivateIpv4(mapped[1]);
-  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // unique local
-  if (normalized.startsWith("fe80")) return true; // link-local
-  if (normalized.startsWith("ff")) return true; // multicast
+  const h = ipv6Hextets(ip);
+  // Fail closed: something that looked like IPv6 but does not parse is refused.
+  if (!h) return true;
+  const zeroUpTo = (n: number) => h.slice(0, n).every((x) => x === 0);
+
+  if (zeroUpTo(8)) return true; // ::
+  if (zeroUpTo(7) && h[7] === 1) return true; // ::1
+  // IPv4-mapped (::ffff:a.b.c.d, also written ::ffff:7f00:1) and the deprecated
+  // IPv4-compatible form (::a.b.c.d) inherit the IPv4 verdict.
+  if (zeroUpTo(5) && h[5] === 0xffff) return isPrivateIpv4(embeddedIpv4(h[6], h[7]));
+  if (zeroUpTo(6)) return isPrivateIpv4(embeddedIpv4(h[6], h[7]));
+  // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 destination.
+  if (h[0] === 0x64 && h[1] === 0xff9b) return h[2] !== 0 || isPrivateIpv4(embeddedIpv4(h[6], h[7]));
+  if (h[0] === 0x2002) return isPrivateIpv4(embeddedIpv4(h[1], h[2]));
+  if (h[0] === 0x2001 && h[1] === 0) return true; // Teredo tunnels to arbitrary IPv4
+  if (h[0] === 0x100 && zeroUpTo(4)) return true; // discard-only
+  if ((h[0] & 0xfe00) === 0xfc00) return true; // unique local
+  if ((h[0] & 0xffc0) === 0xfe80) return true; // link-local
+  if ((h[0] & 0xff00) === 0xff00) return true; // multicast
   return false;
 }
 

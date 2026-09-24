@@ -100,3 +100,34 @@ test("a public name resolving to a private address is still refused", () => {
 test("a hostname that resolves to nothing is refused", () => {
   assert.equal(checkResolvedAddresses([])?.reason, "private_host");
 });
+
+test("IPv6 spellings that smuggle a private IPv4 destination are refused", () => {
+  for (const ip of [
+    "::ffff:7f00:1", // ::ffff:127.0.0.1 as WHATWG URL normalises it
+    "[::ffff:a9fe:a9fe]", // 169.254.169.254
+    "::ffff:0a00:0001",
+    "::127.0.0.1",
+    "64:ff9b::a9fe:a9fe", // NAT64 to metadata
+    "64:ff9b::127.0.0.1",
+    "2002:7f00:0001::1", // 6to4 of 127.0.0.1
+    "2001:0:4136:e378:8000:63bf:3fff:fdd2", // Teredo
+    "fe80::1%eth0",
+    "not:an:ip:::",
+  ]) {
+    assert.equal(isPrivateIpv6(ip), true, ip);
+  }
+  for (const ip of ["2606:4700:4700::1111", "64:ff9b::808:808", "2002:0808:0808::1", "::ffff:808:808"]) {
+    assert.equal(isPrivateIpv6(ip), false, ip);
+  }
+  // What `new URL()` actually hands the hostname check.
+  assert.equal(checkUrl("http://[::ffff:127.0.0.1]/")?.reason, "private_host");
+  assert.equal(checkUrl("http://[::ffff:a9fe:a9fe]/latest/meta-data/")?.reason, "private_host");
+});
+
+test("the socket-level lookup refuses private answers", async () => {
+  const { publicOnlyLookup } = await import("../../lib/research/gateway");
+  const err = await new Promise<unknown>((resolve) =>
+    publicOnlyLookup("localhost", {}, (e) => resolve(e)),
+  );
+  assert.ok(err instanceof Error && /non-public/.test(err.message));
+});
