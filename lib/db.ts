@@ -371,6 +371,15 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     at BIGINT NOT NULL DEFAULT 0
   )` },
   { sql: "CREATE INDEX IF NOT EXISTS idx_agent_request_audit_agent_at ON agent_request_audit(agent_id, at DESC)" },
+  // Verdict audit bundles, keyed by the evidenceHash committed on chain (lib/server/verdict-bundles.ts).
+  { sql: `CREATE TABLE IF NOT EXISTS verdict_bundles (
+    hash TEXT PRIMARY KEY,
+    chain TEXT NOT NULL,
+    claim_id BIGINT NOT NULL,
+    bundle TEXT NOT NULL,
+    created_at BIGINT NOT NULL DEFAULT 0
+  )` },
+  { sql: "CREATE INDEX IF NOT EXISTS idx_verdict_bundles_claim ON verdict_bundles(chain, claim_id)" },
   // Fixed-window counters for public routes that spend LLM quota (lib/server/rate-limit.ts).
   { sql: `CREATE TABLE IF NOT EXISTS rate_limits (
     bucket_key TEXT NOT NULL,

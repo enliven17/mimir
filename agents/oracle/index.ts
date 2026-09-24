@@ -36,7 +36,6 @@
 // the Authorization header and trigger API_KEY_INVALID.
 applyWorkerGeminiKey("ORACLE_GEMINI_API_KEY");
 
-import { keccak256, toBytes } from "viem";
 import { requireEnv, requireAnyLLMKey, applyWorkerGeminiKey, createThrottle } from "../../lib/agent-bootstrap";
 import { kellyFraction } from "../../lib/kelly";
 import { isVerdict, type Verdict } from "../../lib/verdict";
@@ -77,6 +76,8 @@ import {
   type CouncilVote,
 } from "./council-vote";
 import { reportingPoll } from "../../lib/ops/heartbeat";
+import { sealBundle, VERDICT_BUNDLE_VERSION, type VerdictBundle } from "../../lib/verdict-bundle";
+import { saveVerdictBundle } from "../../lib/server/verdict-bundles";
 import { isFeatureEnabled, isPaused } from "../../lib/ops/flags";
 import {
   consensusWinner,
@@ -148,7 +149,7 @@ const settleBackoff = new Map<string, number>();
  * same verdict instead of re-buying evidence and jury votes and re-rolling a
  * non-deterministic LLM that might now answer differently.
  */
-const decidedVerdicts = new Map<string, { verdict: OracleVerdict; evidenceHash: `0x${string}`; bonusVotes: CouncilVote[] | null }>();
+const decidedVerdicts = new Map<string, SettlementDecision>();
 /** x402 evidence spend per claim, in atomic USDC, so deferred retries share one budget. */
 const evidenceSpentAtomic = new Map<string, bigint>();
 
@@ -391,10 +392,6 @@ function verdictToSide(verdict: OracleVerdict["verdict"]): number {
 // Oracle plays few, high-conviction markets — cap Kelly at 25% of bankroll.
 const KELLY_CAP = 0.25;
 
-/** Hash evidence content for on-chain verification. */
-function hashEvidence(evidence: string): `0x${string}` {
-  return keccak256(toBytes(evidence));
-}
 
 // Confidence tiers govern how the oracle commits a verdict.
 // HIGH      → settle as the LLM said.
@@ -573,8 +570,29 @@ async function tryStructuredResolver(claim: ClaimOnChain, prices: DeadlinePrices
     explanation: `[RESOLVER] ${outcome.detail}`.slice(0, 500),
     model: "structured-resolver",
   };
-  const commit = `[resolver]${JSON.stringify(spec)}\n[resolver-result]${outcome.detail}`;
-  return { verdict, evidenceHash: hashEvidence(commit), bonusVotes: null };
+  return decisionFor(claim, verdict, {
+    resolver: { spec, detail: outcome.detail },
+    prices: prices ? bundlePrices(prices) : undefined,
+    model: "structured-resolver",
+    adjustments: [],
+  });
+}
+
+function bundlePrices(prices: DeadlinePrices): NonNullable<VerdictBundle["prices"]> {
+  return {
+    symbol: prices.symbol,
+    threshold: prices.threshold,
+    readings: prices.readings.map((r) => ({ source: r.source, priceUsd: r.priceUsd, at: r.at })),
+  };
+}
+
+/** What the model read, capped so bundles stay small enough to serve. */
+function bundleEvidence(evidence: EvidenceResult): NonNullable<VerdictBundle["evidence"]> {
+  return {
+    fetcher: evidence.fetcher,
+    text: evidence.text.slice(0, MAX_CONTENT_CHARS),
+    paidAtomic: evidence.payment ? String(evidence.payment.priceAtomic) : undefined,
+  };
 }
 
 function renderDeadlinePrices(claim: ClaimOnChain, prices: DeadlinePrices): string {
@@ -653,8 +671,42 @@ async function oracleHasStake(claim: ClaimOnChain): Promise<boolean> {
 
 interface SettlementDecision {
   verdict: OracleVerdict;
+  /** keccak256 of the bundle's canonical JSON: what goes on chain. */
   evidenceHash: `0x${string}`;
+  bundle: VerdictBundle;
   bonusVotes: CouncilVote[] | null;
+}
+
+type BundleParts = Omit<VerdictBundle, "version" | "chain" | "claimId" | "decidedAt" | "claim" | "finalVerdict">;
+
+/**
+ * Seal everything a decision rested on into the audit bundle whose hash is
+ * committed on chain as evidenceHash (see lib/verdict-bundle.ts, /verify).
+ */
+function decisionFor(
+  claim: ClaimOnChain,
+  verdict: OracleVerdict,
+  parts: BundleParts,
+  bonusVotes: CouncilVote[] | null = null,
+): SettlementDecision {
+  const bundle: VerdictBundle = {
+    version: VERDICT_BUNDLE_VERSION,
+    chain: claim.chain,
+    claimId: claim.id,
+    decidedAt: Date.now(),
+    claim: {
+      question: claim.question,
+      creatorPosition: claim.creatorPosition,
+      counterPosition: claim.counterPosition,
+      settlementRule: claim.settlementRule,
+      resolutionUrl: claim.resolutionUrl,
+      category: claim.category,
+      deadline: Number(claim.deadline),
+    },
+    ...parts,
+    finalVerdict: { verdict: verdict.verdict, confidence: verdict.confidence, explanation: verdict.explanation },
+  };
+  return { verdict, evidenceHash: sealBundle(bundle).hash, bundle, bonusVotes };
 }
 
 async function settle(claim: ClaimOnChain): Promise<boolean> {
@@ -670,6 +722,14 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
     decidedVerdicts.set(key, decision);
   }
   const { verdict, evidenceHash, bonusVotes } = decision;
+
+  // Publish the audit bundle before committing its hash, so the moment the
+  // verdict is on chain anyone can fetch what it was decided on. Retried on
+  // the next attempt if the database is briefly away; a bundle that cannot be
+  // stored at all does not block settlement, it only makes /verify say so.
+  await saveVerdictBundle(decision.bundle).catch((err) =>
+    console.warn(`${chainTag("settle", claim.chain)} verdict bundle not stored:`, err instanceof Error ? err.message : err),
+  );
 
   // The claim may have been resolved since the scan, by an earlier attempt that
   // timed out in W3S but still mined. Re-read right before signing.
@@ -767,7 +827,10 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
       confidence: 0,
       explanation: `[NO EVIDENCE — refunded] The resolution source could not be read within ${NO_EVIDENCE_GRACE_SECS / 3600}h of the deadline. ${evidence.text}`.slice(0, 500),
     };
-    return { verdict, evidenceHash: hashEvidence(evidence.text), bonusVotes: null };
+    return decisionFor(claim, verdict, {
+      evidence: bundleEvidence(evidence),
+      adjustments: [`no evidence within ${NO_EVIDENCE_GRACE_SECS / 3600}h of the deadline: refunded`],
+    });
   }
 
   // Council-as-jury: buy each persona's verdict (x402 → persona wallet) and
@@ -777,8 +840,9 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
   // and the oracle's independent, evidence-only assessment both settles the
   // claim and serves as the reference report jurors are scored against.
   let rawVerdict: OracleVerdict;
-  let commit = evidenceText;
+  let councilRecord: VerdictBundle["council"];
   let bonusVotes: CouncilVote[] | null = null;
+  const adjustments: string[] = [];
   if (COUNCIL_SETTLEMENT) {
     const council = await gatherCouncilVerdict({
       claimId:       claim.id,
@@ -807,13 +871,21 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
       const scores = council.votes.map((v) => Number((v.score ?? 0).toFixed(4)));
       console.log(`${chainTag("settle", claim.chain)} 🏛️  Reference q_T=${referenceQ.toFixed(2)} · CE scores: ${council.votes.map((v) => `${v.slug}=${(v.score ?? 0).toFixed(3)}`).join(" ")}`);
       rawVerdict = reference;
-      commit = `${evidenceText}\n[council]${JSON.stringify({ tally: council.tally, q: council.qHistory, refQ: Number(referenceQ.toFixed(4)), scores })}`;
+      councilRecord = {
+        tally: { ...council.tally, scores },
+        votes: council.votes.map((v) => ({ slug: v.slug, verdict: v.verdict, confidence: v.confidence })),
+        qHistory: council.qHistory,
+        referenceQ: Number(referenceQ.toFixed(4)),
+      };
       bonusVotes = council.votes;
     } else if (council) {
       const paidUsdc = atomicToUsdc(council.totalPaidAtomic);
       console.log(`${chainTag("settle", claim.chain)} 🏛️  Council ${council.tally.creator}–${council.tally.challengers} (${council.tally.draw + council.tally.unresolvable} abstain) · paid ${paidUsdc.toFixed(6)} USDC to jurors`);
       rawVerdict = { verdict: council.verdict, confidence: council.confidence, explanation: council.explanation };
-      commit = `${evidenceText}\n[council]${JSON.stringify(council.tally)}`;
+      councilRecord = {
+        tally: council.tally,
+        votes: council.votes.map((v) => ({ slug: v.slug, verdict: v.verdict, confidence: v.confidence })),
+      };
     } else {
       console.log(`${chainTag("settle", claim.chain)} Council below quorum — settling solo.`);
       rawVerdict = await evaluateClaim(claim, evidenceText);
@@ -825,14 +897,15 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
   // A second independent price source, before any of the confidence tiering:
   // if the sources disagree there is nothing for the tiers to grade.
   const consensus = await applyPriceConsensus(claim, rawVerdict, prices);
-  if (consensus.note) commit = `${commit}
-[price-consensus]${consensus.note}`;
-  if (rawVerdict.model) commit = `${commit}\n[model]${rawVerdict.model}`;
+  if (consensus.note) adjustments.push(`price consensus: ${consensus.note}`);
   console.log(`${chainTag("settle", claim.chain)} Decided by: ${rawVerdict.model ?? "council tally"}`);
 
-  const evidenceHash = hashEvidence(commit);
   const trusted      = applyFetcherTrust(consensus.verdict, evidence.fetcher);
+  if (trusted.confidence !== consensus.verdict.confidence) {
+    adjustments.push(`fetcher trust (${evidence.fetcher}): confidence capped at ${trusted.confidence}`);
+  }
   let verdict        = tierVerdict(trusted);
+  if (verdict.verdict !== trusted.verdict) adjustments.push(`confidence ${trusted.confidence} below ${CONFIDENCE_MED_MIN}: refunded`);
 
   // The oracle judging a market it holds a position in only settles FIRM
   // verdicts; anything short of that is refunded instead of decided by an
@@ -843,7 +916,18 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
       confidence: verdict.confidence,
       explanation: `[ORACLE HOLDS A POSITION — refunded below ${CONFIDENCE_HIGH_MIN}%] ${verdict.explanation}`.slice(0, 500),
     };
+    adjustments.push(`oracle holds a position and confidence is below ${CONFIDENCE_HIGH_MIN}: refunded`);
   }
+
+  const decision = decisionFor(claim, verdict, {
+    evidence: bundleEvidence(evidence),
+    prices: prices && hasPrices ? bundlePrices(prices) : undefined,
+    council: councilRecord,
+    model: rawVerdict.model,
+    rawVerdict: { verdict: rawVerdict.verdict, confidence: rawVerdict.confidence, explanation: rawVerdict.explanation },
+    adjustments,
+  }, bonusVotes);
+  const evidenceHash = decision.evidenceHash;
 
   const tierTag =
     verdict.verdict !== rawVerdict.verdict ? "REFUND" :
@@ -854,7 +938,7 @@ async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
   console.log(`${chainTag("settle", claim.chain)} Evidence hash: ${evidenceHash}`);
   console.log(`${chainTag("settle", claim.chain)} "${verdict.explanation.slice(0, 100)}..."`);
 
-  return { verdict, evidenceHash, bonusVotes };
+  return decision;
 }
 
 // ── ROLE 2: Challenge mispriced open claim ────────────────────────────────────
