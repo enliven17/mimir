@@ -2,7 +2,6 @@ import {
   type VSData,
   getVSUserCommittedStake,
 } from "@/lib/contract";
-import { isSampleVsIdForXmtp } from "@/lib/xmtp/vs-chat-eligibility";
 
 /**
  * Dashboard UI — Fase 0 (decisiones de producto, en código mantenible)
@@ -16,7 +15,7 @@ import { isSampleVsIdForXmtp } from "@/lib/xmtp/vs-chat-eligibility";
  * - Active Exposure: lista única basada en `filtered` (mismos filtros que la barra).
  * - Paginación: “Load more” en la lista de VS (no en la banda).
  * - Mocks Pereira/Canelo, Colapinto, Álvarez: solo si el usuario no tiene al menos
- *   un VS propio en `open` o `accepted` con id “real” (no sample Explore / negativos en SAMPLE_VS).
+ *   un VS propio en `open` o `accepted`.
  *
  * Dashboard UI — Fase 1
  *
@@ -69,13 +68,11 @@ export const DASHBOARD_EXPOSURE_LOAD_MORE = 5;
 
 /**
  * Muestra las filas demo de `DASHBOARD_STAKE_HOLDING_IDS` solo cuando no hay
- * exposición activa “real” (on-chain / no sample) en open o accepted.
+ * exposición activa en open o accepted.
  */
 export function shouldShowDashboardStakeHoldingsMocks(duels: VSData[]): boolean {
   const hasRealActive = duels.some(
-    (d) =>
-      (d.state === "open" || d.state === "accepted") &&
-      !isSampleVsIdForXmtp(d.id)
+    (d) => d.state === "open" || d.state === "accepted"
   );
   return !hasRealActive;
 }

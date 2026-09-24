@@ -44,15 +44,6 @@ import {
   generatePrivateInviteKey,
   rememberPrivateInviteKey,
 } from "@/lib/private-links";
-import {
-  clearCreateMockSnapshot,
-  MOCK_CONSENSUS_TX_HASH,
-  MOCK_CREATE_DEMO_QUERY,
-  MOCK_CREATED_VS_ID,
-  MOCK_DEMO_CREATOR_ADDRESS,
-  MOCK_WALLET_TX_HASH,
-  writeCreateMockSnapshot,
-} from "@/lib/mockVsCreate";
 import { toast } from "sonner";
 import { txErrorMessage } from "@/lib/tx-errors";
 import PageTransition, { AnimatedItem } from "@/components/PageTransition";
@@ -60,9 +51,6 @@ import { GlassCard, Button, Input, ListboxField } from "@/components/ui";
 import ClaimStrengthCard from "@/components/ClaimStrengthCard";
 import CreateChallengeTicket from "@/components/vs/CreateChallengeTicket";
 import { BlueprintHeading } from "@/components/BlueprintGrid";
-import CreateMockFundingOverlay, {
-  type CreateMockOverlayPhase,
-} from "@/components/vs/CreateMockFundingOverlay";
 import CreateSuccessScreen from "@/components/vs/CreateSuccessScreen";
 import Confetti from "@/components/Confetti";
 import { sealStamp } from "@/lib/animations/rituals";
@@ -73,7 +61,6 @@ import {
   Coins,
   Eye,
   FileEdit,
-  FlaskConical,
   GitBranch,
   Link2,
   SlidersHorizontal,
@@ -165,7 +152,6 @@ export default function CreatePage() {
   const tc = useTranslations("common");
   const tQuality = useTranslations("quality");
   const tCat = useTranslations("categories");
-  const tVsDetail = useTranslations("vsDetail");
   const locale = useLocale();
   const DEADLINE_PRESETS = useMemo(
     () =>
@@ -241,19 +227,10 @@ export default function CreatePage() {
   /** Network the last claim was opened on, frozen at submit so a header change can't move it. */
   const [createdChain, setCreatedChain] = useState<ChainKey>("arc");
   const [switchingNetwork, setSwitchingNetwork] = useState(false);
-  const [isCreateDemoUrl, setIsCreateDemoUrl] = useState(false);
-  const [mockOverlayPhase, setMockOverlayPhase] =
-    useState<CreateMockOverlayPhase>("closed");
-  const mockFlowTimersRef = useRef<number[]>([]);
-  /** `/vs/create?demo=1`: flujo sin wallet ni contrato (no compatible con rematch). */
-  const isCreateDemoSession = isCreateDemoUrl && rematchId === null;
   // A rematch must live on its parent's chain (parent ids mean nothing
   // elsewhere); a fresh claim opens on the network picked in the header.
   const createChain: ChainKey = rematchId ? rematchChain : selectedChain;
-  const needsNetworkSwitch =
-    !isCreateDemoSession && isConnected && !isOnChain(createChain);
-  const ticketWalletAddress =
-    isCreateDemoSession && !address ? MOCK_DEMO_CREATOR_ADDRESS : address;
+  const needsNetworkSwitch = isConnected && !isOnChain(createChain);
   /** Evita mismatch de hidratación: fechas relativas y `min` del input dependen de zona horaria y del reloj del cliente. */
   const categoryGuidance =
     CATEGORY_GUIDANCE[category as keyof typeof CATEGORY_GUIDANCE] ??
@@ -297,21 +274,6 @@ export default function CreatePage() {
 
   useEffect(() => {
     setMinCustomDeadlineDate(formatLocalDateInputValue(new Date()));
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const q = new URL(window.location.href).searchParams;
-    setIsCreateDemoUrl(q.get(MOCK_CREATE_DEMO_QUERY) === "1");
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      mockFlowTimersRef.current.forEach((id) => window.clearTimeout(id));
-      mockFlowTimersRef.current = [];
-    };
   }, []);
 
   /**
@@ -915,9 +877,7 @@ export default function CreatePage() {
       return;
     }
 
-    const isDemoCreate = isCreateDemoSession;
-
-    if (!isDemoCreate && (!isConnected || !address)) {
+    if (!isConnected || !address) {
       toast.error(t("connectWalletFirst"));
       return;
     }
@@ -982,65 +942,9 @@ export default function CreatePage() {
 
     let releaseLock: (() => void) | undefined;
     try {
-      releaseLock = acquireTxLock(address ?? MOCK_DEMO_CREATOR_ADDRESS);
+      releaseLock = acquireTxLock(address);
     } catch (lockErr: any) {
       toast.error(lockErr.message);
-      return;
-    }
-
-    if (isDemoCreate) {
-      mockFlowTimersRef.current.forEach((id) => window.clearTimeout(id));
-      mockFlowTimersRef.current = [];
-
-      const creatorAddr = address ?? MOCK_DEMO_CREATOR_ADDRESS;
-      setMockOverlayPhase("loading");
-
-      const tLoad = window.setTimeout(() => {
-        setMockOverlayPhase("success");
-      }, 1500);
-      mockFlowTimersRef.current.push(tLoad);
-
-      const tDone = window.setTimeout(() => {
-        writeCreateMockSnapshot({
-          version: 1,
-          vsId: MOCK_CREATED_VS_ID,
-          inviteKey,
-          creator: creatorAddr,
-          vs: {
-            question,
-            creator_position: creatorPos,
-            opponent_position: opponentPos,
-            resolution_url: normalizedSourceUrl,
-            stake_amount: stake,
-            deadline: deadlineTimestamp,
-            created_at: Math.floor(Date.now() / 1000),
-            category,
-            market_type: normalizedMarketType,
-            odds_mode: normalizedOddsMode,
-            max_challengers: normalizedMaxChallengers,
-            is_private: isPrivate,
-            settlement_rule: settlementRule.trim(),
-            handicap_line: "",
-            challenger_payout_bps: 0,
-          },
-        });
-        setCreated(MOCK_CREATED_VS_ID);
-        setCreatedChain("arc");
-        setCreatedPending(false);
-        setCreatedTxHash(MOCK_WALLET_TX_HASH);
-        setCreatedExplorerTxHash(MOCK_CONSENSUS_TX_HASH);
-        setCreatedInviteKey(inviteKey);
-        if (inviteKey) {
-          rememberPrivateInviteKey(MOCK_CREATED_VS_ID, inviteKey);
-        }
-        setMockOverlayPhase("closed");
-        mockFlowTimersRef.current = [];
-        toast.success(t("createSuccessHeadline"));
-        setShowSealStamp(true);
-        window.setTimeout(() => setShowSealStamp(false), SEAL_STAMP_MS);
-        router.replace(pathname, { scroll: false });
-      }, 2300);
-      mockFlowTimersRef.current.push(tDone);
       return;
     }
 
@@ -1118,7 +1022,6 @@ export default function CreatePage() {
         isRematch={Boolean(rematchId)}
         chain={createdChain}
         onReset={() => {
-          clearCreateMockSnapshot();
           setCreated(null);
           setCreatedPending(false);
           setCreatedTxHash("");
@@ -1134,17 +1037,9 @@ export default function CreatePage() {
       />
     );
   }
-  const isFormMockBusy = mockOverlayPhase !== "closed";
 
   return (
     <>
-      <CreateMockFundingOverlay
-        phase={mockOverlayPhase}
-        titleLoading={t("mockOverlayFunding")}
-        hintLoading={t("mockOverlayFundingHint")}
-        titleSuccess={t("createSuccessHeadline")}
-        subtitleSuccess={t("mockOverlaySuccessHint")}
-      />
       <PageTransition>
       <div className="mx-auto w-full max-w-[1280px] px-4 pb-12 sm:px-6">
         <AnimatedItem>
@@ -1946,40 +1841,6 @@ export default function CreatePage() {
           </GlassCard>
         </AnimatedItem>
 
-            {isCreateDemoSession && (
-              <AnimatedItem>
-                <GlassCard
-                  glass
-                  glow="none"
-                  noPad
-                  className="!rounded-2xl !border-2 !border-dashed !border-white/[0.18] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)]"
-                >
-                  <div className="p-5 sm:p-6">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
-                      <span
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.03] text-pv-muted"
-                        aria-hidden
-                      >
-                        <FlaskConical size={18} strokeWidth={2} />
-                      </span>
-                      <div className="min-w-0 flex-1 space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                          <h3 className="font-display text-xs font-bold uppercase tracking-[0.18em] text-pv-text sm:tracking-[0.2em]">
-                            {tVsDetail("sampleModeTitle")}
-                          </h3>
-                          <span className="inline-flex shrink-0 rounded border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-pv-muted sm:text-[10px] sm:tracking-[0.22em]">
-                            {tVsDetail("sampleModeDemoBadge")}
-                          </span>
-                        </div>
-                        <p className="text-[11px] leading-relaxed text-pv-muted sm:text-xs">
-                          {t("mockModeBanner")}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </GlassCard>
-              </AnimatedItem>
-            )}
 
           </div>
 
@@ -1996,7 +1857,7 @@ export default function CreatePage() {
                   }
                   settlementPreview={ticketSettlementPreview}
                   stakeAmount={stake}
-                  walletAddress={ticketWalletAddress ?? undefined}
+                  walletAddress={address ?? undefined}
                 />
                 <ClaimStrengthCard
                   input={claimStrengthInput}
@@ -2069,12 +1930,10 @@ export default function CreatePage() {
                     </div>
                   </div>
                 ) : null}
-                {!isCreateDemoSession ? (
-                  <NetworkNotice
-                    chain={createChain}
-                    note={rematchId ? tNet("rematchSameNetwork") : undefined}
-                  />
-                ) : null}
+                <NetworkNotice
+                  chain={createChain}
+                  note={rematchId ? tNet("rematchSameNetwork") : undefined}
+                />
                 {needsNetworkSwitch ? (
                   <Button
                     variant="primary"
@@ -2087,22 +1946,16 @@ export default function CreatePage() {
                       ? tNet("switching")
                       : tNet("switchTo", { name: getChain(createChain).name })}
                   </Button>
-                ) : isConnected || isCreateDemoSession ? (
+                ) : isConnected ? (
                   <Button
                     variant="primary"
                     onClick={handleSubmit}
-                    loading={
-                      loading ||
-                      mockOverlayPhase === "loading" ||
-                      moderationLoading
-                    }
-                    disabled={isFormMockBusy || moderationLoading}
+                    loading={loading || moderationLoading}
+                    disabled={moderationLoading}
                     className="rounded-2xl py-5 font-display text-sm font-bold uppercase tracking-widest"
                   >
-                    {mockOverlayPhase === "loading" || loading ? (
-                      mockOverlayPhase === "loading"
-                        ? t("mockOverlayFunding")
-                        : t("funding")
+                    {loading ? (
+                      t("funding")
                     ) : (
                       <>
                         <span>

@@ -2,15 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { VSData } from "../../lib/contract";
-import {
-  MOCK_CREATED_VS_ID,
-  buildMockCreatedVsTemplate,
-} from "../../lib/mockVsCreate";
 import { ZERO_ADDRESS } from "../../lib/constants";
 import {
   canOpenVsXmtpChat,
   getVsXmtpUnavailableReason,
-  isOneVsOneDemoVs,
   shouldMountVsXmtpPanelOnDetailPage,
   shouldShowXmtpPeerUnreachableChatPreview,
 } from "../../lib/xmtp/vs-chat-eligibility";
@@ -42,61 +37,43 @@ test("shouldMountVsXmtpPanelOnDetailPage: real id", () => {
   assert.equal(shouldMountVsXmtpPanelOnDetailPage(vs), true);
 });
 
-test("shouldMountVsXmtpPanelOnDetailPage: explore sample -1 omitted", () => {
+test("shouldMountVsXmtpPanelOnDetailPage: negative id omitted", () => {
   const vs = baseVs({ id: -1, max_challengers: 8 });
   assert.equal(shouldMountVsXmtpPanelOnDetailPage(vs), false);
 });
 
-test("isOneVsOneDemoVs / mount: -4 template 1v1", () => {
-  const tpl = buildMockCreatedVsTemplate();
-  assert.equal(isOneVsOneDemoVs(tpl), true);
-  assert.equal(shouldMountVsXmtpPanelOnDetailPage(tpl), true);
+test("getVsXmtpUnavailableReason: open 1v1 yields not_accepted", () => {
+  const vs = baseVs({ id: 2, max_challengers: 1 });
+  assert.equal(getVsXmtpUnavailableReason(vs), "not_accepted");
 });
 
-test("isOneVsOneDemoVs: -4 with max_challengers > 1 not demo chat slot", () => {
-  const tpl = buildMockCreatedVsTemplate();
-  const multi = { ...tpl, max_challengers: 8 };
-  assert.equal(isOneVsOneDemoVs(multi), false);
-  assert.equal(shouldMountVsXmtpPanelOnDetailPage(multi), false);
-});
-
-test("getVsXmtpUnavailableReason: -4 open yields not_accepted not sample", () => {
-  const tpl = buildMockCreatedVsTemplate();
-  assert.equal(getVsXmtpUnavailableReason(tpl), "not_accepted");
-});
-
-test("getVsXmtpUnavailableReason: -4 accepted multi-challenger preview", () => {
-  const vs: VSData = {
-    ...buildMockCreatedVsTemplate(),
+test("getVsXmtpUnavailableReason: accepted multi-challenger", () => {
+  const vs = baseVs({
+    id: 2,
     state: "accepted",
     opponent: OPP,
     challenger_count: 3,
-  };
+  });
   assert.equal(getVsXmtpUnavailableReason(vs), "multi_challenger");
 });
 
-test("shouldShowXmtpPeerUnreachableChatPreview: demo 1v1 only", () => {
-  const demo = buildMockCreatedVsTemplate();
+test("shouldShowXmtpPeerUnreachableChatPreview: never for on-chain VS", () => {
+  const vs = baseVs({ id: 2, max_challengers: 1 });
   assert.equal(
-    shouldShowXmtpPeerUnreachableChatPreview(demo, "peer_unreachable"),
-    true
-  );
-  assert.equal(shouldShowXmtpPeerUnreachableChatPreview(demo, "network"), false);
-  assert.equal(
-    shouldShowXmtpPeerUnreachableChatPreview(baseVs({ id: 2 }), "peer_unreachable"),
+    shouldShowXmtpPeerUnreachableChatPreview(vs, "peer_unreachable"),
     false
   );
+  assert.equal(shouldShowXmtpPeerUnreachableChatPreview(vs, "network"), false);
 });
 
-test("canOpenVsXmtpChat: -4 accepted 1v1", () => {
-  const vs: VSData = {
-    ...buildMockCreatedVsTemplate(),
-    id: MOCK_CREATED_VS_ID,
+test("canOpenVsXmtpChat: accepted 1v1", () => {
+  const vs = baseVs({
+    id: 2,
     state: "accepted",
     opponent: OPP,
     challenger_count: 1,
-    creator: "0x1111111111111111111111111111111111111111",
-  };
+    max_challengers: 1,
+  });
   assert.equal(canOpenVsXmtpChat(vs), true);
   assert.equal(getVsXmtpUnavailableReason(vs), null);
 });

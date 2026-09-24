@@ -32,7 +32,6 @@ import {
 import { claimKey, vsPath } from "@/lib/chains";
 import ChainBadge from "@/components/ui/ChainBadge";
 import WithdrawPendingButton from "@/components/dashboard/WithdrawPendingButton";
-import { isSampleVsIdForXmtp } from "@/lib/xmtp/vs-chat-eligibility";
 import {
   DASHBOARD_CARD_SURFACE,
   DASHBOARD_PANEL_SURFACE,
@@ -750,11 +749,6 @@ function StakeHoldingVSRow({
               {visibilityLine}
             </span>
             <ChainBadge chain={chain} compact />
-            {isSampleVsIdForXmtp(vs.id) ? (
-              <span className="inline-flex items-center rounded border border-white/[0.14] bg-white/[0.04] px-2 py-0.5 font-display text-[9px] font-bold uppercase tracking-[0.14em] text-pv-muted sm:text-[10px]">
-                {t("holdings.demoVsBadge")}
-              </span>
-            ) : null}
           </div>
         </div>
         <Link

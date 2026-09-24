@@ -228,10 +228,6 @@
     "sendThisPrivateLink": "Send this private link only to the people you want to invite.",
     "viewVS": "View Challenge",
     "createAnother": "Create another",
-    "mockModeBanner": "Demo mode: no contract or wallet calls. Use this flow to preview the experience and share a test link.",
-    "mockOverlayFunding": "Loading…",
-    "mockOverlayFundingHint": "Simulating funding and confirmation (demo only).",
-    "mockOverlaySuccessHint": "You can now copy and share the invite link.",
     "mockSuccessBadge": "Demo",
     "mockTxDisclaimer": "These hashes are simulated; no on-chain transaction was sent.",
     "mockExplorerNote": "On a real creation you would open the explorer from here.",
@@ -715,7 +711,6 @@
         "closed": "Closed"
       },
       "demoBadge": "Sample",
-      "demoVsBadge": "Demo VS",
       "loadMore": "Load more",
       "exposurePagingPartial": "Showing {visible} of {total} challenges",
       "exposurePagingAll": "All {total} challenges match your filters",
@@ -900,13 +895,6 @@
       "pool": "Pool odds",
       "fixed": "Fixed odds"
     },
-    "designPreviewLifecycleHint": "Design only: tap a lifecycle step to preview that phase (no on-chain state changes).",
-    "designPreviewReset": "Use live sample state",
-    "designPreviewResolutionSummary": "Preview only: the creator side is shown as the prevailing outcome. No consensus transaction was executed.",
-    "sampleModeTitle": "Preview challenge",
-    "sampleModeBody": "This is a testing page for the challenge lifecycle design. It is not a live on-chain VS—use it to review layout and copy only.",
-    "sampleModeDemoBadge": "Demo",
-    "sampleModeCTA": "Create Real Challenge",
     "invalidChallengeStakeMin": "Enter a stake of at least {amount} USDC",
     "minimumStakeHint": "Minimum stake is {amount} USDC."
   },

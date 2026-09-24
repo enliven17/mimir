@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useParams, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -14,7 +14,6 @@ import {
   getRivalryChain,
   getVS,
   getVSChallengerCount,
-  getVSConfiguredMaxChallengers,
   getVSSingleWinnerPayout,
   getVSTotalPot,
   getUserVSDirect,
@@ -49,12 +48,6 @@ import {
   getShareUrl,
   shortenAddress,
 } from "@/lib/constants";
-import {
-  MOCK_CREATED_VS_ID,
-  mergeMockSnapshotIntoVs,
-  readCreateMockSnapshot,
-} from "@/lib/mockVsCreate";
-import { SAMPLE_VS } from "@/lib/sampleVs";
 import { useCountdown } from "@/lib/hooks";
 import {
   getStoredPrivateInviteKey,
@@ -91,7 +84,6 @@ import {
   ChevronDown,
   Copy,
   ExternalLink,
-  FlaskConical,
   GitBranch,
   Share2,
   SlidersHorizontal,
@@ -99,10 +91,6 @@ import {
 } from "lucide-react";
 import MarketPricePanel from "@/components/vs/MarketPricePanel";
 import PriceCrossCheckNote from "@/components/vs/PriceCrossCheckNote";
-
-/** Dirección ficticia para previsualizar fases accepted / verifying / proven en VS de muestra (sin blockchain). */
-const DESIGN_PREVIEW_OPPONENT =
-  "0x2222222222222222222222222222222222222222";
 
 /** Misma silueta que la píldora «{addr} challenges you» (fucsia, pill redondeada). */
 const DUEL_STATUS_FUCHSIA_PILL_CLASS =
@@ -113,261 +101,7 @@ const RIVALRY_ITEM_BASE_CLASS =
 const RIVALRY_ITEM_ACTIVE_CLASS =
   "border-pv-emerald/[0.35] bg-pv-emerald/[0.08] hover:border-pv-emerald/[0.45] hover:bg-pv-emerald/[0.12]";
 
-/** Demo ticket `-4` (1v1): preview alineado con XMTP y métrica SLOTS 1/1. */
-function isDesignPreviewOneVsOneBase(base: VSData): boolean {
-  return (
-    base.id === MOCK_CREATED_VS_ID && getVSConfiguredMaxChallengers(base) === 1
-  );
-}
-
-function buildDesignPreviewVs(
-  base: VSData,
-  step: number,
-  resolutionSummary: string,
-  resolvedOutcome: "creator" | "challengers" = "creator",
-): VSData {
-  const oneV1 = isDesignPreviewOneVsOneBase(base);
-
-  if (step <= 0) {
-    return {
-      ...base,
-      state: "open",
-      opponent: ZERO_ADDRESS,
-      winner: ZERO_ADDRESS,
-      resolution_summary: "",
-      winner_side: undefined,
-      challenger_count: 0,
-      challengers: undefined,
-      challenger_addresses: undefined,
-    };
-  }
-  if (step <= 2) {
-    const pot = getVSTotalPot({
-      ...base,
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      state: "accepted",
-    });
-    if (oneV1) {
-      return {
-        ...base,
-        state: "accepted",
-        opponent: DESIGN_PREVIEW_OPPONENT,
-        winner: ZERO_ADDRESS,
-        resolution_summary: "",
-        winner_side: undefined,
-        challenger_count: 1,
-        challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-        challengers: [
-          {
-            address: DESIGN_PREVIEW_OPPONENT,
-            stake: base.stake_amount,
-            potential_payout: pot,
-          },
-        ],
-      };
-    }
-    return {
-      ...base,
-      state: "accepted",
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      winner: ZERO_ADDRESS,
-      resolution_summary: "",
-      winner_side: undefined,
-      challenger_count: 3,
-      challenger_addresses: [DESIGN_PREVIEW_OPPONENT, "0x3333333333333333333333333333333333333333", "0x4444444444444444444444444444444444444444"],
-      challengers: [
-        {
-          address: DESIGN_PREVIEW_OPPONENT,
-          stake: base.stake_amount,
-          potential_payout: pot,
-        },
-        {
-          address: "0x3333333333333333333333333333333333333333",
-          stake: base.stake_amount,
-          potential_payout: pot,
-        },
-        {
-          address: "0x4444444444444444444444444444444444444444",
-          stake: base.stake_amount,
-          potential_payout: pot,
-        },
-      ],
-    };
-  }
-  if (step === 3) {
-    const resolvedPot = getVSTotalPot({
-      ...base,
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      state: "resolved",
-    });
-
-    if (resolvedOutcome === "creator") {
-      return {
-        ...base,
-        state: "resolved",
-        opponent: DESIGN_PREVIEW_OPPONENT,
-        winner: base.creator,
-        winner_side: "creator",
-        resolution_summary: resolutionSummary,
-        challenger_count: 1,
-        challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-        challengers: [
-          {
-            address: DESIGN_PREVIEW_OPPONENT,
-            stake: base.stake_amount,
-            potential_payout: resolvedPot,
-          },
-          {
-            address: "0x3333333333333333333333333333333333333333",
-            stake: base.stake_amount,
-            potential_payout: resolvedPot,
-          },
-          {
-            address: "0x4444444444444444444444444444444444444444",
-            stake: base.stake_amount,
-            potential_payout: resolvedPot,
-          },
-        ],
-      };
-    }
-
-    return {
-      ...base,
-      state: "resolved",
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      winner: DESIGN_PREVIEW_OPPONENT,
-      winner_side: "challengers",
-      resolution_summary: resolutionSummary,
-      challenger_count: 1,
-      challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-      challengers: [
-        {
-          address: DESIGN_PREVIEW_OPPONENT,
-          stake: base.stake_amount,
-          potential_payout: resolvedPot,
-        },
-      ],
-    };
-  }
-
-  // step >= 4 => CANCELLED (solo para modo demo/testing)
-  const cancelledPot = getVSTotalPot({
-    ...base,
-    opponent: DESIGN_PREVIEW_OPPONENT,
-    state: "cancelled",
-  });
-
-  if (oneV1) {
-    return {
-      ...base,
-      state: "cancelled",
-      opponent: DESIGN_PREVIEW_OPPONENT,
-      winner: ZERO_ADDRESS,
-      winner_side: undefined,
-      resolution_summary: "",
-      challenger_count: 1,
-      challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-      challengers: [
-        {
-          address: DESIGN_PREVIEW_OPPONENT,
-          stake: base.stake_amount,
-          potential_payout: cancelledPot,
-        },
-      ],
-    };
-  }
-
-  return {
-    ...base,
-    state: "cancelled",
-    opponent: DESIGN_PREVIEW_OPPONENT,
-    winner: ZERO_ADDRESS,
-    winner_side: undefined,
-    resolution_summary: "",
-    challenger_count: 1,
-    challenger_addresses: [DESIGN_PREVIEW_OPPONENT],
-    challengers: [
-      {
-        address: DESIGN_PREVIEW_OPPONENT,
-        stake: base.stake_amount,
-        potential_payout: cancelledPot,
-      },
-    ],
-  };
-}
-
-function buildDesignPreviewRematchChain(
-  base: VSData,
-  firstRoundOutcome: "creator" | "challengers",
-  resolutionSummary: string,
-): VSData[] {
-  // Dos rondas mock para que se vea "Rematch" en el card sin depender de on-chain.
-  const isGpt5Vs =
-    base.question.startsWith("GPT-5 Announced by OpenAI before ");
-
-  const round1BaseQuestion = isGpt5Vs
-    ? base.question.replace(/before\s+[A-Za-z]+\b.*/i, "before February")
-    : base.question.includes("March")
-      ? base.question.replace("March", "January")
-      : base.question;
-
-  const round2BaseQuestion = isGpt5Vs
-    ? base.question.replace(/before\s+[A-Za-z]+\b.*/i, "before June")
-    : base.question;
-
-  const round1Base: VSData = {
-    ...base,
-    id: base.id - 100,
-    question: round1BaseQuestion,
-    creator_position: isGpt5Vs
-      ? "OpenAI announces GPT-5 before February"
-      : base.creator_position,
-    opponent_position: isGpt5Vs
-      ? "No official announcement before February"
-      : base.opponent_position,
-    resolution_summary: resolutionSummary,
-  };
-
-  const round2Base: VSData = {
-    ...base,
-    id: base.id - 101,
-    question: round2BaseQuestion,
-    creator_position: isGpt5Vs ? "OpenAI announces GPT-5 before June" : base.creator_position,
-    opponent_position: isGpt5Vs ? "No official announcement before June" : base.opponent_position,
-    resolution_summary: resolutionSummary,
-  };
-
-  const round2Outcome: "creator" | "challengers" =
-    firstRoundOutcome === "creator" ? "challengers" : "creator";
-
-  // ROUND 3: no llega a PROVEN todavía (se mantiene en "accepted").
-  const round3Base: VSData = {
-    ...base,
-    id: base.id - 102,
-    question: "BTC Price will break $100k before August 31",
-    resolution_summary: resolutionSummary,
-  };
-
-  return [
-    buildDesignPreviewVs(round1Base, 3, resolutionSummary, firstRoundOutcome),
-    buildDesignPreviewVs(round2Base, 3, resolutionSummary, round2Outcome),
-    buildDesignPreviewVs(round3Base, 2, resolutionSummary, "creator"),
-  ];
-}
-
-type ProgressBarProps = {
-  canonicalState: string;
-  visualStepIndex?: number | null;
-  interactive?: boolean;
-  onStepSelect?: (index: number) => void;
-};
-
-function ProgressBar({
-  canonicalState,
-  visualStepIndex = null,
-  interactive = false,
-  onStepSelect,
-}: ProgressBarProps) {
+function ProgressBar({ canonicalState }: { canonicalState: string }) {
   const t = useTranslations("vsDetail");
   const steps = [
     t("progressCreated"),
@@ -377,7 +111,7 @@ function ProgressBar({
   ];
   const total = steps.length;
 
-  const stepIndexFromState =
+  const stepIndex =
     canonicalState === "open"
       ? 0
       : canonicalState === "accepted"
@@ -388,12 +122,7 @@ function ProgressBar({
             ? -1
             : 0;
 
-  const stepIndex =
-    typeof visualStepIndex === "number" && visualStepIndex >= 0 && visualStepIndex <= 3
-      ? visualStepIndex
-      : stepIndexFromState;
-
-  if (canonicalState === "cancelled" || stepIndexFromState === -1) {
+  if (canonicalState === "cancelled" || stepIndex === -1) {
     return null;
   }
 
@@ -403,14 +132,12 @@ function ProgressBar({
 
   const cellClass = (isCurrent: boolean, isDone: boolean) =>
     `flex h-full min-h-[4.5rem] w-full flex-col gap-2 rounded-lg border px-3 py-3 text-left transition-all duration-300 sm:min-h-0 sm:py-3.5 ${
-      interactive ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pv-emerald/35 " : ""
-    }${
       isCurrent
         ? "border-pv-emerald/40 bg-pv-emerald/[0.07] shadow-glow-emerald"
         : isDone
           ? "border-pv-emerald/20 bg-pv-emerald/[0.04]"
           : "border-white/[0.06] bg-pv-bg/40"
-    } ${interactive && !isCurrent ? "hover:border-white/[0.1]" : ""}`;
+    }`;
 
   return (
     <nav
@@ -494,19 +221,7 @@ function ProgressBar({
 
             return (
               <li key={stepCode} className="min-w-0 list-none">
-                {interactive && onStepSelect ? (
-                  <button
-                    type="button"
-                    className={cellClass(isCurrent, isDone)}
-                    aria-label={label}
-                    aria-pressed={isCurrent}
-                    onClick={() => onStepSelect(index)}
-                  >
-                    {inner}
-                  </button>
-                ) : (
-                  <div className={cellClass(isCurrent, isDone)}>{inner}</div>
-                )}
+                <div className={cellClass(isCurrent, isDone)}>{inner}</div>
               </li>
             );
           })}
@@ -570,7 +285,6 @@ function VsChallengersCard({
   address,
   challengerCount,
   maxChallengers,
-  showLoadMore = false,
   className = "border border-white/[0.12] !rounded-2xl",
 }: {
   challengers: ClaimChallenger[];
@@ -578,7 +292,6 @@ function VsChallengersCard({
   address: string | null | undefined;
   challengerCount: number;
   maxChallengers: number;
-  showLoadMore?: boolean;
   className?: string;
 }) {
   const t = useTranslations("vsDetail");
@@ -586,7 +299,7 @@ function VsChallengersCard({
 
   useEffect(() => {
     setPage(0);
-  }, [showLoadMore, challengers.length]);
+  }, [challengers.length]);
 
   const pageCount = Math.max(1, Math.ceil(challengers.length / CHALLENGERS_PAGE_SIZE));
   const normalizedPage = Math.min(page, pageCount - 1);
@@ -730,7 +443,6 @@ export default function VSDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const vsId = Number(params.id);
-  const isSampleVS = vsId < 0 && !!SAMPLE_VS[vsId];
   const inviteFromUrl = searchParams.get("invite")?.trim() ?? "";
   // A claim lives on one chain (absent ?chain= means Arc). It wins over the
   // header selection for everything on this page.
@@ -761,9 +473,6 @@ export default function VSDetailPage() {
   const [marketTermsOpen, setMarketTermsOpen] = useState(false);
   const marketTermsHeadingId = useId();
   const marketTermsPanelId = useId();
-  /** Solo VS de muestra (ids negativos): índice 0–4 para previsualizar diseño sin blockchain. */
-  const [designLifecycleStep, setDesignLifecycleStep] = useState<number | null>(null);
-  const [designResolvedOutcome, setDesignResolvedOutcome] = useState<"creator" | "challengers">("creator");
   /** Tracks whether a resolve tx was fired so we can reveal the verdict once the state arrives. */
   const pendingResolveRef = useRef(false);
   const attemptedFinalizeResolveTxRef = useRef<string | null>(null);
@@ -775,32 +484,13 @@ export default function VSDetailPage() {
   const inviteKey = inviteFromUrl || storedInviteKey;
 
   useEffect(() => {
-    setDesignLifecycleStep(null);
-    setDesignResolvedOutcome("creator");
     pendingResolveRef.current = false;
     attemptedFinalizeResolveTxRef.current = null;
     setPendingResolveTxHash(null);
     setHasAttemptedResolve(false);
   }, [vsId]);
 
-  const displayVs = useMemo(() => {
-    if (!vs) return null;
-    if (!isSampleVS || designLifecycleStep === null) {
-      return vs;
-    }
-    return buildDesignPreviewVs(
-      vs,
-      designLifecycleStep,
-      t("designPreviewResolutionSummary"),
-      designResolvedOutcome,
-    );
-  }, [vs, isSampleVS, designLifecycleStep, t, designResolvedOutcome]);
-
   useEffect(() => {
-    if (isSampleVS) {
-      return;
-    }
-
     if (inviteFromUrl) {
       rememberPrivateInviteKey(vsId, inviteFromUrl, chain);
       setStoredInviteKey(inviteFromUrl);
@@ -808,22 +498,9 @@ export default function VSDetailPage() {
     }
 
     setStoredInviteKey(getStoredPrivateInviteKey(vsId, chain));
-  }, [chain, inviteFromUrl, isSampleVS, vsId]);
+  }, [chain, inviteFromUrl, vsId]);
 
   const fetchVS = useCallback(async () => {
-    if (isSampleVS) {
-      let data = SAMPLE_VS[vsId];
-      if (vsId === MOCK_CREATED_VS_ID) {
-        const snap = readCreateMockSnapshot();
-        if (snap) {
-          data = mergeMockSnapshotIntoVs(data, snap);
-        }
-      }
-      setVS(data);
-      setLoading(false);
-      return;
-    }
-
     let data: VSData | null;
     try {
       data = await getVS(vsId, {
@@ -859,17 +536,14 @@ export default function VSDetailPage() {
         return next;
       });
     }
-  }, [address, chain, inviteKey, isSampleVS, vsId]);
+  }, [address, chain, inviteKey, vsId]);
 
   useEffect(() => {
     fetchVS();
-    if (isSampleVS) {
-      return;
-    }
 
     const intervalId = setInterval(fetchVS, VS_POLL_INTERVAL_MS);
     return () => clearInterval(intervalId);
-  }, [fetchVS, isSampleVS]);
+  }, [fetchVS]);
 
   useEffect(() => {
     if (!vs || vs.state !== "resolved" || !pendingResolveRef.current) {
@@ -887,7 +561,7 @@ export default function VSDetailPage() {
   }, [vs]);
 
   useEffect(() => {
-    if (!pendingResolveTxHash || isSampleVS) {
+    if (!pendingResolveTxHash) {
       return;
     }
 
@@ -923,7 +597,7 @@ export default function VSDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [address, chain, fetchVS, isSampleVS, pendingResolveTxHash, t]);
+  }, [address, chain, fetchVS, pendingResolveTxHash, t]);
 
   useEffect(() => {
     setChallengeStake("");
@@ -939,7 +613,7 @@ export default function VSDetailPage() {
     // La rivalry chain puede ser costosa y además se recalcula en cada refresh del VS.
     // Para evitar parpadeos en despliegues (polling), solo la cargamos cuando el duelo
     // entra a fase PROVEN/resolved.
-    if (isSampleVS || !vs) return;
+    if (!vs) return;
 
     if (vs.state !== "resolved") {
       setRivalryChain([]);
@@ -986,12 +660,12 @@ export default function VSDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [chain, isSampleVS, vs?.id, vs?.state]);
+  }, [chain, vs?.id, vs?.state]);
 
   useEffect(() => {
     // Para mantener coherencia visual, colapsamos el rematch list cuando cambia la data.
     setIsRivalryExpanded(false);
-  }, [vs?.id, rivalryChain.length, designLifecycleStep, designResolvedOutcome]);
+  }, [vs?.id, rivalryChain.length]);
 
   const visibleRivalryChain =
     rivalryChain.length > 2 && !isRivalryExpanded
@@ -999,36 +673,7 @@ export default function VSDetailPage() {
       : rivalryChain;
   const canLoadMoreRivalry = rivalryChain.length > 2 && !isRivalryExpanded;
   const isRivalryDataReady =
-    isSampleVS || (rivalryLoadedForVsId !== null && rivalryLoadedForVsId === vs?.id);
-
-  useEffect(() => {
-    // En demo/testing (VS de muestra) simulamos el rematch para que la card
-    // `RIVALRY CHAIN` muestre rondas adicionales en el preview.
-    if (!isSampleVS || !vs) return;
-
-    if (designLifecycleStep !== 3) {
-      setRivalryChain([]);
-      setRivalryLoading(false);
-      setRivalryLoadedForVsId(null);
-      return;
-    }
-
-    setRivalryLoading(false);
-    setRivalryChain(
-      buildDesignPreviewRematchChain(
-        vs,
-        designResolvedOutcome,
-        t("designPreviewResolutionSummary"),
-      )
-    );
-    setRivalryLoadedForVsId(vs.id);
-  }, [
-    isSampleVS,
-    vs,
-    designLifecycleStep,
-    designResolvedOutcome,
-    t,
-  ]);
+    rivalryLoadedForVsId !== null && rivalryLoadedForVsId === vs?.id;
 
   if (loading) {
     return (
@@ -1054,18 +699,17 @@ export default function VSDetailPage() {
     );
   }
 
-  const display = displayVs!;
+  const display = vs;
 
   const isCreator = address?.toLowerCase() === vs.creator.toLowerCase();
   const isOpponent = didUserChallengeVS(display, address);
   const isPrivateVS = isVSPrivate(vs);
   const missingPrivateInvite = isPrivateVS && !inviteKey && !isCreator && !isOpponent;
   const canAccept =
-    !isSampleVS &&
     !missingPrivateInvite &&
     isVSJoinable(vs, address) &&
     isConnected;
-  const canCancel = !isSampleVS && vs.state === "open" && isCreator;
+  const canCancel = vs.state === "open" && isCreator;
   const hasWinner = hasVSWinner(display);
   const creatorRequestedResolve = Boolean(display.creator_requested_resolve);
   const challengerRequestedResolve = Boolean(display.challenger_requested_resolve);
@@ -1081,14 +725,12 @@ export default function VSDetailPage() {
       ? creatorRequestedResolve
       : false;
   const canRequestResolve =
-    !isSampleVS &&
     display.state === "accepted" &&
     countdown.expired &&
     isConnected &&
     isParticipant &&
     !userRequestedResolve;
   const canResetResolveRequest =
-    !isSampleVS &&
     display.state === "accepted" &&
     countdown.expired &&
     isConnected &&
@@ -1106,28 +748,18 @@ export default function VSDetailPage() {
   const pool = getVSTotalPot(display);
   const challengers = formatChallengers(display);
   const resolvedPayout = getVSSingleWinnerPayout(display);
-  const isDesignSampleLost =
-    isSampleVS && designLifecycleStep === 3 && designResolvedOutcome === "challengers";
-  const isDesignSampleWin =
-    isSampleVS && designLifecycleStep === 3 && designResolvedOutcome === "creator";
-
   const winnerTitle = !hasWinner
     ? tStamp("draw")
-    : isDesignSampleLost
-      ? tStamp("lost")
-      : isDesignSampleWin
-        ? tStamp("youWon")
-        : display.winner_side === "challengers" &&
-            (isVSMultiChallengerWin(display) || hasZeroAddressWinner(display))
-          ? "Challengers won"
-          : tStamp("won", { address: shortenAddress(display.winner) });
-  const provenResultTone = isDesignSampleLost ? "lost" : isDesignSampleWin ? "win" : undefined;
+    : display.winner_side === "challengers" &&
+        (isVSMultiChallengerWin(display) || hasZeroAddressWinner(display))
+      ? "Challengers won"
+      : tStamp("won", { address: shortenAddress(display.winner) });
   const winnerAmountLabel =
     !hasWinner
       ? null
       : resolvedPayout === null
         ? formatUsdc(pool)
-        : `${provenResultTone === "lost" ? "-" : "+"}${formatUsdc(resolvedPayout)}`;
+        : `+${formatUsdc(resolvedPayout)}`;
   const marketType = display.market_type ?? "binary";
   const oddsMode = display.odds_mode ?? "pool";
   const challengeStakeValue = Number(challengeStake);
@@ -1170,7 +802,7 @@ export default function VSDetailPage() {
   const shareUrl = getShareUrl(vsId, inviteKey, chain);
   const claimNetwork = getChain(chain);
   // Stake actions need the wallet on the claim's chain; the button switches first.
-  const needsNetworkSwitch = !isSampleVS && isConnected && !isOnChain(chain);
+  const needsNetworkSwitch = isConnected && !isOnChain(chain);
 
   async function handleSwitchToClaimChain() {
     setSwitchingNetwork(true);
@@ -1409,40 +1041,9 @@ export default function VSDetailPage() {
           </div>
         </AnimatedItem>
 
-        {(isSampleVS ? display.state : vs.state) !== "cancelled" && (
+        {vs.state !== "cancelled" && (
           <AnimatedItem>
-            <ProgressBar
-              canonicalState={isSampleVS ? display.state : vs.state}
-              visualStepIndex={isSampleVS ? designLifecycleStep : null}
-              interactive={isSampleVS}
-              onStepSelect={
-                isSampleVS
-                  ? (index) => {
-                      setDesignLifecycleStep(index);
-                      if (index !== 3) setDesignResolvedOutcome("creator");
-                    }
-                  : undefined
-              }
-            />
-            {isSampleVS && (
-              <div className="mb-8 flex flex-col gap-2 border-b border-white/[0.06] pb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                <p className="max-w-3xl text-[10px] leading-relaxed text-pv-muted sm:text-[11px]">
-                  {t("designPreviewLifecycleHint")}
-                </p>
-                {designLifecycleStep !== null ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDesignLifecycleStep(null);
-                      setDesignResolvedOutcome("creator");
-                    }}
-                    className="shrink-0 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-pv-emerald/90 underline-offset-2 hover:underline sm:text-right sm:text-[11px]"
-                  >
-                    {t("designPreviewReset")}
-                  </button>
-                ) : null}
-              </div>
-            )}
+            <ProgressBar canonicalState={vs.state} />
           </AnimatedItem>
         )}
 
@@ -1455,7 +1056,6 @@ export default function VSDetailPage() {
                 title={winnerTitle}
                 amountLabel={winnerAmountLabel}
                 resolutionSummary={display.resolution_summary}
-                resultTone={provenResultTone}
               />
             </AnimatedItem>
             <AnimatedItem>
@@ -1474,8 +1074,7 @@ export default function VSDetailPage() {
           </AnimatedItem>
         )}
 
-        {((actionLoading === "resolve" && willTriggerResolution) ||
-          (isSampleVS && designLifecycleStep === 2)) && (
+        {actionLoading === "resolve" && willTriggerResolution && (
           <AnimatedItem>
             <ResolutionTerminal
               phase={actionLoading === "resolve" ? resolvePhase : 4}
@@ -1504,7 +1103,7 @@ export default function VSDetailPage() {
                     <Badge status={display.state} large />
                   )}
                   <span className="inline-flex items-center gap-2">
-                    {!isSampleVS ? <ChainBadge chain={chain} /> : null}
+                    <ChainBadge chain={chain} />
                     <span className="font-mono text-[11px] text-pv-muted">#{vs.id}</span>
                   </span>
                 </div>
@@ -1824,8 +1423,7 @@ export default function VSDetailPage() {
 
         {null}
 
-        {!isSampleVS ? (
-          <AnimatedItem>
+        <AnimatedItem>
             <div className="flex flex-col gap-3 sm:gap-4">
               {missingPrivateInvite && (
                 <GlassCard glass className="!rounded-2xl border border-white/[0.12]">
@@ -1925,8 +1523,7 @@ export default function VSDetailPage() {
                 <Button onClick={connect}>{t("connectToAccept")}</Button>
               )}
 
-              {!isSampleVS &&
-                vs.state === "open" &&
+              {vs.state === "open" &&
                 !hasAnyChallenger &&
                 countdown.expired && (
                 <GlassCard glass className="!rounded-2xl border border-white/[0.12]">
@@ -2126,90 +1723,7 @@ export default function VSDetailPage() {
                   </Button>
                 ))}
             </div>
-          </AnimatedItem>
-        ) : (
-          <AnimatedItem>
-            <GlassCard
-              glass
-              glow="none"
-              noPad
-              className="!rounded-2xl !border-2 !border-dashed !border-white/[0.18] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)]"
-            >
-              <div className="p-5 sm:p-6">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.03] text-pv-muted"
-                    aria-hidden
-                  >
-                    <FlaskConical size={18} strokeWidth={2} />
-                  </span>
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                      <h3 className="font-display text-xs font-bold uppercase tracking-[0.18em] text-pv-text sm:tracking-[0.2em]">
-                        {t("sampleModeTitle")}
-                      </h3>
-                      <span className="inline-flex shrink-0 rounded border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-pv-muted sm:text-[10px] sm:tracking-[0.22em]">
-                        {t("sampleModeDemoBadge")}
-                      </span>
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-pv-muted sm:text-xs">
-                      {t("sampleModeBody")}
-                    </p>
-                    <div className="pt-0.5">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          fullWidth={false}
-                          onClick={() => {
-                            setDesignLifecycleStep(4);
-                            setDesignResolvedOutcome("creator");
-                          }}
-                          className="w-full !border-white/[0.1] !bg-white/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-white/[0.16] hover:!bg-white/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
-                        >
-                          {tBadges("cancelled")}
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          fullWidth={false}
-                          onClick={() => {
-                            setDesignLifecycleStep(3);
-                            setDesignResolvedOutcome((prev) =>
-                              prev === "challengers" ? "creator" : "challengers"
-                            );
-                          }}
-                          className="w-full !border-white/[0.1] !bg-white/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-white/[0.16] hover:!bg-white/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
-                        >
-                          {designResolvedOutcome === "challengers"
-                            ? tBadges("lost")
-                            : tBadges("won")}
-                        </Button>
-
-                        <Link
-                          href="/vs/create"
-                          className="inline-block w-full sm:w-auto"
-                        >
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            fullWidth={false}
-                            className="w-full !border-white/[0.1] !bg-white/[0.03] !py-2 !px-3 !text-[10px] !font-semibold !text-pv-muted !shadow-none hover:!border-white/[0.16] hover:!bg-white/[0.05] hover:!text-pv-text sm:w-auto sm:!px-3.5 sm:!text-[11px]"
-                          >
-                            {t("sampleModeCTA")}
-                          </Button>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
-          </AnimatedItem>
-        )}
+        </AnimatedItem>
           </div>
 
           <aside className="min-w-0 lg:col-span-4 text-pv-text">
@@ -2235,7 +1749,6 @@ export default function VSDetailPage() {
                   address={address}
                   challengerCount={challengerCount}
                   maxChallengers={maxChallengers}
-                  showLoadMore={isSampleVS && designLifecycleStep !== null}
                 />
                 {showRivalrySection && (
                   <AnimatedItem>
@@ -2257,8 +1770,7 @@ export default function VSDetailPage() {
                             </p>
                           </div>
 
-                          {!isSampleVS &&
-                            supportsRematch(chain) &&
+                          {supportsRematch(chain) &&
                             (vs.state === "resolved" || vs.state === "cancelled") && (
                               <div className="w-full flex justify-center">
                                 <Link
@@ -2310,11 +1822,7 @@ export default function VSDetailPage() {
                                   </div>
                                 );
 
-                                return isSampleVS ? (
-                                  <div key={entry.id} className="block">
-                                    {inner}
-                                  </div>
-                                ) : (
+                                return (
                                   <Link
                                     key={entry.id}
                                     href={vsPath(entry.id, chain)}
