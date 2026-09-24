@@ -346,6 +346,7 @@ export async function payCouncilBonuses(
   poolUsdc: number,
   payerWalletId: string,
   chain: ChainKey = "arc",
+  claimId?: number,
 ): Promise<BonusReceipt[]> {
   const bonuses = allocateBonus(votes.map((v) => v.score ?? 0), poolUsdc);
   const receipts: BonusReceipt[] = [];
@@ -365,7 +366,7 @@ export async function payCouncilBonuses(
         payerWalletId,
         vote.walletAddress as `0x${string}`,
         bonus,
-        `council-bonus-${chain}-${vote.slug}`,
+        `council-bonus-${chain}-${claimId ?? "na"}-${vote.slug}`,
       );
       receipts.push({ slug: vote.slug, bonusUsdc: bonus, txHash });
     } catch (err) {

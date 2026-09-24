@@ -129,6 +129,19 @@ const challengedClaimIds = new Set<string>();
 // Track evaluated-but-not-challenged (to avoid repeated LLM calls)
 const evaluatedClaimIds = new Set<string>();
 
+// Settlement pacing and retry state, keyed by claimKey.
+let lastSettledAt = 0;
+const SETTLE_RETRY_BACKOFF_MS = 10 * 60_000;
+const settleBackoff = new Map<string, number>();
+/**
+ * The decision for a claim whose resolve write failed. A retry re-submits the
+ * same verdict instead of re-buying evidence and jury votes and re-rolling a
+ * non-deterministic LLM that might now answer differently.
+ */
+const decidedVerdicts = new Map<string, { verdict: OracleVerdict; evidenceHash: `0x${string}`; bonusVotes: CouncilVote[] | null }>();
+/** x402 evidence spend per claim, in atomic USDC, so deferred retries share one budget. */
+const evidenceSpentAtomic = new Map<string, bigint>();
+
 requireEnv(["CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET", "CIRCLE_ORACLE_ADDRESS"]);
 requireAnyLLMKey();
 
@@ -215,13 +228,17 @@ async function fetchEvidence(claim: ClaimOnChain): Promise<EvidenceResult> {
 
   // Wire the budgeted paying fetch only when payment is enabled. Evidence-fetcher
   // calls it solely on a 402; free sources never trigger a payment.
-  const budgetUsdc = evidenceBudgetUsdc(claim);
-  const maxAtomic = usdcToAtomic(budgetUsdc);
-  const paidFetch = PAY_EVIDENCE
+  // The budget is per claim, not per fetch: a sports claim deferred across
+  // polls re-fetches its source each time and must not re-buy it every poll.
+  const key = claimKey(claim.chain, claim.id);
+  const spent = evidenceSpentAtomic.get(key) ?? 0n;
+  const maxAtomic = usdcToAtomic(evidenceBudgetUsdc(claim)) - spent;
+  const paidFetch = PAY_EVIDENCE && maxAtomic > 0n
     ? async (u: string, init?: RequestInit) => {
         // The creator picked this URL; re-check it (DNS may have changed since the free fetch).
         await assertHopAllowed(u);
         const r = await fetchWithBudget(u, oraclePayer(claim.chain), maxAtomic, init);
+        if (r.payment) evidenceSpentAtomic.set(key, spent + r.payment.priceAtomic);
         return {
           response: r.response,
           payment: r.payment
@@ -508,9 +525,72 @@ async function applyPriceConsensus(
   return { verdict, note: adjustment.note };
 }
 
+interface SettlementDecision {
+  verdict: OracleVerdict;
+  evidenceHash: `0x${string}`;
+  bonusVotes: CouncilVote[] | null;
+}
+
 async function settle(claim: ClaimOnChain): Promise<boolean> {
   console.log(`\n${chainTag("settle", claim.chain)} Claim #${claim.id}: "${claim.question.slice(0, 60)}..."`);
+  const key = claimKey(claim.chain, claim.id);
 
+  let decision = decidedVerdicts.get(key) ?? null;
+  if (decision) {
+    console.log(`${chainTag("settle", claim.chain)} Re-submitting the verdict decided on an earlier attempt.`);
+  } else {
+    decision = await decide(claim);
+    if (!decision) return false;
+    decidedVerdicts.set(key, decision);
+  }
+  const { verdict, evidenceHash, bonusVotes } = decision;
+
+  // The claim may have been resolved since the scan, by an earlier attempt that
+  // timed out in W3S but still mined. Re-read right before signing.
+  const fresh = await fetchClaim(claim.chain, claim.id);
+  if (!fresh || fresh.state !== STATE.ACTIVE) {
+    console.log(`${chainTag("settle", claim.chain)} Claim #${claim.id} is no longer ACTIVE on chain — nothing to write.`);
+    decidedVerdicts.delete(key);
+    return true;
+  }
+
+  const oracleWallet = requireWalletIdFor(ORACLE_WALLET_ENV, claim.chain);
+  const txHash = await w3sEscrowWrite({
+    chain:        claim.chain,
+    walletId:     oracleWallet,
+    owner:        ORACLE_ADDR,
+    functionName: "resolveClaim",
+    args: [
+      BigInt(claim.id),
+      verdictToSide(verdict.verdict),
+      verdict.explanation,
+      verdict.confidence,
+      evidenceHash,
+    ],
+    refId: `settle-${claim.chain}-${claim.id}`,
+  });
+  decidedVerdicts.delete(key);
+  evidenceSpentAtomic.delete(key);
+
+  console.log(`${chainTag("settle", claim.chain)} ✓ Resolved #${claim.id} — ${getExplorerTxUrl(txHash, claim.chain)}`);
+
+  // Cross-entropy bonuses AFTER the on-chain settle: informative jurors split
+  // the pool, parrots and dissenters-from-evidence get nothing. Best-effort —
+  // a failed transfer never affects the already-final settlement.
+  if (bonusVotes && COUNCIL_BONUS_USDC > 0) {
+    const receipts = await payCouncilBonuses(bonusVotes, COUNCIL_BONUS_USDC, oracleWallet, claim.chain, claim.id);
+    for (const r of receipts) {
+      console.log(`${chainTag("settle", claim.chain)} 🏆 Bonus ${r.bonusUsdc.toFixed(6)} USDC → ${r.slug}${r.txHash ? ` — ${getExplorerTxUrl(r.txHash, claim.chain)}` : " (transfer failed)"}`);
+    }
+    if (receipts.length === 0) {
+      console.log(`${chainTag("settle", claim.chain)} No positive-score jurors this round — bonus pool untouched.`);
+    }
+  }
+  return true;
+}
+
+/** Evidence, jury and tiering for one claim. Null when settlement should wait. */
+async function decide(claim: ClaimOnChain): Promise<SettlementDecision | null> {
   const evidence     = await fetchEvidence(claim);
   console.log(`${chainTag("settle", claim.chain)} Evidence fetcher: ${evidence.fetcher}`);
 
@@ -521,7 +601,7 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
     const pastGrace = now > claim.deadline + BigInt(SPORTS_SETTLE_GRACE_SECS);
     if (!pastGrace && !(await isSportsEventFinal(claim, evidence.text))) {
       console.log(`${chainTag("settle", claim.chain)} Claim #${claim.id}: match not final yet — deferring to a later poll.`);
-      return false;
+      return null;
     }
   }
   if (evidence.payment) {
@@ -598,37 +678,7 @@ async function settle(claim: ClaimOnChain): Promise<boolean> {
   console.log(`${chainTag("settle", claim.chain)} Evidence hash: ${evidenceHash}`);
   console.log(`${chainTag("settle", claim.chain)} "${verdict.explanation.slice(0, 100)}..."`);
 
-  const oracleWallet = requireWalletIdFor(ORACLE_WALLET_ENV, claim.chain);
-  const txHash = await w3sEscrowWrite({
-    chain:        claim.chain,
-    walletId:     oracleWallet,
-    owner:        ORACLE_ADDR,
-    functionName: "resolveClaim",
-    args: [
-      BigInt(claim.id),
-      verdictToSide(verdict.verdict),
-      verdict.explanation,
-      verdict.confidence,
-      evidenceHash,
-    ],
-    refId: `settle-${claim.chain}-${claim.id}`,
-  });
-
-  console.log(`${chainTag("settle", claim.chain)} ✓ Resolved #${claim.id} — ${getExplorerTxUrl(txHash, claim.chain)}`);
-
-  // Cross-entropy bonuses AFTER the on-chain settle: informative jurors split
-  // the pool, parrots and dissenters-from-evidence get nothing. Best-effort —
-  // a failed transfer never affects the already-final settlement.
-  if (bonusVotes && COUNCIL_BONUS_USDC > 0) {
-    const receipts = await payCouncilBonuses(bonusVotes, COUNCIL_BONUS_USDC, oracleWallet, claim.chain);
-    for (const r of receipts) {
-      console.log(`${chainTag("settle", claim.chain)} 🏆 Bonus ${r.bonusUsdc.toFixed(6)} USDC → ${r.slug}${r.txHash ? ` — ${getExplorerTxUrl(r.txHash, claim.chain)}` : " (transfer failed)"}`);
-    }
-    if (receipts.length === 0) {
-      console.log(`${chainTag("settle", claim.chain)} No positive-score jurors this round — bonus pool untouched.`);
-    }
-  }
-  return true;
+  return { verdict, evidenceHash, bonusVotes };
 }
 
 // ── ROLE 2: Challenge mispriced open claim ────────────────────────────────────
@@ -787,20 +837,31 @@ async function poll(): Promise<void> {
 
   // One settlement queue across chains, oldest deadline first, so the cooldown
   // paces the oracle as a whole rather than per network.
+  // The cooldown is a timestamp, not a sleep: a poll never blocks for minutes,
+  // so the next one cannot start on top of it and settle the same claim twice.
   expiredActive.sort((a, b) => Number(a.deadline - b.deadline));
   for (let i = 0; i < expiredActive.length; i++) {
     const claim = expiredActive[i];
     const tag = chainTag("oracle", claim.chain);
+    const coolingFor = lastSettledAt + SETTLEMENT_DELAY_MS - Date.now();
+    if (lastSettledAt > 0 && coolingFor > 0) {
+      console.log(`[oracle] Cooling down: ${expiredActive.length - i} claim(s) wait ${(coolingFor / 60000).toFixed(1)} more min.`);
+      break;
+    }
+    const key = claimKey(claim.chain, claim.id);
+    const backoffUntil = settleBackoff.get(key) ?? 0;
+    if (backoffUntil > Date.now()) continue;
     try {
       const resolved = await settle(claim);
       if (!resolved) continue; // deferred (e.g. sports match not final) — retry next poll
+      settleBackoff.delete(key);
+      lastSettledAt = Date.now();
       settled.push(`${claim.chain}#${claim.id}`);
       console.log(`${tag} settled #${claim.id}`);
-      if (i < expiredActive.length - 1 && SETTLEMENT_DELAY_MS > 0) {
-        console.log(`[oracle] Cooling down ${(SETTLEMENT_DELAY_MS / 60000).toFixed(1)} min before next settlement...`);
-        await new Promise((resolve) => setTimeout(resolve, SETTLEMENT_DELAY_MS));
-      }
     } catch (err) {
+      // A W3S timeout can still mine. Give it time before a second resolve is
+      // submitted; the on-chain re-read in settle() then sees it RESOLVED.
+      settleBackoff.set(key, Date.now() + SETTLE_RETRY_BACKOFF_MS);
       console.error(`${tag} Error settling claim ${claim.id}:`, err);
     }
   }
@@ -839,8 +900,23 @@ async function main(): Promise<void> {
 
   const safePoll = reportingPoll("oracle", POLL_INTERVAL_MS, poll);
 
-  await safePoll();
-  setInterval(safePoll, POLL_INTERVAL_MS);
+  // A slow poll (many chains, a slow LLM) must not overlap the next tick.
+  let polling = false;
+  const tick = async () => {
+    if (polling) {
+      console.log("[oracle] Previous poll still running, skipping this tick.");
+      return;
+    }
+    polling = true;
+    try {
+      await safePoll();
+    } finally {
+      polling = false;
+    }
+  };
+
+  await tick();
+  setInterval(tick, POLL_INTERVAL_MS);
 }
 
 main().catch((err) => {
