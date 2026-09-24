@@ -380,6 +380,17 @@ const SCHEMA_STATEMENTS: SqlStatement[] = [
     created_at BIGINT NOT NULL DEFAULT 0
   )` },
   { sql: "CREATE INDEX IF NOT EXISTS idx_verdict_bundles_claim ON verdict_bundles(chain, claim_id)" },
+  // Pre-deadline forecasts by council personas and the oracle (lib/server/forecasts.ts).
+  { sql: `CREATE TABLE IF NOT EXISTS forecasts (
+    chain TEXT NOT NULL,
+    claim_id BIGINT NOT NULL,
+    forecaster TEXT NOT NULL,
+    p_challengers DOUBLE PRECISION NOT NULL,
+    verdict TEXT NOT NULL,
+    confidence SMALLINT NOT NULL DEFAULT 0,
+    created_at BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (chain, claim_id, forecaster)
+  )` },
   // Fixed-window counters for public routes that spend LLM quota (lib/server/rate-limit.ts).
   { sql: `CREATE TABLE IF NOT EXISTS rate_limits (
     bucket_key TEXT NOT NULL,

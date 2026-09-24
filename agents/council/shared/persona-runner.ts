@@ -21,6 +21,8 @@ import { type PersonaSpec, personaWalletIdEnv } from "../personas";
 import { getOrFetchEvidence } from "./evidence-cache";
 import { personaAddressOf, personaWalletIdOn } from "./wallets";
 import { evaluateClaimAsPersona, type PersonaVerdict } from "./persona-llm";
+import { probabilityFromVerdict } from "../../../lib/calibration";
+import { recordForecast } from "../../../lib/server/forecasts";
 import {
   evaluateContrarian,
   evaluateWhaleWatcher,
@@ -123,6 +125,19 @@ export async function evaluatePersonaForClaim(
       rationale:   `${persona.displayName}: LLM call failed (${err instanceof Error ? err.message : "unknown"}).`,
       skipReason:  "llm-failed",
     };
+  }
+
+  // Every forecast is logged for the calibration panel, staked on or not:
+  // scoring only the stakes would hide the calls a persona got wrong by abstaining.
+  if (verdict.verdict !== "UNRESOLVABLE" || verdict.confidence > 0) {
+    await recordForecast({
+      chain: ctx.chain,
+      claimId: claim.id,
+      forecaster: persona.slug,
+      pChallengers: probabilityFromVerdict(verdict.verdict, verdict.confidence),
+      verdict: verdict.verdict,
+      confidence: verdict.confidence,
+    }).catch(() => undefined);
   }
 
   const minConf = persona.minConfidence ?? DEFAULT_MIN_CONFIDENCE;

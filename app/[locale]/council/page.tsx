@@ -339,6 +339,7 @@ export default async function CouncilPage() {
       <nav className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
         <Link href="/agents" className="text-pv-muted transition-colors hover:text-pv-text">← all agent activity</Link>
         <Link href="/stats" className="text-pv-muted transition-colors hover:text-pv-text">aggregate stats →</Link>
+        <Link href="/calibration" className="text-pv-muted transition-colors hover:text-pv-text">calibration →</Link>
       </nav>
       </div>
     </div>

@@ -78,6 +78,8 @@ import {
 import { reportingPoll } from "../../lib/ops/heartbeat";
 import { sealBundle, VERDICT_BUNDLE_VERSION, type VerdictBundle } from "../../lib/verdict-bundle";
 import { saveVerdictBundle } from "../../lib/server/verdict-bundles";
+import { probabilityFromVerdict } from "../../lib/calibration";
+import { recordForecast } from "../../lib/server/forecasts";
 import { isFeatureEnabled, isPaused } from "../../lib/ops/flags";
 import {
   consensusWinner,
@@ -1000,6 +1002,14 @@ async function challengeIfMispriced(claim: ClaimOnChain): Promise<void> {
     throw err;
   }
   const verdict = applyFetcherTrust(rawVerdict, evidence.fetcher);
+  await recordForecast({
+    chain: claim.chain,
+    claimId: claim.id,
+    forecaster: "oracle",
+    pChallengers: probabilityFromVerdict(verdict.verdict, verdict.confidence),
+    verdict: verdict.verdict,
+    confidence: verdict.confidence,
+  }).catch(() => undefined);
 
   console.log(`${chainTag("challenge", claim.chain)} Early verdict: ${verdict.verdict} (${verdict.confidence}%) [fetcher=${evidence.fetcher}]`);
 
