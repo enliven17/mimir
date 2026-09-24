@@ -5,6 +5,7 @@ import { XmtpProvider } from "@/lib/xmtp/XmtpProvider";
 import { Toaster } from "sonner";
 import NextTopLoader from "nextjs-toploader";
 import { WagmiProviders } from "@/lib/wagmi-providers";
+import { routing } from "@/i18n/routing";
 
 export default function RootLayout({
   children,
@@ -13,6 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html
+      // Server-rendered so screen readers and crawlers see it before hydration;
+      // HtmlLang still corrects it client-side once more locales exist.
+      lang={routing.defaultLocale}
       className={`${fontDisplay.variable} ${fontBody.variable} ${fontMono.variable}`}
     >
       <body className="overflow-x-hidden">

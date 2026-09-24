@@ -1,4 +1,7 @@
-import Link from "next/link";
+// Query-only filter links stay on next/link: the locale-aware Link would
+// resolve "?filter=x" against the locale root instead of this page.
+import NextLink from "next/link";
+import { Link } from "@/i18n/navigation";
 import { createChainPublicClient, getContractAddress } from "@/lib/arc";
 import {
   explorerAddressUrl,
@@ -447,7 +450,7 @@ export default async function AgentsPage({
               const active = filter === key;
               const href = key === "all" ? "?" : `?filter=${key}`;
               return (
-                <Link
+                <NextLink
                   key={key}
                   href={href}
                   scroll={false}
@@ -458,7 +461,7 @@ export default async function AgentsPage({
                   }`}
                 >
                   {label}
-                </Link>
+                </NextLink>
               );
             })}
             {councilPersonas.length > 0 && (
@@ -474,7 +477,7 @@ export default async function AgentsPage({
                 </summary>
                 <div className="absolute right-0 z-10 mt-1 min-w-[200px] rounded-lg border border-pv-border/50 bg-pv-surface p-1 shadow-lg">
                   {councilPersonas.map(({ persona }) => (
-                    <Link
+                    <NextLink
                       key={persona.slug}
                       href={`?filter=persona:${persona.slug}`}
                       scroll={false}
@@ -482,7 +485,7 @@ export default async function AgentsPage({
                     >
                       <span className="text-base leading-none grayscale opacity-75">{persona.emoji}</span>
                       <span className="text-pv-text/90 normal-case">{persona.displayName}</span>
-                    </Link>
+                    </NextLink>
                   ))}
                 </div>
               </details>
